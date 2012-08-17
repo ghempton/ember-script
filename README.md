@@ -114,7 +114,7 @@ Person = Ember.Object.extend({
 
   initials: Ember.computed(function() {
     return get(this, 'firstName').split('')[0] + " " + get(this, 'lastName').split('')[0];
-  }).property("firstName", "lastName")
+  }).property("firstName", "lastName"),
 
   nameChanged: Ember.observes(function() {
     return console.log("new name: " + get(this, 'name'));
