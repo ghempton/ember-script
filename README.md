@@ -117,7 +117,7 @@ Person = Ember.Object.extend({
   }).property("firstName", "lastName")
 
   nameChanged: Ember.observes(function() {
-    return console.log("new name: " + get(this, 'name');
+    return console.log("new name: " + get(this, 'name'));
   }, 'name'),
 
   favoriteNumber: Ember.computed(function() {
