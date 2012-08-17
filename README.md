@@ -4,10 +4,10 @@ Ember Script is coffee-derived inspired language which takes advantage of the [E
 
 ## Examples
 
-### Object Instantiation
+### Object Model
 
 ```coffeescript
-animal = new Animal()
+animal = new Animal
 ```
 
 Compiles to:
@@ -24,8 +24,7 @@ mixin CanFly
 
 class Animal
 
-class Bird extends Animal
-  include CanFly
+class Bird extends Animal with CanFly
 
   fly: ->
     super()
@@ -51,25 +50,61 @@ Bird = Animal.extend(CanFly, {
 });
 ```
 
-### Properties, Bindings, and Observers
+### Properties: Getters and Setters
 
-Because Ember Script is a compiled language, property dependencies can be computed at compile time.
+```coffeescript
+class Person
+  get name: -> @_name
+  set name: (value) -> @_name = value
+
+  get firstName: @name.split(' ')[0]
+
+  lastName: ~> @name.split(' ')[1]
+end
+```
+
+Compiles to:
+
+```javascript
+var get = Ember.get, set = Ember.set;
+
+Person = Ember.Object.extend({
+
+  name: Ember.computed(function() {
+    if (arguments.length === 2) {
+      set(this, '_name', value);
+      return value;
+    } else {
+      return Ember.get(this, '_name');
+    }
+  }),
+
+  firstName: Ember.computed(function() {
+    return get(this, 'name').split(' ')[0]
+  }),
+
+  lastName: Ember.computed(function() {
+    return get(this, 'name').split(' ')[1]
+  }).property('name')
+
+});
+
+```
+
+### Annotations: Dependencies, Observers, and More
 
 ```coffeescript
 class Person
 
-  [Computed("firstName, lastName")]
-  name: -> "#{@firstName} #{@lastName}"
+  ~depends on firstName, lastName
+  initials: -> "#{@firstName.split('')[0], @lastName.split('')[0]}"
 
-  [Computed]
-  [Infer]
-  capitalizedFirstName: -> @firstName.toUpperCase()
+  ~observes name
+  nameChanged: -> console.log("new name: #{@name}")
 
-  [Observes]
-  [Infer]
-  nameChanged: console.log("new name: #{@name}")
+  ~volatile
+  favoriteNumber: -> Math.round(Math.random() * 10)
 
-  [Binding("firstName", "App.currentUser.firstName")]
 ```
 
 Compiles to:
@@ -77,24 +112,32 @@ Compiles to:
 ```javascript
 Person = Ember.Object.extend({
 
-  name: Ember.computed(function() {
-    return Ember.get(this, 'firstName') + ' ' + Ember.get(this, 'lastName');
+  initials: Ember.computed(function() {
+    return get(this, 'firstName').split('')[0] + " " + get(this, 'lastName').split('')[0];
   }).property("firstName", "lastName")
 
-  capitalizedFirstName: Ember.computed(function() {
-    return Ember.get(this, 'firstName').toUpperCase();
-  }).property('firstName');
-
   nameChanged: Ember.observes(function() {
-    return console.log("new name: " + Ember.get(this, 'name');
-  }, 'name');
+    return console.log("new name: " + get(this, 'name');
+  }, 'name'),
 
-  firstNameBinding: 'App.currentUser.firstName'
+  favoriteNumber: Ember.computed(function() {
+    return Math.round(Math.random() * 10);
+  }).volatile()
 
 });
 ```
 
-## Accessing Properties
+### Dependency Inferrence
+
+Because Ember Script is a compiled language, property dependencies can be computed at compile time. In fact, there is a special operator to declare a computed property with it's dependencies inferred, the `~>` operator. The `initials` property above could be rewritten more simply as:
+
+```coffeescript
+  initials: ~> "#{@firstName.split('')[0], @lastName.split('')[0]}"
+```
+
+The dependency on the `firstName` and `lastName` properties will be determined at compile time.
+
+## Accessors
 
 In general, normal dot-syntax property access is delegated to Ember's get and set methods. To use javascript's native property access operator, use Ember Script's *. operator:
 
@@ -120,7 +163,7 @@ Compiles to:
 Ember.get(person, 'firstName');
 Ember.get(Ember.get(person, 'address'), 'city');
 Ember.get(person, 'address.city');
-person && Ember.getPath(person, 'address.city');
+person && Ember.get(person, 'address.city');
 
 Ember.set(person, 'firstName', "Wes");
 Ember.set(person, 'address.city', "San Diego");
