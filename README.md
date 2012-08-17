@@ -137,7 +137,7 @@ Because Ember Script is a compiled language, property dependencies can be comput
 
 The dependency on the `firstName` and `lastName` properties will be determined at compile time.
 
-## Accessors
+### Accessors
 
 In general, normal dot-syntax property access is delegated to Ember's get and set methods. To use javascript's native property access operator, use Ember Script's *. operator:
 
@@ -160,16 +160,18 @@ person*.firstName = "Manuel"
 Compiles to:
 
 ```javascript
-Ember.get(person, 'firstName');
-Ember.get(Ember.get(person, 'address'), 'city');
-Ember.get(person, 'address.city');
-person && Ember.get(person, 'address.city');
+var get = Ember.get, set = Ember.set;
 
-Ember.set(person, 'firstName', "Wes");
-Ember.set(person, 'address.city', "San Diego");
+get(person, 'firstName');
+get(get(person, 'address'), 'city');
+get(person, 'address.city');
+person && get(person, 'address.city');
 
-Ember.get(Ember.get(this, 'person'), 'firstName');
-Ember.set(Ember.get(this, 'person'), 'firstName', "Andrew");
+set(person, 'firstName', "Wes");
+set(person, 'address.city', "San Diego");
+
+get(get(this, 'person'), 'firstName');
+set(get(this, 'person'), 'firstName', "Andrew");
 
 person.firstName
 person.firstName = "Manuel"
