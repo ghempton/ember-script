@@ -70,7 +70,7 @@ var get = Ember.get, set = Ember.set;
 
 Person = Ember.Object.extend({
 
-  name: Ember.computed(function() {
+  name: Ember.computed(function(value) {
     if (arguments.length === 2) {
       set(this, '_name', value);
       return value;
@@ -80,11 +80,11 @@ Person = Ember.Object.extend({
   }),
 
   firstName: Ember.computed(function() {
-    return get(this, 'name').split(' ')[0]
+    return get(this, 'name').split(' ')[0];
   }),
 
   lastName: Ember.computed(function() {
-    return get(this, 'name').split(' ')[1]
+    return get(this, 'name').split(' ')[1];
   }).property('name')
 
 });
