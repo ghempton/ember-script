@@ -355,44 +355,33 @@ class exports.Compiler
       params = []
       parentRef = genSym 'super'
       block = forceBlock block
-      if (name.instanceof JS.Identifier) and name.name in jsReserved
-        name = genSym name.name
 
-      if ctor?
-        # TODO: I'd really like to avoid searching for the constructor like this
-        for c, i in block.body when c.instanceof JS.FunctionDeclaration
-          ctorIndex = i
-          break
-        block.body.splice ctorIndex, 1, ctor
-      else
+      unless ctor?
         ctor = new JS.FunctionDeclaration name, [], new JS.BlockStatement []
-        ctorIndex = 0
-        block.body.unshift ctor
       ctor.id = name
       # handle external constructors
       if @ctor? and not @ctor.expression.instanceof CS.Functions
         ctorRef = genSym 'externalCtor'
         ctor.body.body.push makeReturn new JS.CallExpression (memberAccess ctorRef, 'apply'), [new JS.ThisExpression, new JS.Identifier 'arguments']
-        block.body.splice ctorIndex, 0, stmt new JS.AssignmentExpression '=', ctorRef, compile @ctor.expression
+        block.body.unshift stmt new JS.AssignmentExpression '=', ctorRef, compile @ctor.expression
+      block.body.unshift ctor
 
-      if @boundMembers.length > 0
-        instance = genSym 'instance'
-        for protoAssignOp in @boundMembers
-          memberName = protoAssignOp.assignee.data.toString()
-          ps = (genSym() for _ in protoAssignOp.expression.parameters)
-          member = memberAccess new JS.ThisExpression, memberName
-          protoMember = memberAccess (memberAccess name, 'prototype'), memberName
-          fn = new JS.FunctionExpression null, ps, new JS.BlockStatement [
-            makeReturn new JS.CallExpression (memberAccess protoMember, 'apply'), [instance, new JS.Identifier 'arguments']
-          ]
-          ctor.body.body.unshift stmt new JS.AssignmentExpression '=', member, fn
-        ctor.body.body.unshift stmt new JS.AssignmentExpression '=', instance, new JS.ThisExpression
+      # if @boundMembers? and @boundMembers.length > 0
+      #   instance = genSym 'instance'
+      #   for memberName in @boundMembers
+      #     member = memberAccess new JS.ThisExpression, memberName
+      #     protoMember = memberAccess (memberAccess name, 'prototype'), memberName
+      #     fn = new JS.FunctionExpression null, [], new JS.BlockStatement [
+      #       stmt new JS.CallExpression (memberAccess protoMember, 'apply'), [instance, new JS.Identifier 'arguments']
+      #     ]
+      #     ctor.body.body.unshift stmt new JS.AssignmentExpression '=', member, fn
+      #   ctor.body.body.unshift stmt new JS.AssignmentExpression '=', instance, new JS.ThisExpression
 
-      if parent?
-        params.push parentRef
-        args.push parent
-        block.body.unshift stmt helpers.extends name, parentRef
-      block.body.push new JS.ReturnStatement new JS.ThisExpression
+      # if parent?
+      #   params.push parentRef
+      #   args.push parent
+      #   block.body.unshift stmt helpers.extends name, parentRef
+      # block.body.push new JS.ReturnStatement new JS.ThisExpression
 
       rewriteThis = generateMutatingWalker ->
         if @instanceof JS.ThisExpression then name
@@ -400,7 +389,10 @@ class exports.Compiler
         else rewriteThis this
       rewriteThis block
 
-      iife = new JS.CallExpression (new JS.FunctionExpression null, params, block), args
+      mixinArgs = @mixins.map (mixin) -> new JS.Identifier(mixin)
+
+      parentExpr = if parent?.name then new JS.Identifier(parent.name) else memberAccess(new JS.Identifier('Ember'), 'Object')
+      iife = new JS.CallExpression memberAccess(parentExpr, 'extend'), mixinArgs
       if nameAssignee? then new JS.AssignmentExpression '=', nameAssignee, iife else iife
     ]
     [CS.Constructor, ({expression}) ->

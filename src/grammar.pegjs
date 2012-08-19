@@ -503,7 +503,7 @@ loop
 
 
 class
-  = CLASS name:(_ Assignable)? parent:(_ EXTENDS _ (functionLiteral / assignmentExpression))? body:classBody {
+  = CLASS name:(_ Assignable)? parent:(_ EXTENDS _ (functionLiteral / assignmentExpression))? mixins:(_ WITH _ (functionLiteral / assignmentExpression))* body:classBody {
       var ctor = null;
       var raw = 'class' + (name ? name[0] + name[1].raw : '') +
         (parent ? parent[0] + 'parent' + parent[2] + parent[3].raw : '') +
@@ -520,7 +520,8 @@ class
           boundMembers.push(m);
         }
       }
-      return new CS.Class(name, parent, ctor, body.block, boundMembers).r(raw).p(line, column);
+      mixins = mixins.map(function(mixin) { return mixin[3].data; });
+      return new CS.Class(name, parent, ctor, body.block, boundMembers, mixins).r(raw).p(line, column);
     }
   classBody
     = ws:_ t:TERMINDENT b:classBlock d:DEDENT { return {block: b, raw: ws + t + b.raw + d}; }
@@ -948,16 +949,17 @@ UNLESS = w:"unless" !identifierPart { return w; }
 UNTIL = w:"until" !identifierPart { return w; }
 WHEN = w:"when" !identifierPart { return w; }
 WHILE = w:"while" !identifierPart { return w; }
+WITH = w:"with" !identifierPart {return w; }
 YES = w:"yes" !identifierPart { return w; }
 
 SharedKeywords
   = ("true" / "false" / "null" / "this" / "new" / "delete" / "typeof" /
   "instanceof" / "in" / "return" / "throw" / "break" / "continue" / "debugger" /
   "if" / "else" / "switch" / "for" / "while" / "do" / "try" / "catch" /
-  "finally" / "class" / "extends" / "super") !identifierPart
+  "finally" / "class" / "extends" / "super" / "with") !identifierPart
 
 JSKeywords
-  = ("case" / "default" / "function" / "var" / "void" / "with" / "const" /
+  = ("case" / "default" / "function" / "var" / "void" / "const" /
   "let" / "enum" / "export" / "import" / "native" / "implements" / "interface" /
   "package" / "private" / "protected" / "public" / "static" / "yield") !identifierPart
 

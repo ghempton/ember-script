@@ -62,4 +62,4 @@ loc:
 clean:
 	rm -rf instrumented
 	rm -f coverage.html
-	rm -rf lib/*
+	rm -rf lib/coffee-script

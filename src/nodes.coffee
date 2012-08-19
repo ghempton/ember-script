@@ -144,7 +144,7 @@ createNodes
     ArrayInitialiser: [['members']] # :: [ArrayInitialiserMembers] -> ArrayInitialiser
     ObjectInitialiser: [['members']] # :: [ObjectInitialiserMember] -> ObjectInitialiser
     ObjectInitialiserMember: [['key', 'expression']] # :: ObjectInitialiserKeys -> Exprs -> ObjectInitialiserMember
-    Class: [['nameAssignee', 'parent', 'ctor', 'block', 'boundMembers']] # :: Maybe Assignable -> Maybe Exprs -> Maybe Exprs -> Maybe Exprs -> [ClassProtoAssignOp] -> Class
+    Class: [['nameAssignee', 'parent', 'ctor', 'block', 'boundMembers', 'mixins']] # :: Maybe Assignable -> Maybe Exprs -> Maybe Exprs -> Maybe Exprs -> [ClassProtoAssignOp] -> Class
     Constructor: [['expression']] # :: Exprs -> Constructor
     Functions: [ ['parameters', 'block'],
       Function: null # :: [Parameters] -> Maybe Exprs -> Function
@@ -229,7 +229,7 @@ handlePrimitives = (ctor, primitives) ->
       json[primitive] = @[primitive]
     json
 
-handlePrimitives Class, ['boundMembers']
+handlePrimitives Class, ['boundMembers', 'mixins']
 handlePrimitives CompoundAssignOp, ['op']
 handlePrimitives ForOf, ['isOwn']
 handlePrimitives HeregExp, ['flags']

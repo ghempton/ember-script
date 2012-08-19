@@ -1,3 +1,5 @@
+require '../lib/ember/ember-runtime'
+
 util = require 'util'
 inspect = (o) -> util.inspect o, no, 2, yes
 

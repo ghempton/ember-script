@@ -358,6 +358,7 @@ class exports.Optimiser
         throw new Error 'Optimiser rules must produce a node. `null` is not a node.'
       return this if this in ancestry
       ancestry.unshift this
+      console.log(@childNodes) if @childNodes.length > 2
       for childName in @childNodes when @[childName]?
         @[childName] =
           if childName in @listMembers
