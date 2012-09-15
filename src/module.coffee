@@ -2,6 +2,7 @@ fs = require 'fs'
 path = require 'path'
 
 {formatParserError} = require './helpers'
+Nodes = require './nodes'
 {Preprocessor} = require './preprocessor'
 Parser = require './parser'
 {Optimiser} = require './optimiser'
@@ -12,41 +13,58 @@ uglifyjs = try require 'uglify-js'
 
 
 CoffeeScript = null
-packageJSON = JSON.parse fs.readFileSync (path.join __dirname, '..', '..', 'package.json'), 'utf8'
+pkg = require path.join __dirname, '..', '..', 'package.json'
+
+escodegenFormatDefaults =
+  indent:
+    style: '  '
+    base: 0
+  renumber: yes
+  hexadecimal: yes
+  quotes: 'auto'
+  parentheses: no
+
 
 module.exports =
 
-  VERSION: packageJSON.version
+  Compiler: Compiler
+  Optimiser: Optimiser
+  Parser: Parser
+  Preprocessor: Preprocessor
+  Nodes: Nodes
+
+  VERSION: pkg.version
 
   parse: (coffee, options = {}) ->
     options.optimise ?= yes
     try
-      parsed = Parser.parse Preprocessor.processSync coffee
+      preprocessed = Preprocessor.processSync coffee
+      parsed = Parser.parse preprocessed
       if options.optimise then Optimiser.optimise parsed else parsed
     catch e
       throw e unless e instanceof Parser.SyntaxError
-      throw new Error formatParserError coffee, e
+      throw new Error formatParserError preprocessed, e
 
   compile: (csAst, options) ->
     Compiler.compile csAst, options
 
+  # TODO
   cs: (csAst, options) ->
     # TODO: opt: format (default: nice defaults)
 
-  js: (jsAst, options) ->
+  js: (jsAst, options = {}) ->
     # TODO: opt: minify (default: no)
-    # TODO: opt: format (default: nice defaults)
     throw new Error 'escodegen not found: run `npm install escodegen`' unless escodegen?
     escodegen.generate jsAst,
       comment: yes
-      format:
-        indent:
-          style: '  '
-          base: 0
-        renumber: yes
-        hexadecimal: yes
-        quotes: 'auto'
-        parentheses: no
+      format: options.format ? escodegenFormatDefaults
+
+  sourceMap: (jsAst, name = 'unknown', options = {}) ->
+    throw new Error 'escodegen not found: run `npm install escodegen`' unless escodegen?
+    escodegen.generate jsAst.toJSON(),
+      comment: yes
+      sourceMap: name
+      format: options.format ? escodegenFormatDefaults
 
 CoffeeScript = module.exports.CoffeeScript = module.exports
 

@@ -1,4 +1,4 @@
-{any, concat, concatMap, difference, divMod, foldl1, map, nub, owns, union} = require './functional-helpers'
+{any, concat, concatMap, difference, divMod, foldl1, map, nub, owns, span, union} = require './functional-helpers'
 {beingDeclared, usedAsExpression, envEnrichments} = require './helpers'
 CS = require './nodes'
 JS = require './js-nodes'
@@ -30,8 +30,6 @@ stmt = (e) ->
         if e.instanceof JS.SequenceExpression then walk e
         else [stmt e]
     new JS.BlockStatement walk e
-  #else if (e.instanceof JS.BinaryExpression) and e.operator is '&&'
-  #  new JS.IfStatement (expr e.left), stmt e.right
   else if e.instanceof JS.ConditionalExpression
     # TODO: drop either the consequent or the alternate if they don't have side effects
     new JS.IfStatement (expr e.test), (stmt e.consequent), stmt e.alternate
@@ -63,7 +61,7 @@ expr = (s) ->
     block = new JS.BlockStatement [s, new JS.ReturnStatement accum]
     iife = new JS.FunctionExpression null, [accum], block
     new JS.CallExpression (memberAccess iife, 'call'), [new JS.ThisExpression, new JS.ArrayExpression []]
-  else if s.instanceof JS.SwitchStatement
+  else if s.instanceof JS.SwitchStatement, JS.TryStatement
     block = new JS.BlockStatement [makeReturn s]
     iife = new JS.FunctionExpression null, [], block
     new JS.CallExpression (memberAccess iife, 'call'), [new JS.ThisExpression]
@@ -85,6 +83,10 @@ makeReturn = (node) ->
     return node unless node.consequent.length
     stmts = if node.consequent[-1..][0].instanceof JS.BreakStatement then node.consequent[...-1] else node.consequent
     new JS.SwitchCase node.test, [stmts[...-1]..., makeReturn stmts[-1..][0]]
+  else if node.instanceof JS.TryStatement
+    new JS.TryStatement (makeReturn node.block), (map node.handlers, makeReturn), if node.finalizer? then makeReturn node.finalizer else null
+  else if node.instanceof JS.CatchClause
+    new JS.CatchClause node.param, makeReturn node.body
   else if node.instanceof JS.ThrowStatement, JS.ReturnStatement, JS.BreakStatement, JS.ContinueStatement then node
   else if (node.instanceof JS.UnaryExpression) and node.operator is 'void' then new JS.ReturnStatement
   else new JS.ReturnStatement expr node
@@ -101,20 +103,22 @@ generateMutatingWalker = (fn) -> (node, args...) ->
         fn.apply node[childName], args
   node
 
-declarationsNeededFor = (node) ->
+declarationsNeeded = (node) ->
   return [] unless node?
-  nub if (node.instanceof JS.AssignmentExpression) and node.operator is '=' and node.left.instanceof JS.Identifier
-    union [node.left], declarationsNeededFor node.right
-  else if node.instanceof JS.ForInStatement then union [node.left], concatMap [node.right, node.body], declarationsNeededFor
-  #TODO: else if node.instanceof JS.CatchClause then union [node.param], declarationsNeededFor node.body
-  else if node.instanceof JS.FunctionExpression, JS.FunctionDeclaration then []
-  else concatMap node.childNodes, (childName) ->
+  if (node.instanceof JS.AssignmentExpression) and node.operator is '=' and node.left.instanceof JS.Identifier then [node.left]
+  else if node.instanceof JS.ForInStatement then [node.left]
+  #TODO: else if node.instanceof JS.CatchClause then [node.param]
+  else []
+
+declarationsNeededRecursive = (node) ->
+  return [] unless node?
+  # don't cross scope boundaries
+  if node.instanceof JS.FunctionExpression, JS.FunctionDeclaration then []
+  else union (declarationsNeeded node), concatMap node.childNodes, (childName) ->
     # TODO: this should make use of an fmap method
     return [] unless node[childName]?
-    if childName in node.listMembers
-      concatMap node[childName], declarationsNeededFor
-    else
-      declarationsNeededFor node[childName]
+    if childName in node.listMembers then concatMap node[childName], declarationsNeededRecursive
+    else declarationsNeededRecursive node[childName]
 
 collectIdentifiers = (node) -> nub switch
   when !node? then []
@@ -130,8 +134,9 @@ collectIdentifiers = (node) -> nub switch
 
 # TODO: something like Optimiser.mayHaveSideEffects
 needsCaching = (node) ->
+  return no unless node?
   (envEnrichments node, []).length > 0 or
-  (node.instanceof CS.FunctionApplications, CS.DoOp, CS.NewOp, CS.ArrayInitialiser, CS.ObjectInitialiser, CS.RegExp, CS.HeregExp) or
+  (node.instanceof CS.FunctionApplications, CS.DoOp, CS.NewOp, CS.ArrayInitialiser, CS.ObjectInitialiser, CS.RegExp, CS.HeregExp, CS.PreIncrementOp, CS.PostIncrementOp, CS.PreDecrementOp, CS.PostDecrementOp) or
   (any (difference node.childNodes, node.listMembers), (n) -> needsCaching node[n]) or
   (any node.listMembers, (n) -> any node[n], needsCaching)
 
@@ -151,7 +156,8 @@ makeVarDeclaration = (vars) ->
   new JS.VariableDeclaration 'var', decls
 
 memberAccess = (e, member) ->
-  if member in jsReserved or +member.toString()[0] in [0..9]
+  isIdentifierName = /^[$_a-z][$_a-z0-9]*$/i # this can be made more permissive
+  if member in jsReserved or not isIdentifierName.test member
   then new JS.MemberExpression yes, (expr e), new JS.Literal member
   else new JS.MemberExpression no, (expr e), new JS.Identifier member
 
@@ -159,6 +165,72 @@ dynamicMemberAccess = (e, index) ->
   if (index.instanceof JS.Literal) and typeof index.value is 'string'
   then memberAccess e, index.value
   else new JS.MemberExpression yes, e, index
+
+assignment = (assignee, expression, valueUsed = no) ->
+  assignments = []
+  switch
+    when assignee.rest then # do nothing for right now
+    when assignee.instanceof JS.ArrayExpression
+      e = expression
+      # TODO: only cache expression when it needs it
+      #if valueUsed or @assignee.members.length > 1 and needsCaching @expression
+      if valueUsed or assignee.elements.length > 1
+        e = genSym 'cache'
+        assignments.push new JS.AssignmentExpression '=', e, expression
+
+      elements = assignee.elements
+
+      for m, i in elements
+        break if m.rest
+        assignments.push assignment m, (dynamicMemberAccess e, new JS.Literal i), valueUsed
+
+      if elements.length > 0
+        # TODO: see if this logic can be combined with rest-parameter handling
+        if elements[-1..][0].rest
+          numElements = elements.length
+          restName = elements[numElements - 1] = elements[numElements - 1].expression
+          test = new JS.BinaryExpression '<=', (new JS.Literal numElements), memberAccess e, 'length'
+          consequent = helpers.slice e, new JS.Literal (numElements - 1)
+          alternate = new JS.ArrayExpression []
+          assignments.push stmt new JS.AssignmentExpression '=', restName, new JS.ConditionalExpression test, consequent, alternate
+        else if any elements, ((p) -> p.rest)
+          restName = index = null
+          for p, i in elements when p.rest
+            restName = p.expression
+            index = i
+            break
+          elements.splice index, 1
+          numElements = elements.length
+          size = genSym 'size'
+          assignments.push new JS.AssignmentExpression '=', size, memberAccess e, 'length'
+          test = new JS.BinaryExpression '>', size, new JS.Literal numElements
+          consequent = helpers.slice e, (new JS.Literal index), new JS.BinaryExpression '-', size, new JS.Literal numElements - index
+          assignments.push new JS.AssignmentExpression '=', restName, new JS.ConditionalExpression test, consequent, new JS.ArrayExpression []
+          for p, i in elements[index...]
+            assignments.push stmt new JS.AssignmentExpression '=', p, new JS.MemberExpression yes, e, new JS.BinaryExpression '-', size, new JS.Literal numElements - index - i
+        if any elements, ((p) -> p.rest)
+          throw new Error 'Positional destructuring assignments may not have more than one rest operator'
+
+    when assignee.instanceof JS.ObjectExpression
+      e = expression
+      # TODO: only cache expression when it needs it
+      #if valueUsed or @assignee.members.length > 1 and needsCaching @expression
+      if valueUsed or assignee.properties.length > 1
+        e = genSym 'cache'
+        assignments.push new JS.AssignmentExpression '=', e, expression
+
+      for m in assignee.properties
+        propName = if m.key.instanceof JS.Identifier then new JS.Literal m.key.name else m.key
+        assignments.push assignment m.value, (dynamicMemberAccess e, propName), valueUsed
+
+    when assignee.instanceof JS.Identifier, JS.GenSym, JS.MemberExpression
+      assignments.push new JS.AssignmentExpression '=', assignee, expr expression
+    else
+      throw new Error "compile: assignment: unassignable assignee: #{assignee.type}"
+  switch assignments.length
+    when 0 then (if e is expression then helpers.undef() else expression)
+    when 1 then assignments[0]
+    else new JS.SequenceExpression if valueUsed then [assignments..., e] else assignments
 
 
 helperNames = {}
@@ -170,7 +242,7 @@ helpers =
     ctor = new JS.Identifier 'ctor'
     key = new JS.Identifier 'key'
     block = [
-      new JS.ForInStatement key, parent, new JS.IfStatement (helpers.isOwn parent, key),
+      new JS.ForInStatement key, parent, new JS.IfStatement (helpers.isOwn parent, key), f = # TODO: figure out how we can allow this
         stmt new JS.AssignmentExpression '=', (new JS.MemberExpression yes, child, key), new JS.MemberExpression yes, parent, key
       new JS.FunctionDeclaration ctor, [], new JS.BlockStatement [
         stmt new JS.AssignmentExpression '=', (memberAccess new JS.ThisExpression, 'constructor'), child
@@ -178,9 +250,27 @@ helpers =
       new JS.AssignmentExpression '=', (protoAccess ctor), protoAccess parent
       new JS.AssignmentExpression '=', (protoAccess child), new JS.NewExpression ctor, []
       new JS.AssignmentExpression '=', (memberAccess child, '__super__'), protoAccess parent
-      makeReturn child
+      new JS.ReturnStatement child
     ]
     new JS.FunctionDeclaration helperNames.extends, [child, parent], new JS.BlockStatement map block, stmt
+  construct: ->
+    child = new JS.Identifier 'child'
+    ctor = new JS.Identifier 'ctor'
+    fn = new JS.Identifier 'fn'
+    args = new JS.Identifier 'args'
+    result = new JS.Identifier 'result'
+    block = [
+      new JS.VariableDeclaration 'var', [
+        new JS.VariableDeclarator fn, new JS.FunctionExpression null, [], new JS.BlockStatement []
+      ]
+      new JS.AssignmentExpression '=', (memberAccess fn, 'prototype'), memberAccess ctor, 'prototype'
+      new JS.VariableDeclaration 'var', [
+        new JS.VariableDeclarator child, new JS.NewExpression fn, []
+        new JS.VariableDeclarator result, new JS.CallExpression (memberAccess ctor, 'apply'), [child, args]
+      ]
+      new JS.ReturnStatement new JS.ConditionalExpression (new JS.BinaryExpression '===', result, new JS.CallExpression (new JS.Identifier 'Object'), [result]), result, child
+    ]
+    new JS.FunctionDeclaration helperNames.construct, [ctor, args], new JS.BlockStatement map block, stmt
   isOwn: ->
     hop = memberAccess (new JS.ObjectExpression []), 'hasOwnProperty'
     params = args = [(new JS.Identifier 'o'), new JS.Identifier 'p']
@@ -189,8 +279,8 @@ helpers =
   in: ->
     member = new JS.Identifier 'member'
     list = new JS.Identifier 'list'
-    i = genSym 'i'
-    length = genSym 'length'
+    i = new JS.Identifier 'i'
+    length = new JS.Identifier 'length'
     varDeclaration = new JS.VariableDeclaration 'var', [
       new JS.VariableDeclarator i, new JS.Literal 0
       new JS.VariableDeclarator length, memberAccess list, 'length'
@@ -210,7 +300,9 @@ for h, fn of helpers
     (helpers[h] = -> new JS.CallExpression helperNames[h], arguments).apply this, arguments
 
 inlineHelpers =
+  exp: -> new JS.CallExpression (memberAccess (new JS.Identifier 'Math'), 'pow'), arguments
   undef: -> new JS.UnaryExpression 'void', new JS.Literal 0
+  slice: -> new JS.CallExpression (memberAccess (memberAccess (new JS.ArrayExpression []), 'slice'), 'call'), arguments
 
 for h, fn of inlineHelpers
   helpers[h] = fn
@@ -221,17 +313,18 @@ class exports.Compiler
 
   @compile = => (new this).compile arguments...
 
+  # TODO: none of the default rules should need to use `compile`; fix it with functions
   defaultRules = [
     # control flow structures
-    [CS.Program, ({block, inScope, options}) ->
-      return new JS.Program [] unless block?
-      block = stmt block
+    [CS.Program, ({body, inScope, options}) ->
+      return new JS.Program [] unless body?
+      block = stmt body
       block =
         if block.instanceof JS.BlockStatement then block.body
         else [block]
       # helpers
       [].push.apply block, enabledHelpers
-      decls = nub concatMap block, declarationsNeededFor
+      decls = nub concatMap block, declarationsNeededRecursive
       if decls.length > 0
         if options.bare
           block.unshift makeVarDeclaration decls
@@ -253,108 +346,221 @@ class exports.Compiler
         else new JS.BlockStatement map statements, stmt
     ]
     [CS.SeqOp, ({left, right})-> new JS.SequenceExpression [left, right]]
-    [CS.Conditional, ({condition, block, elseBlock, ancestry}) ->
-      if elseBlock?
-        throw new Error 'Conditional with non-null elseBlock requires non-null block' unless block?
-        elseBlock = forceBlock elseBlock unless elseBlock.instanceof JS.IfStatement
-      if elseBlock? or ancestry[0]?.instanceof CS.Conditional
-        block = forceBlock block
-      new JS.IfStatement (expr condition), (stmt block), elseBlock
+    [CS.Conditional, ({condition, consequent, alternate, ancestry}) ->
+      if alternate?
+        throw new Error 'Conditional with non-null alternate requires non-null consequent' unless consequent?
+        alternate = forceBlock alternate unless alternate.instanceof JS.IfStatement
+      if alternate? or ancestry[0]?.instanceof CS.Conditional
+        consequent = forceBlock consequent
+      new JS.IfStatement (expr condition), (stmt consequent), alternate
     ]
-    [CS.ForIn, ({valAssignee, keyAssignee, expression, step, filterExpr, block}) ->
+    [CS.ForIn, ({valAssignee, keyAssignee, target, step, filter, body}) ->
       i = genSym 'i'
       length = genSym 'length'
-      block = forceBlock block
-      e = if needsCaching @expression then genSym 'cache' else expression
+      block = forceBlock body
+      e = if needsCaching @target then genSym 'cache' else target
       varDeclaration = new JS.VariableDeclaration 'var', [
         new JS.VariableDeclarator i, new JS.Literal 0
         new JS.VariableDeclarator length, memberAccess e, 'length'
       ]
-      unless e is expression
-        varDeclaration.declarations.unshift new JS.VariableDeclarator e, expression
-      if @filterExpr?
+      unless e is target
+        varDeclaration.declarations.unshift new JS.VariableDeclarator e, target
+      if @filter?
         # TODO: if block only has a single statement, wrap it instead of continuing
-        block.body.unshift stmt new JS.IfStatement (new JS.UnaryExpression '!', filterExpr), new JS.ContinueStatement
+        block.body.unshift stmt new JS.IfStatement (new JS.UnaryExpression '!', filter), new JS.ContinueStatement
       if keyAssignee?
-        block.body.unshift stmt new JS.AssignmentExpression '=', keyAssignee, i
-      block.body.unshift stmt new JS.AssignmentExpression '=', valAssignee, new JS.MemberExpression yes, e, i
+        block.body.unshift stmt assignment keyAssignee, i
+      block.body.unshift stmt assignment valAssignee, new JS.MemberExpression yes, e, i
       new JS.ForStatement varDeclaration, (new JS.BinaryExpression '<', i, length), (new JS.UpdateExpression '++', yes, i), block
     ]
-    [CS.ForOf, ({keyAssignee, valAssignee, expression, filterExpr, block}) ->
-      block = forceBlock block
-      e = if @isOwn and needsCaching @expression then genSym 'cache' else expr expression
-      if @filterExpr?
+    [CS.ForOf, ({keyAssignee, valAssignee, target, filter, body}) ->
+      block = forceBlock body
+      e = if @isOwn and needsCaching @target then genSym 'cache' else expr target
+      if @filter?
         # TODO: if block only has a single statement, wrap it instead of continuing
-        block.body.unshift stmt new JS.IfStatement (new JS.UnaryExpression '!', filterExpr), new JS.ContinueStatement
+        block.body.unshift stmt new JS.IfStatement (new JS.UnaryExpression '!', filter), new JS.ContinueStatement
       if valAssignee?
-        block.body.unshift stmt new JS.AssignmentExpression '=', valAssignee, new JS.MemberExpression yes, e, keyAssignee
+        block.body.unshift stmt assignment valAssignee, new JS.MemberExpression yes, e, keyAssignee
       if @isOwn
         block.body.unshift stmt new JS.IfStatement (new JS.UnaryExpression '!', helpers.isOwn e, keyAssignee), new JS.ContinueStatement
-      right = if e is expression then e else new JS.AssignmentExpression '=', e, expression
+      right = if e is target then e else new JS.AssignmentExpression '=', e, target
       new JS.ForInStatement keyAssignee, right, block
     ]
-    [CS.While, ({condition, block}) -> new JS.WhileStatement (expr condition), forceBlock block]
-    [CS.Switch, ({expression, cases, elseBlock}) ->
+    [CS.While, ({condition, body}) -> new JS.WhileStatement (expr condition), forceBlock body]
+    [CS.Switch, ({expression, cases, alternate}) ->
       cases = concat cases
-      if elseBlock?
-        cases.push new JS.SwitchCase null, [stmt elseBlock]
-      for c in cases[...-1] when c.consequent.length > 0
+      unless expression?
+        expression = new JS.Literal false
+        for c in cases
+          c.test = new JS.UnaryExpression '!', c.test
+      if alternate?
+        cases.push new JS.SwitchCase null, [stmt alternate]
+      for c in cases[...-1] when c.consequent?.length > 0
         c.consequent.push new JS.BreakStatement
       new JS.SwitchStatement expression, cases
     ]
-    [CS.SwitchCase, ({conditions, block}) ->
+    [CS.SwitchCase, ({conditions, consequent}) ->
       cases = map conditions, (c) ->
         new JS.SwitchCase c, []
-      block = stmt block
-      block = if block.instanceof JS.BlockStatement then block.body else [block]
+      block = stmt consequent
+      block = if block?
+        if block.instanceof JS.BlockStatement then block.body else [block]
+      else []
       cases[cases.length - 1].consequent = block
       cases
+    ]
+    [CS.Try, ({body, catchAssignee, catchBody, finallyBody}) ->
+      finallyBlock = if finallyBody? then forceBlock finallyBody else null
+      handlers = []
+      if catchBody? or catchAssignee?
+        e = genSym 'e'
+        catchBlock = forceBlock catchBody
+        catchBlock.body.unshift stmt assignment catchAssignee, e
+        handlers = [new JS.CatchClause e, catchBlock]
+      new JS.TryStatement (forceBlock body), handlers, finallyBlock
     ]
     [CS.Throw, ({expression}) -> new JS.ThrowStatement expression]
 
     # data structures
-    [CS.ArrayInitialiser, ({members}) -> new JS.ArrayExpression map members, expr]
+    [CS.Range, ({left: left_, right: right_}) ->
+      # enumerate small integral ranges
+      if ((@left.instanceof CS.Int) or  ((@left.instanceof CS.UnaryNegateOp) and  @left.expression.instanceof CS.Int)) and
+      (  (@right.instanceof CS.Int) or ((@right.instanceof CS.UnaryNegateOp) and @right.expression.instanceof CS.Int))
+        rawLeft = if @left.instanceof CS.UnaryNegateOp then -@left.expression.data else @left.data
+        rawRight = if @right.instanceof CS.UnaryNegateOp then -@right.expression.data else @right.data
+        if (Math.abs rawLeft - rawRight) <= 20
+          range = if @isInclusive then [rawLeft..rawRight] else [rawLeft...rawRight]
+          return new JS.ArrayExpression map range, (n) -> if n < 0 then new JS.UnaryExpression '-', new JS.Literal -n else new JS.Literal n
+
+      accum = genSym 'accum'
+      body = [stmt new JS.AssignmentExpression '=', accum, new JS.ArrayExpression []]
+
+      if needsCaching left_
+        left = genSym 'from'
+        body.push stmt new JS.AssignmentExpression '=', left, left_
+      else left = left_
+      if needsCaching right_
+        right = genSym 'to'
+        body.push stmt new JS.AssignmentExpression '=', right, right_
+      else right = right_
+
+      i = genSym 'i'
+      vars = new JS.VariableDeclaration 'var', [new JS.VariableDeclarator i, left]
+
+      conditionTest = new JS.BinaryExpression '<=', left, right
+      conditionConsequent = new JS.BinaryExpression (if @isInclusive then '<=' else '<'), i, right
+      conditionAlternate = new JS.BinaryExpression (if @isInclusive then '>=' else '>'), i, right
+      condition = new JS.ConditionalExpression conditionTest, conditionConsequent, conditionAlternate
+
+      update = new JS.ConditionalExpression conditionTest, (new JS.UpdateExpression '++', yes, i), new JS.UpdateExpression '--', yes, i
+
+      body.push new JS.ForStatement vars, condition, update, stmt new JS.CallExpression (memberAccess accum, 'push'), [i]
+      body.push new JS.ReturnStatement accum
+      new JS.CallExpression (memberAccess (new JS.FunctionExpression null, [], new JS.BlockStatement body), 'apply'), [new JS.ThisExpression, new JS.Identifier 'arguments']
+    ]
+    [CS.ArrayInitialiser, do ->
+      groupMembers = (members) ->
+        if members.length is 0 then []
+        else
+          [ys, zs] = span members, (x) -> not x.spread
+          if ys.length is 0
+            sliced = helpers.slice zs[0].expression
+            [ys, zs] = [sliced, zs[1..]]
+          else ys = new JS.ArrayExpression map ys, expr
+          [ys].concat groupMembers zs
+      ({members, compile}) ->
+        if any members, ((m) -> m.spread)
+          grouped = groupMembers members
+          new JS.CallExpression (memberAccess grouped[0], 'concat'), grouped[1..]
+        else new JS.ArrayExpression map members, expr
+    ]
+    [CS.Spread, ({expression}) -> {spread: yes, expression}]
     [CS.ObjectInitialiser, ({members}) -> new JS.ObjectExpression members]
     [CS.ObjectInitialiserMember, ({key, expression}) -> new JS.Property key, expr expression]
-    [CS.Function, ({parameters, block, ancestry}) ->
-      unless ancestry[0]?.instanceof CS.Constructor
-        block = makeReturn block
-      block = forceBlock block
-      last = block.body[-1..][0]
-      if (last?.instanceof JS.ReturnStatement) and not last.argument?
-        block.body = block.body[...-1]
-      new JS.FunctionExpression null, parameters, block
-    ]
-    [CS.BoundFunction, ({parameters, block, ancestry}) ->
-      unless ancestry[0]?.instanceof CS.Constructor
-        block = makeReturn block
-      block = forceBlock block
-      last = block.body[-1..][0]
-      if (last?.instanceof JS.ReturnStatement) and not last.argument?
-        block.body = block.body[...-1]
-      newThis = genSym 'this'
-      performedRewrite = no
-      rewriteThis = generateMutatingWalker ->
-        if @instanceof JS.ThisExpression
-          performedRewrite = yes
-          newThis
-        else if @instanceof JS.FunctionExpression, JS.FunctionDeclaration then this
-        else rewriteThis this
-      rewriteThis block
-      fn = new JS.FunctionExpression null, parameters, block
-      if performedRewrite
-        new JS.SequenceExpression [
-          new JS.AssignmentExpression '=', newThis, new JS.ThisExpression
-          fn
-        ]
-      else fn
-    ]
+    [CS.DefaultParam, ({param, default: d}) -> {param, default: d}]
+    [CS.Function, CS.BoundFunction, do ->
 
-    [CS.Class, ({nameAssignee, parent, name, ctor, block, compile}) ->
+      handleParam = (param, original, block) -> switch
+        when original.instanceof CS.Rest then param # keep these for special processing later
+        when original.instanceof CS.Identifier then param
+        when original.instanceof CS.MemberAccessOps, CS.ObjectInitialiser, CS.ArrayInitialiser
+          p = genSym 'param'
+          block.body.unshift stmt assignment param, p
+          p
+        when original.instanceof CS.DefaultParam
+          block.body.unshift new JS.IfStatement (new JS.BinaryExpression '==', (new JS.Literal null), param.param), stmt new JS.AssignmentExpression '=', param.param, param.default
+          handleParam.call this, param.param, original.param, block
+        else throw new Error "Unsupported parameter type: #{original.className}"
+
+      ({parameters, body, ancestry}) ->
+        unless ancestry[0]?.instanceof CS.Constructor
+          body = makeReturn body
+        block = forceBlock body
+        last = block.body[-1..][0]
+        if (last?.instanceof JS.ReturnStatement) and not last.argument?
+          block.body = block.body[...-1]
+
+        parameters_ =
+          if parameters.length is 0 then []
+          else
+            pIndex = parameters.length
+            while pIndex--
+              handleParam.call this, parameters[pIndex], @parameters[pIndex], block
+        parameters = parameters_.reverse()
+
+        if parameters.length > 0
+          if parameters[-1..][0].rest
+            numParams = parameters.length
+            paramName = parameters[numParams - 1] = parameters[numParams - 1].expression
+            test = new JS.BinaryExpression '<=', (new JS.Literal numParams), memberAccess (new JS.Identifier 'arguments'), 'length'
+            consequent = helpers.slice (new JS.Identifier 'arguments'), new JS.Literal (numParams - 1)
+            alternate = new JS.ArrayExpression []
+            block.body.unshift stmt new JS.AssignmentExpression '=', paramName, new JS.ConditionalExpression test, consequent, alternate
+          else if any parameters, ((p) -> p.rest)
+            paramName = index = null
+            for p, i in parameters when p.rest
+              paramName = p.expression
+              index = i
+              break
+            parameters.splice index, 1
+            numParams = parameters.length
+            numArgs = genSym 'numArgs'
+            reassignments = new JS.IfStatement (new JS.BinaryExpression '>', (new JS.AssignmentExpression '=', numArgs, memberAccess (new JS.Identifier 'arguments'), 'length'), new JS.Literal numParams), (new JS.BlockStatement [
+              stmt new JS.AssignmentExpression '=', paramName, helpers.slice (new JS.Identifier 'arguments'), (new JS.Literal index), new JS.BinaryExpression '-', numArgs, new JS.Literal numParams - index
+            ]), new JS.BlockStatement [stmt new JS.AssignmentExpression '=', paramName, new JS.ArrayExpression []]
+            for p, i in parameters[index...]
+              reassignments.consequent.body.push stmt new JS.AssignmentExpression '=', p, new JS.MemberExpression yes, (new JS.Identifier 'arguments'), new JS.BinaryExpression '-', numArgs, new JS.Literal numParams - index - i
+            block.body.unshift reassignments
+          if any parameters, ((p) -> p.rest)
+            throw new Error 'Parameter lists may not have more than one rest operator'
+
+        performedRewrite = no
+        if @instanceof CS.BoundFunction
+          newThis = genSym 'this'
+          rewriteThis = generateMutatingWalker ->
+            if @instanceof JS.ThisExpression
+              performedRewrite = yes
+              newThis
+            else if @instanceof JS.FunctionExpression, JS.FunctionDeclaration then this
+            else rewriteThis this
+          rewriteThis block
+
+        fn = new JS.FunctionExpression null, parameters, block
+        if performedRewrite
+          new JS.SequenceExpression [
+            new JS.AssignmentExpression '=', newThis, new JS.ThisExpression
+            fn
+          ]
+        else fn
+    ]
+    [CS.Rest, ({expression}) -> {rest: yes, expression, isExpression: yes, isStatement: yes}]
+
+    # TODO: comment
+    [CS.Class, ({nameAssignee, parent, name, ctor, body, compile}) ->
       args = []
       params = []
       parentRef = genSym 'super'
-      block = forceBlock block
+      block = forceBlock body
 
       unless ctor?
         ctor = new JS.FunctionDeclaration name, [], new JS.BlockStatement []
@@ -363,25 +569,26 @@ class exports.Compiler
       if @ctor? and not @ctor.expression.instanceof CS.Functions
         ctorRef = genSym 'externalCtor'
         ctor.body.body.push makeReturn new JS.CallExpression (memberAccess ctorRef, 'apply'), [new JS.ThisExpression, new JS.Identifier 'arguments']
-        block.body.unshift stmt new JS.AssignmentExpression '=', ctorRef, compile @ctor.expression
-      block.body.unshift ctor
+        block.body.splice ctorIndex, 0, stmt new JS.AssignmentExpression '=', ctorRef, expr compile @ctor.expression
 
-      # if @boundMembers? and @boundMembers.length > 0
-      #   instance = genSym 'instance'
-      #   for memberName in @boundMembers
-      #     member = memberAccess new JS.ThisExpression, memberName
-      #     protoMember = memberAccess (memberAccess name, 'prototype'), memberName
-      #     fn = new JS.FunctionExpression null, [], new JS.BlockStatement [
-      #       stmt new JS.CallExpression (memberAccess protoMember, 'apply'), [instance, new JS.Identifier 'arguments']
-      #     ]
-      #     ctor.body.body.unshift stmt new JS.AssignmentExpression '=', member, fn
-      #   ctor.body.body.unshift stmt new JS.AssignmentExpression '=', instance, new JS.ThisExpression
+      if @boundMembers.length > 0
+        instance = genSym 'instance'
+        for protoAssignOp in @boundMembers
+          memberName = protoAssignOp.assignee.data.toString()
+          ps = (genSym() for _ in protoAssignOp.expression.parameters)
+          member = memberAccess new JS.ThisExpression, memberName
+          protoMember = memberAccess (memberAccess name, 'prototype'), memberName
+          fn = new JS.FunctionExpression null, ps, new JS.BlockStatement [
+            makeReturn new JS.CallExpression (memberAccess protoMember, 'apply'), [instance, new JS.Identifier 'arguments']
+          ]
+          ctor.body.body.unshift stmt new JS.AssignmentExpression '=', member, fn
+        ctor.body.body.unshift stmt new JS.AssignmentExpression '=', instance, new JS.ThisExpression
 
-      # if parent?
-      #   params.push parentRef
-      #   args.push parent
-      #   block.body.unshift stmt helpers.extends name, parentRef
-      # block.body.push new JS.ReturnStatement new JS.ThisExpression
+      if parent?
+        params.push parentRef
+        args.push parent
+        block.body.unshift stmt helpers.extends name, parentRef
+      block.body.push new JS.ReturnStatement new JS.ThisExpression
 
       rewriteThis = generateMutatingWalker ->
         if @instanceof JS.ThisExpression then name
@@ -393,7 +600,7 @@ class exports.Compiler
 
       parentExpr = if parent?.name then new JS.Identifier(parent.name) else memberAccess(new JS.Identifier('Ember'), 'Object')
       iife = new JS.CallExpression memberAccess(parentExpr, 'extend'), mixinArgs
-      if nameAssignee? then new JS.AssignmentExpression '=', nameAssignee, iife else iife
+      if nameAssignee? then assignment nameAssignee, iife else iife
     ]
     [CS.Constructor, ({expression}) ->
       tmpName = genSym 'class'
@@ -404,43 +611,15 @@ class exports.Compiler
     ]
     [CS.ClassProtoAssignOp, ({assignee, expression, compile}) ->
       if @expression.instanceof CS.BoundFunction
-        compile new CS.ClassProtoAssignOp @assignee, new CS.Function @expression.parameters, @expression.block
+        compile new CS.ClassProtoAssignOp @assignee, new CS.Function @expression.parameters, @expression.body
       else
         protoMember = memberAccess (memberAccess new JS.ThisExpression, 'prototype'), @assignee.data
         new JS.AssignmentExpression '=', protoMember, expression
     ]
 
     # more complex operations
-    [CS.AssignOp, ({assignee, expression, ancestry, compile}) -> switch
-      # TODO: DRY?
-      when @assignee.instanceof CS.ArrayInitialiser
-        assignments = []
-        e = @expression
-        valueUsed = usedAsExpression this, ancestry
-        if @assignee.members.length > 1 and (needsCaching e) or valueUsed
-          e = new CS.GenSym 'cache'
-          assignments.push new CS.AssignOp e, @expression
-        for m, i in @assignee.members
-          assignments.push new CS.AssignOp m, new CS.DynamicMemberAccessOp e, new CS.Int i
-        return helpers.undef() unless assignments.length
-        assignSeq = foldl1 assignments, (a, b) -> new CS.SeqOp a, b
-        compile (if valueUsed then new CS.SeqOp assignSeq, e else assignSeq)
-      when @assignee.instanceof CS.ObjectInitialiser
-        assignments = []
-        e = @expression
-        valueUsed = usedAsExpression this, ancestry
-        if @assignee.members.length > 1 and (needsCaching e) or valueUsed
-          e = new CS.GenSym 'cache'
-          assignments.push new CS.AssignOp e, @expression
-        for m, i in @assignee.members
-          assignments.push new CS.AssignOp m.expression, new CS.MemberAccessOp e, m.key.data
-        return helpers.undef() unless assignments.length
-        assignSeq = foldl1 assignments, (a, b) -> new CS.SeqOp a, b
-        compile (if valueUsed then new CS.SeqOp assignSeq, e else assignSeq)
-      when @assignee.instanceof CS.Identifier, CS.GenSym, CS.MemberAccessOps
-        new JS.AssignmentExpression '=', assignee, expr expression
-      else
-        throw new Error "compile: AssignOp: unassignable assignee: #{@assignee.className}"
+    [CS.AssignOp, ({assignee, expression, ancestry}) ->
+      assignment assignee, expression, usedAsExpression this, ancestry
     ]
     [CS.CompoundAssignOp, ({assignee, expression}) ->
       op = switch @op
@@ -457,10 +636,13 @@ class exports.Compiler
         when CS.MultiplyOp           then '*'
         when CS.DivideOp             then '/'
         when CS.RemOp                then '%'
+        when CS.ExpOp                then '**'
         else throw new Error 'Unrecognised compound assignment operator'
+      # TODO: if assignee is an identifier, fail unless assignee is in scope
       if op in ['&&', '||']
-        # TODO: if assignee is an identifier, fail unless assignee is in scope
-        new JS.BinaryExpression op, assignee, new JS.AssignmentExpression '=', assignee, expression
+        new JS.BinaryExpression op, assignee, new JS.AssignmentExpression '=', assignee, expr expression
+      else if op is '**'
+        new JS.AssignmentExpression '=', assignee, helpers.exp assignee, expr expression
       else new JS.AssignmentExpression "#{op}=", assignee, expression
     ]
     [CS.ExistsAssignOp, ({assignee, expression, inScope}) ->
@@ -469,8 +651,43 @@ class exports.Compiler
       condition = new JS.BinaryExpression '!=', (new JS.Literal null), assignee
       new JS.ConditionalExpression condition, assignee, new JS.AssignmentExpression '=', assignee, expr expression
     ]
-    [CS.FunctionApplication, ({function: fn, arguments: args}) -> new JS.CallExpression (expr fn), map args, expr]
-    [CS.NewOp, ({ctor, arguments: args}) -> new JS.NewExpression ctor, args]
+    [CS.ChainedComparisonOp, ({expression, compile}) ->
+      return expression unless @expression.left.instanceof CS.ComparisonOps
+      left = expression.left.right
+      lhs = compile new CS.ChainedComparisonOp @expression.left
+      if needsCaching @expression.left.right
+        left = genSym 'cache'
+        # WARN: mutation
+        if @expression.left.left.instanceof CS.ComparisonOps
+          lhs.right.right = new JS.AssignmentExpression '=', left, lhs.right.right
+        else lhs.right = new JS.AssignmentExpression '=', left, lhs.right
+      new JS.BinaryExpression '&&', lhs, new JS.BinaryExpression expression.operator, left, expression.right
+    ]
+    [CS.FunctionApplication, ({function: fn, arguments: args, compile}) ->
+      if any args, ((m) -> m.spread)
+        lhs = @function
+        context = new CS.Null
+        if needsCaching @function
+          context = new CS.GenSym 'cache'
+          lhs = if @function.instanceof CS.StaticMemberAccessOps
+            new @function.constructor (new CS.AssignOp context, lhs.expression), @function.memberName
+          else if @function.instanceof CS.DynamicMemberAccessOps
+            new @function.constructor (new CS.AssignOp context, lhs.expression), @function.indexingExpr
+          else new CS.AssignOp context, lhs
+        else if lhs.instanceof CS.MemberAccessOps
+          context = lhs.expression
+        if @function.instanceof CS.ProtoMemberAccessOp, CS.DynamicProtoMemberAccessOp
+          context = new CS.MemberAccessOp context, 'prototype'
+        else if @function.instanceof CS.SoakedProtoMemberAccessOp, CS.SoakedDynamicProtoMemberAccessOp
+          context = new CS.SoakedMemberAccessOp context, 'prototype'
+        compile new CS.FunctionApplication (new CS.MemberAccessOp lhs, 'apply'), [context, new CS.ArrayInitialiser @arguments]
+      else new JS.CallExpression (expr fn), map args, expr
+    ]
+    [CS.NewOp, ({ctor, arguments: args, compile}) ->
+      if any args, ((m) -> m.spread)
+        helpers.construct ctor, compile new CS.ArrayInitialiser @arguments
+      else new JS.NewExpression ctor, map args, expr
+    ]
     [CS.HeregExp, ({expression}) ->
       args = [expression]
       if flags = (flag for flag in ['g', 'i', 'm', 'y'] when @flags[flag]).join ''
@@ -484,7 +701,7 @@ class exports.Compiler
       new JS.Literal re
     ]
     [CS.ConcatOp, ({left, right, ancestry}) ->
-      plusOp = new JS.BinaryExpression '+', left, right
+      plusOp = new JS.BinaryExpression '+', (expr left), expr right
       unless ancestry[0].instanceof CS.ConcatOp
         leftmost = plusOp
         leftmost = leftmost.left while leftmost.left?.left
@@ -496,12 +713,19 @@ class exports.Compiler
     [CS.ProtoMemberAccessOp, ({expression}) -> memberAccess (memberAccess expression, 'prototype'), @memberName]
     [CS.DynamicMemberAccessOp, ({expression, indexingExpr}) -> dynamicMemberAccess expression, indexingExpr]
     [CS.DynamicProtoMemberAccessOp, ({expression, indexingExpr}) -> dynamicMemberAccess (memberAccess expression, 'prototype'), indexingExpr]
-    [CS.SoakedMemberAccessOp, ({expression, inScope}) ->
+    [CS.SoakedMemberAccessOp, CS.SoakedDynamicMemberAccessOp, CS.SoakedProtoMemberAccessOp, CS.SoakedDynamicProtoMemberAccessOp, ({expression, indexingExpr, inScope}) ->
       e = if needsCaching @expression then genSym 'cache' else expression
       condition = new JS.BinaryExpression '!=', (new JS.Literal null), e
       if (e.instanceof JS.Identifier) and e.name not in inScope
         condition = new JS.BinaryExpression '&&', (new JS.BinaryExpression '!==', (new JS.Literal 'undefined'), new JS.UnaryExpression 'typeof', e), condition
-      node = new JS.ConditionalExpression condition, (memberAccess e, @memberName), helpers.undef()
+      target =
+        if @instanceof CS.SoakedProtoMemberAccessOp, CS.SoakedDynamicProtoMemberAccessOp
+          memberAccess e, 'prototype'
+        else e
+      index =
+        if @instanceof CS.DynamicMemberAccessOps then new JS.MemberExpression yes, target, indexingExpr
+        else memberAccess target, @memberName
+      node = new JS.ConditionalExpression condition, index, helpers.undef()
       if e is expression then node
       else new JS.SequenceExpression [(new JS.AssignmentExpression '=', e, expression), node]
     ]
@@ -534,9 +758,11 @@ class exports.Compiler
     [CS.DoOp, ({expression, compile}) ->
       args = []
       if @expression.instanceof CS.Function
-        args = for param in @expression.parameters
+        args = for param, index in @expression.parameters
           switch
-            when param.instanceof CS.AssignOp then param.expression
+            when param.instanceof CS.DefaultParam
+              @expression.parameters[index] = param.param
+              param.default
             when param.instanceof CS.Identifier, CS.MemberAccessOp then param
             else helpers.undef()
       compile new CS.FunctionApplication @expression, args
@@ -546,6 +772,9 @@ class exports.Compiler
     [CS.Continue, -> new JS.ContinueStatement]
 
     # straightforward operators
+    [CS.ExpOp, ({left, right}) ->
+      helpers.exp (expr left), expr right
+    ]
     [CS.DivideOp, ({left, right}) -> new JS.BinaryExpression '/', (expr left), expr right]
     [CS.MultiplyOp, ({left, right}) -> new JS.BinaryExpression '*', (expr left), expr right]
     [CS.RemOp, ({left, right}) -> new JS.BinaryExpression '%', (expr left), expr right]
@@ -554,11 +783,21 @@ class exports.Compiler
 
     [CS.OfOp, ({left, right}) -> new JS.BinaryExpression 'in', (expr left), expr right]
     [CS.InOp, ({left, right}) ->
-      if not (needsCaching left) and (@right.instanceof CS.ArrayInitialiser) and @right.members.length < 5 # TODO: and no splats
-        if right.elements.length is 0 then new JS.Literal false
-        else
-          comparisons = map right.elements, (e) -> new JS.BinaryExpression '===', left, e
-          foldl1 comparisons, (l, r) -> new JS.BinaryExpression '||', l, r
+      if (right.instanceof JS.ArrayExpression) and right.elements.length < 5
+        switch right.elements.length
+          when 0
+            if needsCaching @left
+              # TODO: only necessary if value is used, which is almost always
+              new JS.SequenceExpression [left, new JS.Literal false]
+            else new JS.Literal false
+          when 1
+            new JS.BinaryExpression '===', left, right.elements[0]
+          else
+            if needsCaching @left
+              helpers.in (expr left), expr right
+            else
+              comparisons = map right.elements, (e) -> new JS.BinaryExpression '===', left, e
+              foldl1 comparisons, (l, r) -> new JS.BinaryExpression '||', l, r
       else
         helpers.in (expr left), expr right
     ]
@@ -609,23 +848,24 @@ class exports.Compiler
     [CS.Null, -> new JS.Literal null]
     [CS.Undefined, -> helpers.undef()]
     [CS.This, -> new JS.ThisExpression]
+    [CS.JavaScript, -> new JS.CallExpression (new JS.Identifier 'eval'), [new JS.Literal @data]]
   ]
 
   constructor: ->
     @rules = {}
     for [ctors..., handler] in defaultRules
       for ctor in ctors
-        @addRule ctor::className, handler
+        @addRule ctor, handler
 
   addRule: (ctor, handler) ->
-    @rules[ctor] = handler
+    @rules[ctor::className] = handler
     this
 
   # TODO: comment
   compile: do ->
     walk = (fn, inScope, ancestry, options) ->
 
-      if (ancestry[0]?.instanceof CS.Function, CS.BoundFunction) and this is ancestry[0].block
+      if (ancestry[0]?.instanceof CS.Function, CS.BoundFunction) and this is ancestry[0].body
         inScope = union inScope, concatMap ancestry[0].parameters, beingDeclared
 
       ancestry.unshift this
@@ -651,7 +891,9 @@ class exports.Compiler
         walk.call node.g(), fn, inScope, ancestry
 
       do ancestry.shift
-      fn.call this, children
+      jsNode = fn.call this, children
+      jsNode[p] = @[p] for p in ['raw', 'line', 'column', 'offset']
+      jsNode
 
     generateSymbols = do ->
 
@@ -680,6 +922,7 @@ class exports.Compiler
 
       # TODO: comments
       generateMutatingWalker (state) ->
+        state.declaredSymbols = union state.declaredSymbols, map (declarationsNeeded this), (id) -> id.name
         {declaredSymbols, usedSymbols, nsCounters} = state
         newNode = if @instanceof JS.GenSym
           newNode = new JS.Identifier generateName this, state
@@ -687,17 +930,20 @@ class exports.Compiler
           newNode
         else if @instanceof JS.FunctionExpression, JS.FunctionDeclaration
           params = concatMap @params, collectIdentifiers
-          state.usedSymbols = nub [usedSymbols..., params...]
-          state.nsCounters = {}
-          state.nsCounters[k] = v for own k, v of nsCounters
-          newNode = generateSymbols this, state
+          nsCounters_ = {}
+          nsCounters_[k] = v for own k, v of nsCounters
+          newNode = generateSymbols this, {
+            declaredSymbols
+            usedSymbols: nub [usedSymbols..., params...]
+            nsCounters: nsCounters_
+          }
           newNode.body = forceBlock newNode.body
-          declNames = nub difference (map (concatMap @body.body, declarationsNeededFor), (id) -> id.name), declaredSymbols
+          declNames = nub difference (map (concatMap @body.body, declarationsNeededRecursive), (id) -> id.name), union declaredSymbols, params
           decls = map declNames, (name) -> new JS.Identifier name
           newNode.body.body.unshift makeVarDeclaration decls if decls.length > 0
           newNode
         else generateSymbols this, state
-        state.declaredSymbols = union declaredSymbols, map (declarationsNeededFor newNode), (id) -> id.name
+        state.declaredSymbols = union declaredSymbols, map (declarationsNeededRecursive newNode), (id) -> id.name
         newNode
 
     defaultRule = ->
@@ -709,5 +955,5 @@ class exports.Compiler
       jsAST = walk.call ast, (-> (rules[@className] ? defaultRule).apply this, arguments), [], [], options
       generateSymbols jsAST,
         declaredSymbols: []
-        usedSymbols: jsReserved[..]
+        usedSymbols: union jsReserved[..], collectIdentifiers jsAST
         nsCounters: {}
