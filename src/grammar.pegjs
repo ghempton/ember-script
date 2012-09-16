@@ -157,6 +157,7 @@ expressionworthy
   / forOf
   / forIn
   / class
+  / mixin
   / switch
   / implicitObjectLiteral
 
@@ -550,9 +551,22 @@ try
       return {block: body.block, raw: ws + 'finally' + body.raw};
     }
 
+mixin
+  = MIXIN name:(_ Assignable)? mixins:(_ WITH _ extendee)* body:(_ mixinBody)? {
+    raw = 'mixin'; // TODO
+    name = name ? name[1] : null;
+    mixins = mixins.map(function(mixin) { return mixin[3].data; });
+    body = body ? body[1] : null;
+    return new CS.Mixin(name, body, mixins).r(raw).p(line, column, offset);
+  }
+mixinBody
+  = body:(objectLiteral / implicitObjectLiteral)
+  / t:TERMINDENT body:(objectLiteral / implicitObjectLiteral) d:DEDENT {
+    return body;
+  }
 
 class
-  = CLASS name:(_ Assignable)? parent:(_ EXTENDS _ extendee)? mixins:(_ WITH _ extendee)* body:classBody {
+  = CLASS name:(_ Assignable)? parent:(_ EXTENDS _ extendee)? mixins:(_ WITH _ extendee)* body:(_ mixinBody)? {
       var ctor = null;
       var raw = 'class' + (name ? name[0] + name[1].raw : '') +
         (parent ? parent[0] + 'parent' + parent[2] + parent[3].raw : '') +
@@ -560,17 +574,18 @@ class
       name = name ? name[1] : null;
       parent = parent ? parent[3] : null;
       var boundMembers = [];
-      var stmts = body.block != null ? body.block.statements || [body.block] : [];
-      for(var i = 0, l = stmts.length; i < l; ++i) {
-        var m = stmts[i];
-        if(m.instanceof(CS.Constructor)) {
-          ctor = m;
-        } else if(m.instanceof(CS.ClassProtoAssignOp) && m.expression.instanceof(CS.BoundFunction)) {
-          boundMembers.push(m);
-        }
-      }
+      // var stmts = body.block != null ? body.block.statements || [body.block] : [];
+      // for(var i = 0, l = stmts.length; i < l; ++i) {
+      //   var m = stmts[i];
+      //   if(m.instanceof(CS.Constructor)) {
+      //     ctor = m;
+      //   } else if(m.instanceof(CS.ClassProtoAssignOp) && m.expression.instanceof(CS.BoundFunction)) {
+      //     boundMembers.push(m);
+      //   }
+      // }
+      body = body ? body[1] : null;
       mixins = mixins.map(function(mixin) { return mixin[3].data; });
-      return new CS.Class(name, parent, ctor, body.block, boundMembers, mixins).r(raw).p(line, column, offset);
+      return new CS.Class(name, parent, ctor, body, boundMembers, mixins).r(raw).p(line, column, offset);
     }
   extendee
     = expressionworthy
@@ -593,38 +608,23 @@ class
   classBlock
     = s:classStatement ss:(_ TERMINATOR _ classStatement)* term:TERMINATOR? {
         var raw = s.raw + ss.map(function(s){ return s[0] + s[1] + s[2] + s[3].raw; }).join('') + term;
-        return new CS.Block([s].concat(ss.map(function(s){ return s[3]; }))).r(raw).p(line, column, offset);
+        return new CS.ObjectInitialiser([s].concat(ss.map(function(s){ return s[3]; }))).r(raw).p(line, column);
       }
   classStatement
     = classProtoAssignment
-    / staticAssignment
-    / constructor
-    / expression
-  constructor
-    = key:ObjectInitialiserKeys ws0:_ ":" ws1:_ e:
-      ( t:TERMINDENT e:expression d:DEDENT { return {raw: t + e.raw + d, expr: e}; }
-      / t:TERMINATOR? ws1:_ e:expression { return {raw: t + ws1 + e.raw, expr: e}; }
-      ) {
-        if(!key.instanceof(CS.String, CS.Identifier) || key.data !== 'constructor') return null;
-        var raw = key.raw + ws0 + ":" + ws1 + e.raw;
-        e = e.expr;
-        if(e.instanceof(CS.BoundFunction))
-          e = new CS.Function(e.parameters, e.block).r(e.raw).p(e.line, e.column);
-        return new CS.Constructor(e).r(raw).p(line, column, offset);
-      }
-  staticAssignment
-    = key:contextVar ws0:_ ":" ws1:_ e:expression {
-        var raw = key.raw + ws0 + ":" + ws1 + e.raw;
-        return new CS.AssignOp(key, e).r(raw).p(line, column, offset);
-      }
+//    / constructor
+//  constructor
+//    = key:ObjectInitialiserKeys ws0:_ ":" ws1:_ e:expression {
+//        if(!key.instanceof(CS.String, CS.Identifier) || key.data !== 'init') return null;
+//        var raw = key.raw + ws0 + ":" + ws1 + e.raw;
+//        if(e.instanceof(CS.BoundFunction))
+//          e = new CS.Function(e.parameters, e.block).r(e.raw).p(e.line, e.column);
+//        return new CS.Constructor(e).r(raw).p(line, column);
+//      }
   classProtoAssignment
-    = key:ObjectInitialiserKeys ws0:_ ":" ws1:_ e:
-      ( t:TERMINDENT e:expression d:DEDENT { return {raw: t + e.raw + d, expr: e}; }
-      / t:TERMINATOR? ws1:_ e:expression { return {raw: t + ws1 + e.raw, expr: e}; }
-      ) {
-        if(key.data === 'constructor') return null;
+    = key:ObjectInitialiserKeys ws0:_ ":" ws1:_ e:expression {
         var raw = key.raw + ws0 + ":" + ws1 + e.raw;
-        return new CS.ClassProtoAssignOp(key, e.expr).r(raw).p(line, column, offset);
+        return new CS.ObjectInitialiser(key, e).r(raw).p(line, column);
       }
 
 
@@ -1055,6 +1055,7 @@ INSTANCEOF = w:"instanceof" !identifierPart { return w; }
 IS = w:"is" !identifierPart { return w; }
 ISNT = w:"isnt" !identifierPart { return w; }
 LOOP = w:"loop" !identifierPart { return w; }
+MIXIN = w:"mixin" !identifierPart { return w;}
 NEW = w:"new" !identifierPart { return w; }
 NO = w:"no" !identifierPart { return w; }
 NOT = w:"not" !identifierPart { return w; }
@@ -1093,7 +1094,7 @@ JSKeywords
 
 CSKeywords
   = ("undefined" / "then" / "unless" / "until" / "loop" / "off" / "by" / "when" /
-  "and" / "or" / "isnt" / "is" / "not" / "yes" / "no" / "on" / "of") !identifierPart
+  "and" / "or" / "isnt" / "is" / "not" / "yes" / "no" / "on" / "of" / "mixin") !identifierPart
 
 reserved
   = SharedKeywords

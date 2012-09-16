@@ -243,7 +243,9 @@ suite 'Function Invocation', ->
     ok (func --val) is 5
 
   test "jashkenas/coffee-script#855: execution context for `func arr...` should be `null`", ->
-    contextTest = -> eq @, if window? then window else global
+    # XXX: revist
+    #contextTest = -> eq @, if window? then window else global
+    contextTest = -> eq @, global
     array = []
     contextTest array
     contextTest.apply null, array

@@ -555,51 +555,61 @@ class exports.Compiler
     ]
     [CS.Rest, ({expression}) -> {rest: yes, expression, isExpression: yes, isStatement: yes}]
 
+    [CS.Mixin, ({nameAssignee, name, body, compile}) ->
+      createArgs = @mixins.map (mixin) -> new JS.Identifier(mixin)
+      createArgs.push(body) if body
+
+      mixinExpr = memberAccess(new JS.Identifier('Ember'), 'Mixin')
+      iife = new JS.CallExpression memberAccess(mixinExpr, 'create'), createArgs
+      if nameAssignee? then assignment nameAssignee, iife else iife
+    ]
     # TODO: comment
     [CS.Class, ({nameAssignee, parent, name, ctor, body, compile}) ->
       args = []
       params = []
       parentRef = genSym 'super'
-      block = forceBlock body
+      # block = forceBlock body
 
-      unless ctor?
-        ctor = new JS.FunctionDeclaration name, [], new JS.BlockStatement []
-      ctor.id = name
-      # handle external constructors
-      if @ctor? and not @ctor.expression.instanceof CS.Functions
-        ctorRef = genSym 'externalCtor'
-        ctor.body.body.push makeReturn new JS.CallExpression (memberAccess ctorRef, 'apply'), [new JS.ThisExpression, new JS.Identifier 'arguments']
-        block.body.splice ctorIndex, 0, stmt new JS.AssignmentExpression '=', ctorRef, expr compile @ctor.expression
+      # unless ctor?
+      #   ctor = new JS.FunctionDeclaration name, [], new JS.BlockStatement []
+      # ctor.id = name
+      # # handle external constructors
+      # if @ctor? and not @ctor.expression.instanceof CS.Functions
+      #   ctorRef = genSym 'externalCtor'
+      #   ctor.body.body.push makeReturn new JS.CallExpression (memberAccess ctorRef, 'apply'), [new JS.ThisExpression, new JS.Identifier 'arguments']
+      #   block.body.splice ctorIndex, 0, stmt new JS.AssignmentExpression '=', ctorRef, expr compile @ctor.expression
 
-      if @boundMembers.length > 0
-        instance = genSym 'instance'
-        for protoAssignOp in @boundMembers
-          memberName = protoAssignOp.assignee.data.toString()
-          ps = (genSym() for _ in protoAssignOp.expression.parameters)
-          member = memberAccess new JS.ThisExpression, memberName
-          protoMember = memberAccess (memberAccess name, 'prototype'), memberName
-          fn = new JS.FunctionExpression null, ps, new JS.BlockStatement [
-            makeReturn new JS.CallExpression (memberAccess protoMember, 'apply'), [instance, new JS.Identifier 'arguments']
-          ]
-          ctor.body.body.unshift stmt new JS.AssignmentExpression '=', member, fn
-        ctor.body.body.unshift stmt new JS.AssignmentExpression '=', instance, new JS.ThisExpression
+      # if @boundMembers.length > 0
+      #   instance = genSym 'instance'
+      #   for protoAssignOp in @boundMembers
+      #     memberName = protoAssignOp.assignee.data.toString()
+      #     ps = (genSym() for _ in protoAssignOp.expression.parameters)
+      #     member = memberAccess new JS.ThisExpression, memberName
+      #     protoMember = memberAccess (memberAccess name, 'prototype'), memberName
+      #     fn = new JS.FunctionExpression null, ps, new JS.BlockStatement [
+      #       makeReturn new JS.CallExpression (memberAccess protoMember, 'apply'), [instance, new JS.Identifier 'arguments']
+      #     ]
+      #     ctor.body.body.unshift stmt new JS.AssignmentExpression '=', member, fn
+      #   ctor.body.body.unshift stmt new JS.AssignmentExpression '=', instance, new JS.ThisExpression
 
-      if parent?
-        params.push parentRef
-        args.push parent
-        block.body.unshift stmt helpers.extends name, parentRef
-      block.body.push new JS.ReturnStatement new JS.ThisExpression
+      # if parent?
+      #   params.push parentRef
+      #   args.push parent
+      #   block.body.unshift stmt helpers.extends name, parentRef
+      # block.body.push new JS.ReturnStatement new JS.ThisExpression
 
-      rewriteThis = generateMutatingWalker ->
-        if @instanceof JS.ThisExpression then name
-        else if @instanceof JS.FunctionExpression, JS.FunctionDeclaration then this
-        else rewriteThis this
-      rewriteThis block
+      # rewriteThis = generateMutatingWalker ->
+      #   if @instanceof JS.ThisExpression then name
+      #   else if @instanceof JS.FunctionExpression, JS.FunctionDeclaration then this
+      #   else rewriteThis this
+      # rewriteThis block
 
-      mixinArgs = @mixins.map (mixin) -> new JS.Identifier(mixin)
+      extendArgs = @mixins.map (mixin) -> new JS.Identifier(mixin)
+
+      extendArgs.push(body) if body
 
       parentExpr = if parent?.name then new JS.Identifier(parent.name) else memberAccess(new JS.Identifier('Ember'), 'Object')
-      iife = new JS.CallExpression memberAccess(parentExpr, 'extend'), mixinArgs
+      iife = new JS.CallExpression memberAccess(parentExpr, 'extend'), extendArgs
       if nameAssignee? then assignment nameAssignee, iife else iife
     ]
     [CS.Constructor, ({expression}) ->
@@ -614,7 +624,7 @@ class exports.Compiler
         compile new CS.ClassProtoAssignOp @assignee, new CS.Function @expression.parameters, @expression.body
       else
         protoMember = memberAccess (memberAccess new JS.ThisExpression, 'prototype'), @assignee.data
-        new JS.AssignmentExpression '=', protoMember, expression
+        new JS.Property protoMember, expression
     ]
 
     # more complex operations

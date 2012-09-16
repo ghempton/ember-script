@@ -71,7 +71,7 @@ usedAsExpression_ = (ancestors) ->
   grandparent = ancestors[1]
   switch
     when !parent? then yes
-    when parent.instanceof CS.Program, CS.Class then no
+    when parent.instanceof CS.Program, CS.Mixin, CS.Class then no
     when parent.instanceof CS.SeqOp
       this is parent.right and
       usedAsExpression parent, ancestors[1..]
@@ -93,6 +93,11 @@ usedAsExpression_ = (ancestors) ->
 envEnrichments_ = (inScope = []) ->
   possibilities = switch
     when @instanceof CS.AssignOp then nub beingDeclared @assignee
+    when @instanceof CS.Mixin
+      nub concat [
+        beingDeclared @nameAssignee
+        if name? then [name] else []
+      ]
     when @instanceof CS.Class
       nub concat [
         beingDeclared @nameAssignee

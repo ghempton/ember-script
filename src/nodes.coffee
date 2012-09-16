@@ -152,7 +152,8 @@ createNodes
     ArrayInitialiser: [['members']] # :: [ArrayInitialiserMembers] -> ArrayInitialiser
     ObjectInitialiser: [['members']] # :: [ObjectInitialiserMember] -> ObjectInitialiser
     ObjectInitialiserMember: [['key', 'expression']] # :: ObjectInitialiserKeys -> Exprs -> ObjectInitialiserMember
-    Class: [['nameAssignee', 'parent', 'ctor', 'body', 'boundMembers', 'mixins']] # :: Maybe Assignable -> Maybe Exprs -> Maybe Exprs -> Maybe Exprs -> [ClassProtoAssignOp] -> Class
+    Mixin: [['nameAssignee', 'body', 'mixins']] # :: Maybe Assignable -> Maybe Exprs -> [Mixin] -> Mixin
+    Class: [['nameAssignee', 'parent', 'ctor', 'body', 'boundMembers', 'mixins']] # :: Maybe Assignable -> Maybe Exprs -> Maybe Exprs -> Maybe Exprs -> [ClassProtoAssignOp] -> [Mixin] -> Class
     Constructor: [['expression']] # :: Exprs -> Constructor
     Functions: [
       ['parameters', 'body']
@@ -193,7 +194,7 @@ createNodes
 {
   Nodes, Primitives, CompoundAssignOp, StaticMemberAccessOps, Range,
   ArrayInitialiser, ObjectInitialiser, NegatedConditional, Conditional,
-  Identifier, ForOf, Functions, While, Class, Block, NewOp, Bool,
+  Identifier, ForOf, Functions, While, Mixin, Class, Block, NewOp, Bool,
   FunctionApplications, RegExps, RegExp, HeregExp, Super, Slice, Switch,
   Identifiers, SwitchCase, GenSym
 } = exports
@@ -254,6 +255,7 @@ handlePrimitives = (ctor, primitives) ->
       json[primitive] = @[primitive]
     json
 
+handlePrimitives Mixin, ['mixins']
 handlePrimitives Class, ['boundMembers', 'mixins']
 handlePrimitives CompoundAssignOp, ['op']
 handlePrimitives ForOf, ['isOwn']
@@ -297,6 +299,18 @@ Class::initialise = ->
         new Identifier @nameAssignee.memberName
       else @name
 Class::childNodes.push 'name'
+
+Mixin::initialise = ->
+  @name = new GenSym 'mixin'
+  if @nameAssignee?
+    # TODO: factor this out, as it's useful elsewhere: short object literal members, NFEs from assignee, etc.
+    @name = switch
+      when @nameAssignee.instanceof Identifier
+        new Identifier @nameAssignee.data
+      when @nameAssignee.instanceof StaticMemberAccessOps
+        new Identifier @nameAssignee.memberName
+      else @name
+Mixin::childNodes.push 'name'
 
 ObjectInitialiser::keys = -> map @members, (m) -> m.key
 ObjectInitialiser::vals = -> map @members, (m) -> m.expression

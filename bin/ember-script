@@ -1,0 +1,3 @@
+#!/usr/bin/env node
+require(require('path').join(__dirname, '..', 'lib', 'ember', 'ember-runtime'));
+require(require('path').join(__dirname, '..', 'lib', 'coffee-script', 'command'));

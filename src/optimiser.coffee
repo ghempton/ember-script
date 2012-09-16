@@ -20,7 +20,7 @@ makeDispatcher = (defaultValue, handlers, defaultHandler = (->)) ->
 isTruthy =
   makeDispatcher no, [
     [[
-      CS.ArrayInitialiser, CS.Class, CS.DeleteOp, CS.ForIn, CS.ForOf
+      CS.ArrayInitialiser, CS.Mixin, CS.Class, CS.DeleteOp, CS.ForIn, CS.ForOf
       CS.Function, CS.BoundFunction, CS.HeregExp, CS.ObjectInitialiser, CS.Range
       CS.RegExp, CS.Slice, CS.TypeofOp, CS.While
     ], -> yes]
@@ -87,6 +87,9 @@ mayHaveSideEffects =
       CS.PreDecrementOp, CS.PreIncrementOp, CS.PostDecrementOp, CS.PostIncrementOp
       CS.ClassProtoAssignOp, CS.Constructor
     ], -> yes]
+    [[CS.Mixin], (inScope) ->
+      @nameAssignee? and (@name or (beingDeclared @nameAssignee).length > 0)
+    ]
     [[CS.Class], (inScope) ->
       (mayHaveSideEffects @parent, inScope) or
       @nameAssignee? and (@name or (beingDeclared @nameAssignee).length > 0)
@@ -358,7 +361,6 @@ class exports.Optimiser
         throw new Error 'Optimiser rules must produce a node. `null` is not a node.'
       return this if this in ancestry
       ancestry.unshift this
-      console.log(@childNodes) if @childNodes.length > 2
       for childName in @childNodes when @[childName]?
         @[childName] =
           if childName in @listMembers

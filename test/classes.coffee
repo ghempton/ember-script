@@ -19,11 +19,11 @@ suite 'Classes', ->
       ok andrew instanceof Person
 
     test 'classes can be defined with mixins', ->
-      DesignerMixin = Ember.Mixin.create()
+      mixin DesignerMixin
 
       class Person
       class Andrew extends Person with DesignerMixin
 
-      andrew = new Andrew()
+      andrew = new Andrew
 
       ok DesignerMixin.detect(andrew)
