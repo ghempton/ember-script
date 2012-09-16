@@ -1,2 +1,2 @@
-mixin Developer
+class Developer
   test: 'wtf'

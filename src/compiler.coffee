@@ -166,6 +166,9 @@ dynamicMemberAccess = (e, index) ->
   then memberAccess e, index.value
   else new JS.MemberExpression yes, e, index
 
+emberSet = (assignee, property, expression) ->
+  new JS.CallExpression memberAccess(new JS.Identifier('Ember'), 'set'), [assignee, property, expression]
+
 assignment = (assignee, expression, valueUsed = no) ->
   assignments = []
   switch
@@ -223,8 +226,11 @@ assignment = (assignee, expression, valueUsed = no) ->
         propName = if m.key.instanceof JS.Identifier then new JS.Literal m.key.name else m.key
         assignments.push assignment m.value, (dynamicMemberAccess e, propName), valueUsed
 
-    when assignee.instanceof JS.Identifier, JS.GenSym, JS.MemberExpression
+    when assignee.instanceof JS.Identifier, JS.GenSym
       assignments.push new JS.AssignmentExpression '=', assignee, expr expression
+    when assignee.instanceof JS.MemberExpression
+      property = if assignee.computed then assignee.property else new JS.Literal(assignee.property.name)
+      assignments.push emberSet assignee.object, property, expr expression
     else
       throw new Error "compile: assignment: unassignable assignee: #{assignee.type}"
   switch assignments.length
