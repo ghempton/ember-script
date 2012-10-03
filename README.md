@@ -2,6 +2,10 @@
 
 Ember Script is coffee-derived inspired language which takes advantage of the [Ember.js](http://emberjs.com) runtime. Ember constructs such as Inheritance, Mixins, Bindings, Observers, etc. are all first-class citizens within Ember Script.
 
+## Is this ready to use?
+
+No, it is still being developed, but stay tuned :).
+
 ## Examples
 
 ### Object Model
