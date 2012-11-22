@@ -61,7 +61,7 @@ class Person
 
   lastName: ~> @name.split(' ')[1]
 end
-```
+```xs
 
 Compiles to:
 
@@ -176,7 +176,3 @@ set(get(this, 'person'), 'firstName', "Andrew");
 person.firstName
 person.firstName = "Manuel"
 ```
-
-
-
-

@@ -2,42 +2,55 @@ default: all
 
 SRC = $(shell find src -name "*.coffee" -type f | sort)
 LIB = $(SRC:src/%.coffee=lib/coffee-script/%.js) lib/coffee-script/parser.js
+BOOTSTRAPS = $(SRC:src/%.coffee=lib/coffee-script/bootstrap/%.js) lib/coffee-script/bootstrap/parser.js
 LIBMIN = $(LIB:lib/coffee-script/%.js=lib/coffee-script/%.min.js)
 TESTS = $(shell find test -name "*.coffee" -type f | sort)
 ROOT = $(shell pwd)
 
-# TODO: use `node_modules/.bin/<binary>`
-COFFEE = node_modules/coffee-script/bin/coffee
-PEGJS = node_modules/pegjs/bin/pegjs --track-line-and-column --cache
-MOCHA = node_modules/mocha/bin/mocha --compilers coffee:. -u tdd
-MINIFIER = node_modules/uglify-js/bin/uglifyjs --no-copyright --mangle-toplevel --reserved-names require,module,exports,global,window
+EMBER_SCRIPT = ./bin/ember-script --js --bare
+COFFEE = node_modules/.bin/coffee --js --bare
+PEGJS = node_modules/.bin/pegjs --track-line-and-column --cache --export-var 'module.exports'
+MOCHA = node_modules/.bin/mocha --compilers coffee:. -u tdd
+BROWSERIFY = node_modules/.bin/browserify
+MINIFIER = node_modules/.bin/uglifyjs --no-copyright --mangle-toplevel --reserved-names require,module,exports,global,window,CoffeeScript
 
 all: $(LIB)
 build: all
 parser: lib/coffee-script/parser.js
+browserify: CoffeeScriptRedux.js
 minify: $(LIBMIN)
-deps:
-	git submodule update --init
-	cd $(ROOT)/node_modules/mocha && npm install
-	cd $(ROOT)/node_modules/pegjs && make build
-	cd $(ROOT)
-# TODO: build-browser
 # TODO: test-browser
 # TODO: doc
 # TODO: bench
 
-lib/coffee-script:
+
+lib:
+	mkdir lib/
+lib/coffee-script: lib
 	mkdir -p lib/coffee-script/
+lib/coffee-script/bootstrap: lib/coffee-script
+	mkdir -p lib/coffee-script/bootstrap
 
-lib/coffee-script/parser.js: src/grammar.pegjs lib/coffee-script
-	printf %s "module.exports = " > "$@"
-	$(PEGJS) < "$<" >> "$@"
 
-lib/coffee-script/%.js: src/%.coffee lib/coffee-script
-	$(COFFEE) -bsc < "$<" > "$@"
+lib/coffee-script/parser.js: src/grammar.pegjs bootstraps lib/coffee-script
+	$(PEGJS) <"$<" >"$(@:%=%.tmp)" && mv "$(@:%=%.tmp)" "$@"
+lib/coffee-script/bootstrap/parser.js: src/grammar.pegjs lib/coffee-script/bootstrap
+	$(PEGJS) <"$<" >"$@"
+lib/coffee-script/bootstrap/%.js: src/%.coffee lib/coffee-script/bootstrap
+	$(COFFEE) <"$<" >"$@"
+bootstraps: $(BOOTSTRAPS) lib/coffee-script/bootstrap
+	mv lib/coffee-script/bootstrap/* lib/coffee-script
+	rmdir lib/coffee-script/bootstrap
+lib/coffee-script/%.js: src/%.coffee lib/coffee-script/bootstrap/%.js bootstraps lib/coffee-script
+	$(COFFEE) <"$<" >"$(@:%=%.tmp)" && mv "$(@:%=%.tmp)" "$@"
+
+
+CoffeeScriptRedux.js: $(LIB)
+	$(BROWSERIFY) lib/coffee-script/module.js | $(MINIFIER) > CoffeeScriptRedux.js
+
 
 lib/coffee-script/%.min.js: lib/coffee-script/%.js lib/coffee-script
-	$(MINIFIER) < "$<" > "$@"
+	$(MINIFIER) <"$<" >"$@"
 
 
 .PHONY: test coverage install loc clean
