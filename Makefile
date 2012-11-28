@@ -56,6 +56,7 @@ lib/coffee-script/%.min.js: lib/coffee-script/%.js lib/coffee-script
 .PHONY: test coverage install loc clean
 
 test: $(LIB) $(TESTS)
+	#$(MOCHA) -R dot --debug-brk
 	$(MOCHA) -R dot
 
 coverage: $(LIB)

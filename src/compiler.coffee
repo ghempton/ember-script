@@ -15,7 +15,6 @@ jsReserved = [
   'typeof', 'var', 'void', 'while', 'with', 'yield', 'arguments', 'eval'
 ]
 
-
 genSym = do ->
   genSymCounter = 0
   (pre) -> new JS.GenSym pre, ++genSymCounter
@@ -171,6 +170,9 @@ dynamicMemberAccess = (e, index) ->
   then memberAccess e, index.value
   else new JS.MemberExpression yes, e, index
 
+emberGet = (e, member) ->
+  new JS.CallExpression memberAccess(new JS.Identifier('Ember'), 'get'), [e, new JS.Literal member]
+
 emberSet = (assignee, property, expression) ->
   new JS.CallExpression memberAccess(new JS.Identifier('Ember'), 'set'), [assignee, property, expression]
 
@@ -235,9 +237,14 @@ assignment = (assignee, expression, valueUsed = no) ->
     when assignee.instanceof JS.Identifier, JS.GenSym
       assignments.push new JS.AssignmentExpression '=', assignee, expr expression
     when assignee.instanceof JS.MemberExpression
-      property = if assignee.computed then assignee.property else new JS.Literal(assignee.property.name)
-      assignments.push emberSet assignee.object, property, expr expression
+      if assignee.computed && !(typeof assignee.property.value is 'string')
+        assignments.push new JS.AssignmentExpression '=', assignee, expr expression
+      else if assignee.computed
+        assignments.push emberSet assignee.object, assignee.property, expr expression
+      else
+        assignments.push emberSet assignee.object, new JS.Literal(assignee.property.name), expr expression
     else
+      console.log(assignee)
       throw new Error "compile: assignment: unassignable assignee: #{assignee.type}"
   switch assignments.length
     when 0 then if e is expression then helpers.undef() else expression
@@ -790,9 +797,22 @@ class exports.Compiler
           leftmost.left = new JS.BinaryExpression '+', (new JS.Literal ''), leftmost.left
       plusOp
     ]
+    # [CS.MemberAccessOp, ({expression}) ->
+    #   ancestry = arguments[0].ancestry
+    #   for n, i in ancestry
+    #     break if n instanceof CS.MemberAccessOps
+    #     return memberAccess expression, @memberName if n instanceof CS.AssignOps || n.instanceof CS.Function
+    #   emberGet expression, @memberName
+    # ]
     [CS.MemberAccessOp, CS.SoakedMemberAccessOp, ({expression, compile}) ->
       if hasSoak this then expr compile generateSoak this
-      else memberAccess expression, @memberName
+      #else memberAccess expression, @memberName
+      else
+        ancestry = arguments[0].ancestry
+        for n, i in ancestry
+          break if n instanceof CS.MemberAccessOps
+          return memberAccess expression, @memberName if n instanceof CS.AssignOps || n.instanceof CS.FunctionApplication
+        emberGet expression, @memberName
     ]
     [CS.ProtoMemberAccessOp, CS.SoakedProtoMemberAccessOp, ({expression, compile}) ->
       if hasSoak this then expr compile generateSoak this
@@ -852,6 +872,7 @@ class exports.Compiler
     [CS.Return, ({expression: e}) -> new JS.ReturnStatement expr e]
     [CS.Break, -> new JS.BreakStatement]
     [CS.Continue, -> new JS.ContinueStatement]
+    [CS.Debugger, -> new JS.DebuggerStatement]
 
     # straightforward operators
     [CS.ExpOp, ({left, right}) ->

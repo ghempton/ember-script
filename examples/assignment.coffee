@@ -1,1 +1,1 @@
-obj.x.y = 'z'
+z.v = x.y
