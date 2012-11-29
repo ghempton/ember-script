@@ -1,4 +1,0 @@
-Things TODO:
-
-[x] Basic Ember accessor substitution
-[ ] Re-visit Ember accessor substitution inside of dynamic/proto member access operations

@@ -1,0 +1,22 @@
+- = Partially completed
++ = Completed
+
+[-] Classes and Mixins
+  [+] `class` and `mixin` keywords/basic functionality
+  [ ] First-class open classes and mixins
+  [ ] Set names as property and override `toString`
+  [ ] Re-visit CS's proto operator
+[-] Ember accessor (get/set) substitution
+  [+] Basic accessor substituion
+  [ ] Dynamic/proto member access substitution
+  [ ] Better tests
+  [ ] Performance/minification optimizations
+  [ ] Readability mode
+[ ] Squiggly operator (~>)
+[ ] Property annotations
+  [ ] `+computed`
+  [ ] `+volatile`
+  [ ] `+observers`
+  [ ] Allow for custom annotations
+[ ] Property get/set definitions
+[ ] Native property access operator

@@ -4,7 +4,7 @@ Ember Script is coffee-derived inspired language which takes advantage of the [E
 
 ## Is this ready to use?
 
-No, it is still being developed, but stay tuned :).
+No, it is still being developed. See the [todo](https://github.com/ghempton/ember-script/blob/master/TODO.txt) list for details.
 
 ## Examples
 
@@ -64,8 +64,7 @@ class Person
   get firstName: @name.split(' ')[0]
 
   lastName: ~> @name.split(' ')[1]
-end
-```xs
+```
 
 Compiles to:
 
@@ -100,13 +99,13 @@ Person = Ember.Object.extend({
 ```coffeescript
 class Person
 
-  ~depends on firstName, lastName
+  +computed firstName, lastName
   initials: -> "#{@firstName.split('')[0], @lastName.split('')[0]}"
 
-  ~observes name
+  +observes name
   nameChanged: -> console.log("new name: #{@name}")
 
-  ~volatile
+  +volatile
   favoriteNumber: -> Math.round(Math.random() * 10)
 
 ```
@@ -161,7 +160,7 @@ person*.firstName
 person*.firstName = "Manuel"
 ```
 
-Compiles to:
+Roughly compiles to:
 
 ```javascript
 var get = Ember.get, set = Ember.set;
