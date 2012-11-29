@@ -1,1 +1,1 @@
-z.v = x.y
+delete x.y

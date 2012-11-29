@@ -797,21 +797,20 @@ class exports.Compiler
           leftmost.left = new JS.BinaryExpression '+', (new JS.Literal ''), leftmost.left
       plusOp
     ]
-    # [CS.MemberAccessOp, ({expression}) ->
-    #   ancestry = arguments[0].ancestry
-    #   for n, i in ancestry
-    #     break if n instanceof CS.MemberAccessOps
-    #     return memberAccess expression, @memberName if n instanceof CS.AssignOps || n.instanceof CS.Function
-    #   emberGet expression, @memberName
-    # ]
     [CS.MemberAccessOp, CS.SoakedMemberAccessOp, ({expression, compile}) ->
+      # Corner cases where we should not use Ember.get:
+      #  * When the member access is the assignee in an assignment (tricky because of destructuring)
+      #  * When the member access provides the context for a function (e.g. x.y())
+      #  * When the expression being accessed is a literal (e.g. false)
+      #  * When the member access is part of a postfix expression (e.g. x.y++)
+      #  * When the parent expression is a `delete`
+      # TODO: move more of this into the parser?
+      parent = arguments[0].ancestry[0]
+      @isFunctionContext = parent instanceof CS.FunctionApplications and parent.function is this
       if hasSoak this then expr compile generateSoak this
-      #else memberAccess expression, @memberName
+      else if @isAssignment or @isFunctionContext or expression instanceof JS.Literal or parent instanceof CS.DeleteOp
+        memberAccess expression, @memberName
       else
-        ancestry = arguments[0].ancestry
-        for n, i in ancestry
-          break if n instanceof CS.MemberAccessOps
-          return memberAccess expression, @memberName if n instanceof CS.AssignOps || n.instanceof CS.FunctionApplication
         emberGet expression, @memberName
     ]
     [CS.ProtoMemberAccessOp, CS.SoakedProtoMemberAccessOp, ({expression, compile}) ->

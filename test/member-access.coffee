@@ -15,7 +15,8 @@ suite 'Member Access', ->
     eq nonceA, obj?.a
     eq nonceB, obj?.a.b
     eq nonceB, obj?.a[b]
-    throws -> nil.a
+    # Cannot use nil.a since that will compile to `Ember.get(nil, a)` which will not throw an error
+    throws -> null.a
     eq undefined, nil?.a
     eq undefined, nil?.a.b
     eq undefined, nil?.a[b]

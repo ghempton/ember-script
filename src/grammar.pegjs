@@ -386,8 +386,8 @@ postfixExpression
         switch(op){
           case '?': return new CS.UnaryExistsOp(expr).r(expr.raw + op).p(line, column, offset)
           case '[..]': return new CS.ShallowCopyArray(expr).r(expr.raw + op).p(line, column, offset)
-          case '++': return new CS.PostIncrementOp(expr).r(expr.raw + op).p(line, column, offset)
-          case '--': return new CS.PostDecrementOp(expr).r(expr.raw + op).p(line, column, offset)
+          case '++': expr.isAssignment = true; return new CS.PostIncrementOp(expr).r(expr.raw + op).p(line, column, offset)
+          case '--': expr.isAssignment = true; return new CS.PostDecrementOp(expr).r(expr.raw + op).p(line, column, offset)
         }
       }, expr, ops);
     }
@@ -429,7 +429,8 @@ leftHandSideExpression = callExpression / newExpression
     / secondaryExpression
 callExpression
   = fn:memberExpression accesses:(argumentList / MemberAccessOps)* secondaryArgs:("?"? secondaryArgumentList)? {
-      if(accesses) fn = createMemberExpression(fn, accesses);
+      if(accesses)
+        fn = createMemberExpression(fn, accesses)
       var soaked, secondaryCtor;
       if(secondaryArgs) {
         soaked = secondaryArgs[0];
@@ -959,19 +960,23 @@ debugger = DEBUGGER { return (new CS.Debugger).r('debugger').p(line, column, off
 undefined = UNDEFINED { return (new CS.Undefined).r('undefined').p(line, column, offset); }
 null = NULL { return (new CS.Null).r('null').p(line, column, offset); }
 
+// Additional book-keeping is needed here. Ember.get should not be used
+// on the left-hand side of an assignment operation
+memberAssign = access:memberAccess { access.isAssignment = true; return access }
+contextAssign = access:contextVar { access.isAssignment = true; return access }
 
 unassignable = ("arguments" / "eval") !identifierPart
 CompoundAssignable
-  = memberAccess
+  = memberAssign
   / !unassignable i:identifier { return i; }
-  / contextVar
+  / contextAssign
 ExistsAssignable = CompoundAssignable
 Assignable
-  = memberAccess
+  = memberAssign
   / !unassignable i:identifier { return i; }
-  / contextVar
+  / contextAssign
   / positionalDestructuring
-  / namedDestructuring
+  / namedDestructuring 
 
 positionalDestructuring
   = "[" members:positionalDestructuringBody  t:TERMINATOR? ws:_ "]" {
