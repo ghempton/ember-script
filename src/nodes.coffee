@@ -166,6 +166,7 @@ createNodes
       ['parameters', 'body']
       Function: null # :: [Parameters] -> Maybe Exprs -> Function
       BoundFunction: null # :: [Parameters] -> Maybe Exprs -> BoundFunction
+      ComputedProperty: null # :: [Parameters] -> Maybe Exprs -> ComputedProperty
     ]
     DefaultParam: [['param', 'default']] # :: Parameters -> Exprs -> DefaultParam
     Identifiers: [
@@ -205,7 +206,7 @@ createNodes
   ArrayInitialiser, ObjectInitialiser, NegatedConditional, Conditional,
   Identifier, ForOf, Functions, While, Mixin, Class, Block, NewOp, Bool,
   FunctionApplications, RegExps, RegExp, HeregExp, Super, Slice, Switch,
-  Identifiers, SwitchCase, GenSym
+  Identifiers, SwitchCase, GenSym, ComputedProperty
 } = exports
 
 
@@ -275,6 +276,7 @@ handlePrimitives Range, ['isInclusive']
 handlePrimitives RegExp, ['data', 'flags']
 handlePrimitives Slice, ['isInclusive']
 handlePrimitives StaticMemberAccessOps, ['memberName']
+handlePrimitives ComputedProperty, ['chains']
 
 
 ## Nodes that contain list properties

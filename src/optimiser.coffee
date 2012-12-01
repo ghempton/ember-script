@@ -20,7 +20,7 @@ isTruthy =
   makeDispatcher no, [
     [
       CS.ArrayInitialiser, CS.Mixin, CS.Class, CS.DeleteOp, CS.ForIn, CS.ForOf
-      CS.Function, CS.BoundFunction, CS.HeregExp, CS.ObjectInitialiser, CS.Range
+      CS.Function, CS.BoundFunction, CS.ComputedProperty, CS.HeregExp, CS.ObjectInitialiser, CS.Range
       CS.RegExp, CS.Slice, CS.TypeofOp, CS.While
       -> yes
     ]
@@ -80,7 +80,7 @@ isFalsey =
 mayHaveSideEffects =
   makeDispatcher no, [
     [
-      CS.Function, CS.BoundFunction, CS.Null, CS.RegExp, CS.This, CS.Undefined
+      CS.Function, CS.BoundFunction, CS.ComputedProperty, CS.Null, CS.RegExp, CS.This, CS.Undefined
       -> no
     ]
     [

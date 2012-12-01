@@ -707,7 +707,7 @@ switch
 
 
 functionLiteral
-  = params:("(" _ (td:TERMINDENT p:parameterList d:DEDENT t:TERMINATOR { return {e: p, raw: td + p.raw + d + t}; } / p:parameterList { return {e: p, raw: p.raw}; })? _ ")" _)?  arrow:("->" / "=>") body:functionBody? {
+  = params:("(" _ (td:TERMINDENT p:parameterList d:DEDENT t:TERMINATOR { return {e: p, raw: td + p.raw + d + t}; } / p:parameterList { return {e: p, raw: p.raw}; })? _ ")" _)?  arrow:("->" / "=>" / "~>") body:functionBody? {
       if(!body) body = {block: null, raw: ''};
       var raw =
         (params ? params[0] + params[1] + (params[2] && params[2].raw) + params[3] + params[4] + params[5] : '') +
@@ -716,6 +716,7 @@ functionLiteral
       switch(arrow) {
         case '->': constructor = CS.Function; break;
         case '=>': constructor = CS.BoundFunction; break;
+        case '~>': constructor = CS.ComputedProperty; break;
         default: throw new Error('parsed function arrow ("' + arrow + '") not associated with a constructor');
       }
       params = params && params[2] && params[2].e ? params[2].e.list : [];

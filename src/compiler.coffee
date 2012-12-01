@@ -171,6 +171,11 @@ dynamicMemberAccess = (e, index) ->
   then memberAccess e, index.value
   else new JS.MemberExpression yes, e, index
 
+emberComputedProperty = (fn, chains) ->
+  computed = new JS.CallExpression memberAccess(new JS.Identifier('Ember'), 'computed'), [fn]
+  chains = chains.map ( (c) -> new JS.Literal(c) )
+  new JS.CallExpression memberAccess(computed, 'property'), chains
+
 emberGet = (e, member) ->
   new JS.CallExpression memberAccess(new JS.Identifier('Ember'), 'get'), [e, new JS.Literal member]
 
@@ -245,7 +250,6 @@ assignment = (assignee, expression, valueUsed = no) ->
       else
         assignments.push emberSet assignee.object, new JS.Literal(assignee.property.name), expr expression
     else
-      console.log(assignee)
       throw new Error "compile: assignment: unassignable assignee: #{assignee.type}"
   switch assignments.length
     when 0 then if e is expression then helpers.undef() else expression
@@ -555,8 +559,7 @@ class exports.Compiler
     [CS.ObjectInitialiser, ({members}) -> new JS.ObjectExpression members]
     [CS.ObjectInitialiserMember, ({key, expression}) -> new JS.Property key, expr expression]
     [CS.DefaultParam, ({param, default: d}) -> {param, default: d}]
-    [CS.Function, CS.BoundFunction, do ->
-
+    [CS.Function, CS.BoundFunction, CS.ComputedProperty, do ->
       handleParam = (param, original, block) -> switch
         when original.instanceof CS.Rest then param # keep these for special processing later
         when original.instanceof CS.Identifier then param
@@ -624,11 +627,14 @@ class exports.Compiler
 
         fn = new JS.FunctionExpression null, parameters, block
         if performedRewrite
-          new JS.SequenceExpression [
+          fn = new JS.SequenceExpression [
             new JS.AssignmentExpression '=', newThis, new JS.ThisExpression
             fn
           ]
-        else fn
+        if @instanceof CS.ComputedProperty
+          emberComputedProperty(fn, @chains)
+        else
+          fn
     ]
     [CS.Rest, ({expression}) -> {rest: yes, expression, isExpression: yes, isStatement: yes}]
 
@@ -966,13 +972,41 @@ class exports.Compiler
 
   # TODO: comment
   compile: do ->
+
+    # Traverse the CS AST and attempt to infer all of the property chains
+    # for a computed property
+    # TODO: this could be a *lot* better
+    computePropertyChains = ->
+      chains = []
+      if @instanceof(CS.MemberAccessOps) && @expression.instanceof(CS.This)
+        return [@memberName]
+      for childName in @childNodes when @[childName]?
+        if childName in @listMembers
+          for member in @[childName]
+            childChains = computePropertyChains.call member
+            if @instanceof CS.MemberAccessOps
+              memberName = @memberName
+              childChains = childChains.map( (c) -> "#{c}.#{memberName}" )
+            chains = chains.concat childChains
+        else
+          child = @[childName]
+          childChains = computePropertyChains.call child
+          if @instanceof CS.MemberAccessOps
+            memberName = @memberName
+            childChains = childChains.map( (c) -> "#{c}.#{memberName}" )
+          chains = chains.concat childChains
+      chains
+
     walk = (fn, inScope, ancestry, options) ->
 
-      if (ancestry[0]?.instanceof CS.Function, CS.BoundFunction) and this is ancestry[0].body
+      if (ancestry[0]?.instanceof CS.Function, CS.BoundFunction, CS.ComputedProperty) and this is ancestry[0].body
         inScope = union inScope, concatMap ancestry[0].parameters, beingDeclared
 
       ancestry.unshift this
       children = {}
+
+      if(this instanceof CS.ComputedProperty)
+        @chains = computePropertyChains.call this
 
       for childName in @childNodes when @[childName]?
         children[childName] =

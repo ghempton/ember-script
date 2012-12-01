@@ -1,6 +1,8 @@
 - = Partially completed
 + = Completed
 
+Features:
+
 [-] Classes and Mixins
   [+] `class` and `mixin` keywords/basic functionality
   [ ] First-class open classes and mixins
@@ -12,7 +14,10 @@
   [ ] Better tests
   [ ] Performance/minification optimizations
   [ ] Readability mode
-[ ] Squiggly operator (~>)
+[-] Squiggly operator (~>)
+  [+] Basic implementation with support for basic inference
+  [ ] `@each` dependencies
+  [ ] Better tests
 [ ] Property annotations
   [ ] `+computed`
   [ ] `+volatile`
@@ -20,3 +25,7 @@
   [ ] Allow for custom annotations
 [ ] Property get/set definitions
 [ ] Native property access operator
+
+Bugs:
+
+[ ] Property access that has been substituted with Ember.get can have side effects
