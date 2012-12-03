@@ -171,6 +171,11 @@ dynamicMemberAccess = (e, index) ->
   then memberAccess e, index.value
   else new JS.MemberExpression yes, e, index
 
+forceComputedProperty = (fn, chains) ->
+  console.log fn
+  # TODO check if already a computed property
+  emberComputedProperty(fn, chains)
+
 emberComputedProperty = (fn, chains) ->
   computed = new JS.CallExpression memberAccess(new JS.Identifier('Ember'), 'computed'), [fn]
   chains = chains.map ( (c) -> new JS.Literal(c) )
@@ -557,7 +562,16 @@ class exports.Compiler
     ]
     [CS.Spread, ({expression}) -> {spread: yes, expression}]
     [CS.ObjectInitialiser, ({members}) -> new JS.ObjectExpression members]
-    [CS.ObjectInitialiserMember, ({key, expression}) -> new JS.Property key, expr expression]
+    [CS.ObjectInitialiserMember, ({key, expression}) ->
+      expression = expr expression
+      for annotation in @annotations
+        if annotation.instanceof CS.Volatile, CS.Computed
+          expression = forceComputedProperty(expression, [])
+        if annotation.instanceof CS.Volatile
+          expression = new JS.CallExpression memberAccess(expression, 'volatile'), []
+
+      new JS.Property key, expression
+    ]
     [CS.DefaultParam, ({param, default: d}) -> {param, default: d}]
     [CS.Function, CS.BoundFunction, CS.ComputedProperty, do ->
       handleParam = (param, original, block) -> switch
@@ -813,9 +827,9 @@ class exports.Compiler
       #  * When the parent expression is a `delete`
       # TODO: move more of this into the parser?
       parent = arguments[0].ancestry[0]
-      @isFunctionContext = parent instanceof CS.FunctionApplications and parent.function is this
+      @isFunctionContext = parent.instanceof(CS.FunctionApplications) and parent.function is this
       if hasSoak this then expr compile generateSoak this
-      else if @isAssignment or @isFunctionContext or expression instanceof JS.Literal or parent instanceof CS.DeleteOp
+      else if @isAssignment or @isFunctionContext or expression.instanceof(JS.Literal) or parent.instanceof(CS.DeleteOp)
         memberAccess expression, @memberName
       else
         emberGet expression, @memberName
@@ -958,6 +972,9 @@ class exports.Compiler
     [CS.Undefined, -> helpers.undef()]
     [CS.This, -> new JS.ThisExpression]
     [CS.JavaScript, -> new JS.CallExpression (new JS.Identifier 'eval'), [new JS.Literal @data]]
+
+    # Annotations are handled by the nodes which are annotated
+    [CS.Volatile, CS.Computed, CS.Observes, -> new JS.EmptyStatement()]
   ]
 
   constructor: ->
@@ -1005,7 +1022,7 @@ class exports.Compiler
       ancestry.unshift this
       children = {}
 
-      if(this instanceof CS.ComputedProperty)
+      if(this.instanceof CS.ComputedProperty)
         @chains = computePropertyChains.call this
 
       for childName in @childNodes when @[childName]?

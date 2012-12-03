@@ -1,1 +1,3 @@
-z = ~> console.log(x.y)
+class Z
+  +volatile
+  myProp: -> console.log('test')

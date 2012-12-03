@@ -158,7 +158,7 @@ createNodes
 
     ArrayInitialiser: [['members']] # :: [ArrayInitialiserMembers] -> ArrayInitialiser
     ObjectInitialiser: [['members']] # :: [ObjectInitialiserMember] -> ObjectInitialiser
-    ObjectInitialiserMember: [['key', 'expression']] # :: ObjectInitialiserKeys -> Exprs -> ObjectInitialiserMember
+    ObjectInitialiserMember: [['key', 'expression', 'annotations']] # :: ObjectInitialiserKeys -> Exprs -> [Annotations] -> ObjectInitialiserMember
     Mixin: [['nameAssignee', 'body', 'mixins']] # :: Maybe Assignable -> Maybe Exprs -> [Mixin] -> Mixin
     Class: [['nameAssignee', 'parent', 'ctor', 'body', 'boundMembers', 'mixins']] # :: Maybe Assignable -> Maybe Exprs -> Maybe Exprs -> Maybe Exprs -> [ClassProtoAssignOp] -> [Mixin] -> Class
     Constructor: [['expression']] # :: Exprs -> Constructor
@@ -169,6 +169,12 @@ createNodes
       ComputedProperty: null # :: [Parameters] -> Maybe Exprs -> ComputedProperty
     ]
     DefaultParam: [['param', 'default']] # :: Parameters -> Exprs -> DefaultParam
+    Annotations: [
+      ['parameters']
+      Volatile: null # :: [Parameters] -> Volatile
+      Computed: null # :: [Parameters] -> Computed
+      Observes: null # :: [Parameters] -> Observes
+    ]
     Identifiers: [
       ['data']
       Identifier: null # :: string -> Identifier
@@ -206,7 +212,7 @@ createNodes
   ArrayInitialiser, ObjectInitialiser, NegatedConditional, Conditional,
   Identifier, ForOf, Functions, While, Mixin, Class, Block, NewOp, Bool,
   FunctionApplications, RegExps, RegExp, HeregExp, Super, Slice, Switch,
-  Identifiers, SwitchCase, GenSym, ComputedProperty
+  Identifiers, SwitchCase, GenSym, ComputedProperty, ObjectInitialiserMember
 } = exports
 
 
@@ -277,12 +283,14 @@ handlePrimitives RegExp, ['data', 'flags']
 handlePrimitives Slice, ['isInclusive']
 handlePrimitives StaticMemberAccessOps, ['memberName']
 handlePrimitives ComputedProperty, ['chains']
+handlePrimitives ObjectInitialiserMember, ['annotations']
 
 
 ## Nodes that contain list properties
 
 handleLists = (ctor, listProps) -> ctor::listMembers = listProps
 
+#handleLists ObjectInitialiserMember, ['annotations']
 handleLists ArrayInitialiser, ['members']
 handleLists Block, ['statements']
 handleLists Functions, ['parameters']
