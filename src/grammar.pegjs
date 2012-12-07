@@ -776,16 +776,17 @@ arrayLiteral
 
 //params:("(" _ (td:TERMINDENT p:parameterList d:DEDENT t:TERMINATOR { return {e: p, raw: td + p.raw + d + t}; } / p:parameterList { return {e: p, raw: p.raw}; })? _ ")" _)?
 annotation
-  = "+" ws1:_ name:("computed" / "observes" / "volatile") t:TERMINATOR? ws2:_ {
+  = "+" ws1:_ name:("computed" / "observer" / "volatile") params:(__ identifierName)* t:TERMINATOR? ws2:_ {
     var raw = "+" + ws1 + name + t + ws2;
     var constructor;
+    paramNames = params.map(function(p) { return p[1]; } )
     switch(name) {
       case 'computed': constructor = CS.Computed; break;
-      case 'observes': constructor = CS.Observes; break;
+      case 'observer': constructor = CS.Observes; break;
       case 'volatile': constructor = CS.Volatile; break;
       default: throw new Error('No such annotation: ' + name);
     }
-    return new constructor().r(raw).p(line, column, offset);
+    return new constructor(paramNames).r(raw).p(line, column, offset);
   }
 
 objectLiteral
@@ -976,6 +977,7 @@ null = NULL { return (new CS.Null).r('null').p(line, column, offset); }
 
 // Additional book-keeping is needed here. Ember.get should not be used
 // on the left-hand side of an assignment operation
+// TODO: to make this code work, PEGJS needs caching turned off. Fix this.
 memberAssign = access:memberAccess { access.isAssignment = true; return access }
 contextAssign = access:contextVar { access.isAssignment = true; return access }
 

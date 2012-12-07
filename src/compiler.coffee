@@ -1,3 +1,6 @@
+# TODO remove this once we self-host
+require(require('path').join(__dirname, '..', 'ember', 'ember-runtime'));
+
 {any, concat, concatMap, difference, divMod, foldl1, map, nub, owns, span, union} = require './functional-helpers'
 {beingDeclared, usedAsExpression, envEnrichments} = require './helpers'
 CS = require './nodes'
@@ -172,7 +175,6 @@ dynamicMemberAccess = (e, index) ->
   else new JS.MemberExpression yes, e, index
 
 forceComputedProperty = (fn, chains) ->
-  console.log fn
   # TODO check if already a computed property
   emberComputedProperty(fn, chains)
 
@@ -564,11 +566,17 @@ class exports.Compiler
     [CS.ObjectInitialiser, ({members}) -> new JS.ObjectExpression members]
     [CS.ObjectInitialiserMember, ({key, expression}) ->
       expression = expr expression
-      for annotation in @annotations
-        if annotation.instanceof CS.Volatile, CS.Computed
-          expression = forceComputedProperty(expression, [])
-        if annotation.instanceof CS.Volatile
-          expression = new JS.CallExpression memberAccess(expression, 'volatile'), []
+      @annotations ||= []
+
+      if computed = @annotations.find (a) -> a.instanceof CS.Computed
+        expression = forceComputedProperty(expression, computed.parameters)
+      if volatile = @annotations.find (a) -> a.instanceof CS.Volatile
+        expression = forceComputedProperty(expression, volatile.parameters)
+        expression = new JS.CallExpression memberAccess(expression, 'volatile'), []
+      if observes = @annotations.find (a) -> a.instanceof CS.Observes
+        # TODO: throw error if also computed property
+        args = [expression].concat(observes.parameters.map (p) -> new JS.Literal(p))
+        expression = new JS.CallExpression memberAccess(new JS.Identifier('Ember'), 'observer'), args
 
       new JS.Property key, expression
     ]
@@ -825,7 +833,6 @@ class exports.Compiler
       #  * When the expression being accessed is a literal (e.g. false)
       #  * When the member access is part of a postfix expression (e.g. x.y++)
       #  * When the parent expression is a `delete`
-      # TODO: move more of this into the parser?
       parent = arguments[0].ancestry[0]
       @isFunctionContext = parent.instanceof(CS.FunctionApplications) and parent.function is this
       if hasSoak this then expr compile generateSoak this

@@ -212,7 +212,8 @@ createNodes
   ArrayInitialiser, ObjectInitialiser, NegatedConditional, Conditional,
   Identifier, ForOf, Functions, While, Mixin, Class, Block, NewOp, Bool,
   FunctionApplications, RegExps, RegExp, HeregExp, Super, Slice, Switch,
-  Identifiers, SwitchCase, GenSym, ComputedProperty, ObjectInitialiserMember
+  Identifiers, SwitchCase, GenSym, ComputedProperty, ObjectInitialiserMember,
+  Annotations
 } = exports
 
 
@@ -284,13 +285,12 @@ handlePrimitives Slice, ['isInclusive']
 handlePrimitives StaticMemberAccessOps, ['memberName']
 handlePrimitives ComputedProperty, ['chains']
 handlePrimitives ObjectInitialiserMember, ['annotations']
-
+handlePrimitives Annotations, ['parameters']
 
 ## Nodes that contain list properties
 
 handleLists = (ctor, listProps) -> ctor::listMembers = listProps
 
-#handleLists ObjectInitialiserMember, ['annotations']
 handleLists ArrayInitialiser, ['members']
 handleLists Block, ['statements']
 handleLists Functions, ['parameters']

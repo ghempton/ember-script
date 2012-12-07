@@ -8,6 +8,7 @@ Features:
   [ ] First-class open classes and mixins
   [ ] Set names as property and override `toString`
   [ ] Re-visit CS's proto operator
+  [ ] `super` keyword
 [-] Ember accessor (get/set) substitution
   [+] Basic accessor substituion
   [ ] Dynamic/proto member access substitution
@@ -18,10 +19,10 @@ Features:
   [+] Basic implementation with support for basic inference
   [ ] `@each` dependencies
   [ ] Better tests
-[ ] Property annotations
-  [ ] `+computed`
-  [ ] `+volatile`
-  [ ] `+observers`
+[-] Property annotations
+  [x] `+computed`
+  [x] `+volatile`
+  [-] `+observer`
   [ ] Allow for custom annotations
 [ ] Property get/set definitions
 [ ] Native property access operator
