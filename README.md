@@ -6,6 +6,24 @@ Ember Script is coffee-derived inspired language which takes advantage of the [E
 
 No, it is still being developed. See the [todo](https://github.com/ghempton/ember-script/blob/master/TODO.txt) list for details.
 
+## Installation
+
+Being as EmberScript is still in early development, it is best to install via npm from source. After installing [Node.js](http://nodejs.org/), run the following commands:
+
+```
+git clone git@github.com:ghempton/ember-script.git
+cd ember-script
+npm install
+make
+bin/coffee --help
+```
+
+For use with ember-script-ruby or ember-script-rails, make the `ember-script` command available system wide:
+
+```
+npm install . -g
+```
+
 ## Examples
 
 ### Object Model
@@ -178,4 +196,10 @@ set(get(this, 'person'), 'firstName', "Andrew");
 
 person.firstName
 person.firstName = "Manuel"
+```
+
+## Development
+
+```
+make -j build test
 ```
