@@ -480,6 +480,7 @@ memberExpression
           ws1 + (right ? right.raw + maybeRight[1] : '') + ']';
         return {op: CS.Slice, operands: [!exclusive, left, right], raw: raw, line: line, column: column, offset: offset};
       }
+    / "*." ws:_ e:MemberNames { return {op: CS.NativeMemberAccessOp, operands: [e], raw: '*.' + ws + e, line: line, column: column, offset: offset}; }
 primaryExpression
   = macro
   / Numbers

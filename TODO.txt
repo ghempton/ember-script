@@ -11,7 +11,7 @@ Features:
   [ ] `super` keyword
 [-] Ember accessor (get/set) substitution
   [+] Basic accessor substituion
-  [ ] Dynamic/proto member access substitution
+  [ ] Dynamic/proto/soaked member access substitution
   [ ] Better tests
   [ ] Performance/minification optimizations
   [ ] Readability mode
@@ -25,7 +25,9 @@ Features:
   [-] `+observer`
   [ ] Allow for custom annotations
 [ ] Property get/set definitions
-[ ] Native property access operator
+[+] Native member access operator (*.)
+[ ] Optimizations
+  [ ] Flatten dependency graphs
 
 Bugs:
 

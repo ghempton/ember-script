@@ -833,13 +833,18 @@ class exports.Compiler
       #  * When the expression being accessed is a literal (e.g. false)
       #  * When the member access is part of a postfix expression (e.g. x.y++)
       #  * When the parent expression is a `delete`
+      #  * When the property is part of Ember core (optimization)
       parent = arguments[0].ancestry[0]
       @isFunctionContext = parent.instanceof(CS.FunctionApplications) and parent.function is this
       if hasSoak this then expr compile generateSoak this
-      else if @isAssignment or @isFunctionContext or expression.instanceof(JS.Literal) or parent.instanceof(CS.DeleteOp)
+      else if @isAssignment or @isFunctionContext or expression.instanceof(JS.Literal) or parent.instanceof(CS.DeleteOp) or expression.name == 'Ember'
         memberAccess expression, @memberName
       else
         emberGet expression, @memberName
+    ]
+    [CS.NativeMemberAccessOp, ({expression, compile}) ->
+      if hasSoak this then expr compile generateSoak this
+      else memberAccess expression, @memberName
     ]
     [CS.ProtoMemberAccessOp, CS.SoakedProtoMemberAccessOp, ({expression, compile}) ->
       if hasSoak this then expr compile generateSoak this

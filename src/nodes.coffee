@@ -124,6 +124,7 @@ createNodes
       StaticMemberAccessOps: [
         ['expression', 'memberName']
         MemberAccessOp: null # :: Exprs -> MemberNames -> MemberAccessOp
+        NativeMemberAccessOp: null # :: Expres -> MemberNames -> NativeMemberAccessOp
         ProtoMemberAccessOp: null # :: Exprs -> MemberNames -> ProtoMemberAccessOp
         SoakedMemberAccessOp: null # :: Exprs -> MemberNames -> SoakedMemberAccessOp
         SoakedProtoMemberAccessOp: null # :: Exprs -> MemberNames -> SoakedProtoMemberAccessOp

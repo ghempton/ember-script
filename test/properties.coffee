@@ -48,3 +48,16 @@ suite 'Properties', ->
         prop: -> @firstName @lastName
       ok @hasDependentKeys(obj['prop'], ['firstName', 'lastName'])
       ok @isVolatile(obj['prop'])
+
+  suite 'Native Member Property Accessor', ->
+
+    test 'basic property access', ->
+      obj = {x: 5}
+      equal obj*.x, 5
+
+    test 'should return raw computed property', ->
+      obj = Ember.Object.create
+        +computed
+        prop: -> 5
+      equal obj.prop, 5
+      equal obj*.prop, undefined
