@@ -713,7 +713,7 @@ class exports.Compiler
 
       extendArgs.push(body) if body
 
-      parentExpr = if parent?.name then new JS.Identifier(parent.name) else memberAccess(new JS.Identifier('Ember'), 'Object')
+      parentExpr = if parent? then parent else memberAccess(new JS.Identifier('Ember'), 'Object')
       iife = new JS.CallExpression memberAccess(parentExpr, 'extend'), extendArgs
       if nameAssignee? then assignment nameAssignee, iife else iife
     ]

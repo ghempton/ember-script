@@ -9,6 +9,7 @@ Features:
   [ ] Set names as property and override `toString`
   [ ] Re-visit CS's proto operator
   [ ] `super` keyword
+  [ ] Inner Classes
 [-] Ember accessor (get/set) substitution
   [+] Basic accessor substituion
   [ ] Dynamic/proto/soaked member access substitution
