@@ -426,8 +426,7 @@ leftHandSideExpression = callExpression / newExpression
 
 callExpression
   = fn:memberExpression accesses:(argumentList / MemberAccessOps)* secondaryArgs:("?"? secondaryArgumentList)? {
-      if(accesses)
-        fn = createMemberExpression(fn, accesses)
+      if(accesses) fn = createMemberExpression(fn, accesses);
       var soaked, secondaryCtor;
       if(secondaryArgs) {
         soaked = secondaryArgs[0];
@@ -465,6 +464,7 @@ memberExpression
   MemberAccessOps
     = TERMINATOR? _ "." TERMINATOR? _ e:MemberNames { return rp({op: CS.MemberAccessOp, operands: [e]}); }
     / "?." _ e:MemberNames { return rp({op: CS.SoakedMemberAccessOp, operands: [e]}); }
+    / "*." _ e:MemberNames { return rp({op: CS.NativeMemberAccessOp, operands: [e]}); }
     / "[" _ e:expression _ "]" { return rp({op: CS.DynamicMemberAccessOp, operands: [e]}); }
     / "?[" _ e:expression _ "]" { return rp({op: CS.SoakedDynamicMemberAccessOp, operands: [e]}); }
     / "::" _ e:MemberNames { return rp({op: CS.ProtoMemberAccessOp, operands: [e]}); }
@@ -474,7 +474,6 @@ memberExpression
     / "[" _ left:assignmentExpression? _ ".." exclusive:"."? _ right:assignmentExpression? _ "]" {
         return rp({op: CS.Slice, operands: [!exclusive, left || null, right || null]});
       }
-    / "*." ws:_ e:MemberNames { return rp({op: CS.NativeMemberAccessOp, operands: [e]}); }
 
 primaryExpression
   = macro
@@ -550,11 +549,10 @@ try
 
 mixin
   = MIXIN name:(_ Assignable)? mixins:(_ WITH _ extendee)* body:(_ mixinBody)? {
-    raw = 'mixin'; // TODO
     name = name ? name[1] : null;
     mixins = mixins.map(function(mixin) { return mixin[3].data; });
     body = body ? body[1] : null;
-    return new CS.Mixin(name, body, mixins).r(raw).p(line, column, offset);
+    return rp(new CS.Mixin(name, body, mixins));
   }
 mixinBody
   = body:(objectLiteral / implicitObjectLiteral)
@@ -590,31 +588,6 @@ class
         if(!accesses) return fn;
         return createMemberExpression(fn, [accesses[0]].concat(accesses[1] || []));
       }
-  classBody
-    = _ TERMINDENT b:classBlock DEDENT { return b; }
-    / _ THEN _ s:classStatement { return s; }
-    // TODO: this should produce `null`, but that causes PEG.js to fail the parse
-    / (_ THEN)? { return new CS.Block([]); }
-  classBlock
-    = s:classStatement ss:(_ TERMINATOR _ classStatement)* term:TERMINATOR? {
-        return rp(new CS.ObjectInitialiser([s].concat(ss.map(function(s){ return s[3]; }))));
-      }
-  classStatement
-    = classProtoAssignment
-//    / constructor
-//  constructor
-//    = key:ObjectInitialiserKeys ws0:_ ":" ws1:_ e:expression {
-//        if(!key.instanceof(CS.String, CS.Identifier) || key.data !== 'init') return null;
-//        var raw = key.raw + ws0 + ":" + ws1 + e.raw;
-//        if(e.instanceof(CS.BoundFunction))
-//          e = new CS.Function(e.parameters, e.block).r(e.raw).p(e.line, e.column);
-//        return new CS.Constructor(e).r(raw).p(line, column);
-//      }
-  classProtoAssignment
-    = key:ObjectInitialiserKeys ws0:_ ":" ws1:_ e:expression {
-        return rp(new CS.ObjectInitialiser(key, e));
-      }
-
 
 forBody = conditionalBody
 forOf
@@ -716,8 +689,7 @@ arrayLiteral
 
 //params:("(" _ (td:TERMINDENT p:parameterList d:DEDENT t:TERMINATOR { return {e: p, raw: td + p.raw + d + t}; } / p:parameterList { return {e: p, raw: p.raw}; })? _ ")" _)?
 annotation
-  = "+" ws1:_ name:("computed" / "observer" / "volatile") params:(__ identifierName)* t:TERMINATOR? ws2:_ {
-    var raw = "+" + ws1 + name + t + ws2;
+  = "+" _ name:("computed" / "observer" / "volatile") params:(__ identifierName)* TERMINATOR? _ {
     var constructor;
     paramNames = params.map(function(p) { return p[1]; } )
     switch(name) {
@@ -726,7 +698,7 @@ annotation
       case 'volatile': constructor = CS.Volatile; break;
       default: throw new Error('No such annotation: ' + name);
     }
-    return new constructor(paramNames).r(raw).p(line, column, offset);
+    return rp(new constructor(paramNames));
   }
 
 objectLiteral
@@ -1039,6 +1011,7 @@ UNLESS = $("unless" !identifierPart)
 UNTIL = $("until" !identifierPart)
 WHEN = $("when" !identifierPart)
 WHILE = $("while" !identifierPart)
+WITH = $("with" !identifierPart)
 YES = $("yes" !identifierPart)
 
 SharedKeywords
