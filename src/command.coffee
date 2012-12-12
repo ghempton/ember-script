@@ -28,6 +28,7 @@ optionArguments = [
   [['compile', 'c'], off, 'output a JSON-serialised AST representation of the output']
   [['optimise'    ],  on, 'enable optimisations (default: on)']
   [['debug'       ], off, 'output intermediate representations on stderr for debug']
+  [['raw'         ], off, 'preserve source position and raw parse information']
   [['version', 'v'], off, 'display the version number']
   [['help'        ], off, 'display this help message']
 ]
@@ -225,6 +226,7 @@ else
   # normal workflow
 
   input = ''
+  inputSource = options.input ? (options.cli and '(cli)' or '(stdin)')
 
   processInput = (err) ->
 
@@ -242,7 +244,11 @@ else
         console.error numberLines humanReadable Preprocessor.processSync input
 
     # parse
-    try result = CoffeeScript.parse input, optimise: no
+    try
+      result = CoffeeScript.parse input,
+        optimise: no
+        raw: options.raw or options['source-map']
+        inputSource: inputSource
     catch e
       console.error e.message
       process.exit 1
@@ -333,7 +339,7 @@ else
         d.on 'error', (err) ->
           {SourceMapConsumer} = require 'source-map'
           Error.prepareStackTrace = (err, stack) ->
-            sourceMap = new SourceMapConsumer CoffeeScript.sourceMap jsAST, options.input ? (options.cli and 'cli' or 'stdin')
+            sourceMap = new SourceMapConsumer CoffeeScript.sourceMap jsAST, inputSource
             frames = stack.map (frame) ->
               name = frame.getFunctionName() ? '(unknown)'
               line = frame.getLineNumber()

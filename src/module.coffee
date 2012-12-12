@@ -36,10 +36,11 @@ module.exports =
   VERSION: pkg.version
 
   parse: (coffee, options = {}) ->
-    options.optimise ?= yes
     try
       preprocessed = Preprocessor.processSync coffee
-      parsed = Parser.parse preprocessed
+      parsed = Parser.parse preprocessed,
+        raw: options.raw
+        inputSource: options.inputSource
       if options.optimise then Optimiser.optimise parsed else parsed
     catch e
       throw e unless e instanceof Parser.SyntaxError

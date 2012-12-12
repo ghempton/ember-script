@@ -9,7 +9,7 @@ ROOT = $(shell pwd)
 
 EMBER_SCRIPT = ./bin/ember-script --js --bare
 COFFEE = node_modules/.bin/coffee --js --bare
-PEGJS = node_modules/.bin/pegjs --track-line-and-column --cache --export-var 'module.exports'
+PEGJS = node_modules/.bin/pegjs --cache --export-var 'module.exports'
 MOCHA = node_modules/.bin/mocha --compilers coffee:. -u tdd
 BROWSERIFY = node_modules/.bin/browserify
 MINIFIER = node_modules/.bin/uglifyjs --no-copyright --mangle-toplevel --reserved-names require,module,exports,global,window,CoffeeScript

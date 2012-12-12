@@ -2,3 +2,6 @@ examples
 node_modules
 .sw[po]
 .*.sw[po]
+
+lib/coffee-script/bootstrap
+lib/coffee-script/*.tmp
