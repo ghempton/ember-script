@@ -161,7 +161,7 @@ createNodes
     ObjectInitialiser: [['members']] # :: [ObjectInitialiserMember] -> ObjectInitialiser
     ObjectInitialiserMember: [['key', 'expression', 'annotations']] # :: ObjectInitialiserKeys -> Exprs -> [Annotations] -> ObjectInitialiserMember
     Mixin: [['nameAssignee', 'body', 'mixins']] # :: Maybe Assignable -> Maybe Exprs -> [Mixin] -> Mixin
-    Class: [['nameAssignee', 'parent', 'ctor', 'body', 'boundMembers', 'mixins']] # :: Maybe Assignable -> Maybe Exprs -> Maybe Exprs -> Maybe Exprs -> [ClassProtoAssignOp] -> [Mixin] -> Class
+    Class: [['nameAssignee', 'parent', 'ctor', 'body', 'mixins', 'boundMembers']] # :: Maybe Assignable -> Maybe Exprs -> Maybe Exprs -> Maybe Exprs -> [ClassProtoAssignOp] -> [Mixin] -> Class
     Constructor: [['expression']] # :: Exprs -> Constructor
     Functions: [
       ['parameters', 'body']
@@ -274,8 +274,7 @@ handlePrimitives = (ctor, primitives...) ->
       json[primitive] = @[primitive]
     json
 
-handlePrimitives Mixin, 'mixins'
-handlePrimitives Class, 'boundMembers', 'mixins'
+handlePrimitives Class, 'boundMembers'
 handlePrimitives CompoundAssignOp, 'op'
 handlePrimitives ForOf, 'isOwn'
 handlePrimitives HeregExp, 'flags'
@@ -302,6 +301,8 @@ handleLists ObjectInitialiser, 'members'
 handleLists Super, 'arguments'
 handleLists Switch, 'cases'
 handleLists SwitchCase, 'conditions'
+handleLists Class, 'mixins'
+handleLists Mixin, 'mixins'
 
 
 ## Nodes with special behaviours

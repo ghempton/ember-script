@@ -660,8 +660,8 @@ class exports.Compiler
     ]
     [CS.Rest, ({expression}) -> {rest: yes, expression, isExpression: yes, isStatement: yes}]
 
-    [CS.Mixin, ({nameAssignee, name, body, compile}) ->
-      createArgs = @mixins.map (mixin) -> new JS.Identifier(mixin)
+    [CS.Mixin, ({nameAssignee, name, body, mixins, compile}) ->
+      createArgs = mixins
       createArgs.push(body) if body
 
       mixinExpr = memberAccess(new JS.Identifier('Ember'), 'Mixin')
@@ -669,7 +669,7 @@ class exports.Compiler
       if nameAssignee? then assignment nameAssignee, iife else iife
     ]
     # TODO: comment
-    [CS.Class, ({nameAssignee, parent, name, ctor, body, compile}) ->
+    [CS.Class, ({nameAssignee, parent, name, ctor, body, mixins, compile}) ->
       args = []
       params = []
       parentRef = genSym 'super'
@@ -709,7 +709,7 @@ class exports.Compiler
       #   else rewriteThis this
       # rewriteThis block
 
-      extendArgs = @mixins.map (mixin) -> new JS.Identifier(mixin)
+      extendArgs = mixins
 
       extendArgs.push(body) if body
 

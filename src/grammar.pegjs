@@ -548,12 +548,16 @@ try
     }
 
 mixin
-  = MIXIN name:(_ Assignable)? mixins:(_ WITH _ extendee)* body:(_ mixinBody)? {
+  = MIXIN name:(_ Assignable)? mixins:(_ WITH _ mixinList)? body:(_ mixinBody)? {
     name = name ? name[1] : null;
-    mixins = mixins.map(function(mixin) { return mixin[3].data; });
+    if(mixins) mixins = mixins[3];
     body = body ? body[1] : null;
     return rp(new CS.Mixin(name, body, mixins));
   }
+mixinList
+  = e:extendee es:(_ ("," TERMINATOR?) _ extendee)* {
+      return [e].concat(es.map(function(e){ return e[3]; }));
+    }
 mixinBody
   = body:(objectLiteral / implicitObjectLiteral)
   / t:TERMINDENT body:(objectLiteral / implicitObjectLiteral) d:DEDENT {
@@ -561,7 +565,7 @@ mixinBody
   }
 
 class
-  = CLASS name:(_ Assignable)? parent:(_ EXTENDS _ extendee)? mixins:(_ WITH _ extendee)* body:(_ mixinBody)? {
+  = CLASS name:(_ Assignable)? parent:(_ EXTENDS _ extendee)? mixins:(_ WITH _ mixinList)? body:(_ mixinBody)? {
       var ctor = null;
       name = name ? name[1] : null;
       parent = parent ? parent[3] : null;
@@ -576,8 +580,8 @@ class
       //   }
       // }
       body = body ? body[1] : null;
-      mixins = mixins.map(function(mixin) { return mixin[3].data; });
-      return rp(new CS.Class(name, parent, ctor, body, boundMembers, mixins));
+      if(mixins) mixins = mixins[3];
+      return rp(new CS.Class(name, parent, ctor, body, mixins, boundMembers));
     }
   extendee
     = expressionworthy
