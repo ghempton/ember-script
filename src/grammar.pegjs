@@ -688,19 +688,23 @@ arrayLiteral
     // TODO: fix this:
     // $(DEDENT "," TERMINDENT)
 
-//params:("(" _ (td:TERMINDENT p:parameterList d:DEDENT t:TERMINATOR { return {e: p, raw: td + p.raw + d + t}; } / p:parameterList { return {e: p, raw: p.raw}; })? _ ")" _)?
 annotation
-  = "+" _ name:("computed" / "observer" / "volatile") params:(__ identifierName)* TERMINATOR? _ {
-    var constructor;
-    paramNames = params.map(function(p) { return p[1]; } )
+  = "+" _ name:("computed" / "observer" / "volatile") params:(__ annotationParameterList)? TERMINATOR? _ {
+    var constructor;  
     switch(name) {
       case 'computed': constructor = CS.Computed; break;
       case 'observer': constructor = CS.Observes; break;
       case 'volatile': constructor = CS.Volatile; break;
       default: throw new Error('No such annotation: ' + name);
     }
-    return rp(new constructor(paramNames));
+    if(params) params = params[1]
+    return rp(new constructor(params || []));
   }
+
+annotationParameterList
+  = e:propertyChain es:( (_ "," TERMINATOR? _ / __) propertyChain)* {
+      return [e].concat(es.map(function(e){ return e[1]; }));
+    }
 
 objectLiteral
   = "{" members:objectLiteralBody TERMINATOR? _ "}" {
@@ -945,6 +949,14 @@ identifierPart
   / ZWNJ
   / ZWJ
 
+propertyChain
+  = $(propertyChainPart ("." propertyChainPart)*)
+
+propertyChainPart
+  = Numbers
+  / identifierName
+  / "@each"
+  / "this"
 
 __ = $(whitespace+ (blockComment whitespace+)?)
 _ = __?

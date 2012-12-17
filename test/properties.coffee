@@ -31,7 +31,7 @@ suite 'Properties', ->
 
     test 'computed annotation should allow for explicit dependencies', ->
       obj =
-        +computed firstName lastName
+        +computed firstName, lastName
         prop: -> @firstName @lastName
       ok @hasDependentKeys(obj['prop'], ['firstName', 'lastName'])
 
@@ -44,10 +44,23 @@ suite 'Properties', ->
 
     test 'volatile annotation should allow for explicit dependencies', ->
       obj =
-        +volatile firstName lastName
+        +volatile firstName, lastName
         prop: -> @firstName @lastName
       ok @hasDependentKeys(obj['prop'], ['firstName', 'lastName'])
       ok @isVolatile(obj['prop'])
+
+    test 'annotations parameters should accept dot-separated property paths', ->
+      obj =
+        +computed name.first
+        prop: -> @name.first
+      ok @hasDependentKeys(obj['prop'], ['name.first'])
+
+    test 'annotations parameters should accept @each', ->
+      obj =
+        +computed arr.@each
+        prop: -> @arr
+      ok @hasDependentKeys(obj['prop'], ['arr.@each'])
+
 
   suite 'Native Member Property Accessor', ->
 
