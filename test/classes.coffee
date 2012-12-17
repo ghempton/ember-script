@@ -53,4 +53,3 @@ suite 'Classes', ->
       ok B.detect(abcd)
       ok C.detect(abcd)
       ok D.detect(abcd)
-

@@ -9,7 +9,6 @@ Parser = require './parser'
 {Compiler} = require './compiler'
 cscodegen = try require 'cscodegen'
 escodegen = try require 'escodegen'
-uglifyjs = try require 'uglify-js'
 
 
 pkg = require './../../package.json'
@@ -81,10 +80,4 @@ module.exports =
 
 CoffeeScript = module.exports.CoffeeScript = module.exports
 
-
-require.extensions['.coffee'] = (module, filename) ->
-  input = fs.readFileSync filename, 'utf8'
-  csAst = CoffeeScript.parse input
-  jsAst = CoffeeScript.compile csAst
-  js = CoffeeScript.js jsAst
-  module._compile js, filename
+require './run'
