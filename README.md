@@ -14,15 +14,11 @@ Being as EmberScript is still in early development, it is best to install via np
 git clone git@github.com:ghempton/ember-script.git
 cd ember-script
 npm install
-make
-bin/coffee --help
+make -j
+bin/ember-script --help
 ```
 
-For use with ember-script-ruby or ember-script-rails, make the `ember-script` command available system wide:
-
-```
-npm install . -g
-```
+To use EmberScript inside of a Rails application through the asset pipeline, see [ember-script-rails](https://github.com/ghempton/ember-script-rails).
 
 ## Examples
 
