@@ -881,7 +881,9 @@ null = NULL { return rp(new CS.Null); }
 // on the left-hand side of an assignment operation
 // TODO: to make this code work, PEGJS needs caching turned off. Fix this.
 memberAssign = access:memberAccess { access.isAssignment = true; return access }
-contextAssign = access:contextVar { access.isAssignment = true; return access }
+contextAssign = a:("@" { return rp(new CS.This); }) m:MemberNames {
+  return rp(new CS.NativeMemberAccessOp(a, m));
+}
 
 unassignable = ("arguments" / "eval") !identifierPart
 CompoundAssignable
