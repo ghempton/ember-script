@@ -1,7 +1,7 @@
 # TODO remove this once we self-host
 require(require('path').join(__dirname, '..', 'ember', 'ember-runtime'));
 
-{any, concat, concatMap, difference, divMod, foldl1, map, nub, owns, span, union} = require './functional-helpers'
+{any, concat, concatMap, difference, divMod, foldl1, map, nub, owns, partition, span, union} = require './functional-helpers'
 {beingDeclared, usedAsExpression, envEnrichments} = require './helpers'
 CS = require './nodes'
 JS = require './js-nodes'
@@ -163,11 +163,15 @@ makeVarDeclaration = (vars) ->
     new JS.VariableDeclarator v
   new JS.VariableDeclaration 'var', decls
 
+# tests for the ES3 equivalent of ES5's IdentifierName
+isIdentifierName = (name) ->
+  # this regex can be made more permissive, allowing non-whitespace unicode characters
+  name not in jsReserved and /^[$_a-z][$_a-z0-9]*$/i.test name
+
 memberAccess = (e, member) ->
-  isIdentifierName = /^[$_a-z][$_a-z0-9]*$/i # this can be made more permissive
-  if member in jsReserved or not isIdentifierName.test member
-  then new JS.MemberExpression yes, (expr e), new JS.Literal member
-  else new JS.MemberExpression no, (expr e), new JS.Identifier member
+  if isIdentifierName member
+  then new JS.MemberExpression no, (expr e), new JS.Identifier member
+  else new JS.MemberExpression yes, (expr e), new JS.Literal member
 
 dynamicMemberAccess = (e, index) ->
   if (index.instanceof JS.Literal) and typeof index.value is 'string'
@@ -407,8 +411,12 @@ class exports.Compiler
       block =
         if block.instanceof JS.BlockStatement then block.body
         else [block]
-      # helpers
-      [].push.apply block, enabledHelpers
+
+      # Push function declaration helpers, unshift all other types (VariableDeclarations, etc.)
+      [fnDeclHelpers, otherHelpers] = partition enabledHelpers, (helper) -> helper.instanceof JS.FunctionDeclaration
+      [].push.apply block, fnDeclHelpers
+      [].unshift.apply block, otherHelpers
+
       decls = nub concatMap block, declarationsNeededRecursive
       if decls.length > 0
         if options.bare
@@ -578,6 +586,8 @@ class exports.Compiler
         args = [expression].concat(observes.parameters.map (p) -> new JS.Literal(p))
         expression = new JS.CallExpression memberAccess(new JS.Identifier('Ember'), 'observer'), args
 
+      keyName = @key.data
+      key = if isIdentifierName keyName then new JS.Identifier keyName else new JS.Literal keyName
       new JS.Property key, expression
     ]
     [CS.DefaultParam, ({param, default: d}) -> {param, default: d}]
