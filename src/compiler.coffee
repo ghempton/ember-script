@@ -187,12 +187,6 @@ emberComputedProperty = (fn, chains) ->
   chains = chains.map ( (c) -> new JS.Literal(c) )
   new JS.CallExpression memberAccess(computed, 'property'), chains
 
-emberGet = (e, member) ->
-  new JS.CallExpression memberAccess(new JS.Identifier('Ember'), 'get'), [e, new JS.Literal member]
-
-emberSet = (assignee, property, expression) ->
-  new JS.CallExpression memberAccess(new JS.Identifier('Ember'), 'set'), [assignee, property, expression]
-
 # TODO: rewrite this whole thing using the CS AST nodes
 assignment = (assignee, expression, valueUsed = no) ->
   assignments = []
@@ -257,9 +251,9 @@ assignment = (assignee, expression, valueUsed = no) ->
       if assignee.computed && !(typeof assignee.property.value is 'string')
         assignments.push new JS.AssignmentExpression '=', assignee, expr expression
       else if assignee.computed
-        assignments.push emberSet assignee.object, assignee.property, expr expression
+        assignments.push helpers.set assignee.object, assignee.property, expr expression
       else
-        assignments.push emberSet assignee.object, new JS.Literal(assignee.property.name), expr expression
+        assignments.push helpers.set assignee.object, new JS.Literal(assignee.property.name), expr expression
     else
       throw new Error "compile: assignment: unassignable assignee: #{assignee.type}"
   switch assignments.length
@@ -380,6 +374,10 @@ helpers =
       new JS.Literal no
     ]
     new JS.FunctionDeclaration helperNames.in, [member, list], makeReturn new JS.BlockStatement map functionBody, stmt
+  get: ->
+    new JS.VariableDeclaration 'var', [new JS.VariableDeclarator(helperNames.get, memberAccess(new JS.Identifier('Ember'), 'get'))]
+  set: ->
+    new JS.VariableDeclaration 'var', [new JS.VariableDeclarator(helperNames.set, memberAccess(new JS.Identifier('Ember'), 'set'))]
 
 enabledHelpers = []
 for own h, fn of helpers
@@ -850,7 +848,7 @@ class exports.Compiler
       else if @isAssignment or @isFunctionContext or expression.instanceof(JS.Literal) or parent.instanceof(CS.DeleteOp) or expression.name == 'Ember'
         memberAccess expression, @memberName
       else
-        emberGet expression, @memberName
+        helpers.get expression, new JS.Literal(@memberName)
     ]
     [CS.NativeMemberAccessOp, ({expression, compile}) ->
       if hasSoak this then expr compile generateSoak this
