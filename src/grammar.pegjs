@@ -480,6 +480,7 @@ primaryExpression
   / undefined
   / contextVar
   / r:(THIS / "@") { return rp(new CS.This); }
+  / SUPER { return rp(new CS.Super); }
   / identifier
   / range
   / arrayLiteral
@@ -1015,6 +1016,7 @@ OR = $("or" !identifierPart)
 OWN = $("own" !identifierPart)
 RETURN = $("return" !identifierPart)
 SWITCH = $("switch" !identifierPart)
+SUPER = $("super" !identifierPart)
 THEN = $("then" !identifierPart)
 THIS = $("this" !identifierPart)
 THROW = $("throw" !identifierPart)

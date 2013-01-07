@@ -1,23 +1,23 @@
 - = Partially completed
-+ = Completed
+x = Completed
 
 Features:
 
 [-] Classes and Mixins
-  [+] `class` and `mixin` keywords/basic functionality
+  [x] `class` and `mixin` keywords/basic functionality
   [ ] First-class open classes and mixins
   [ ] Set names as property and override `toString`
   [ ] Re-visit CS's proto operator
-  [ ] `super` keyword
+  [x] `super` keyword
   [ ] Inner Classes
 [-] Ember accessor (get/set) substitution
-  [+] Basic accessor substituion
+  [x] Basic accessor substituion
   [ ] Dynamic/proto/soaked member access substitution
   [ ] Better tests
   [ ] Performance/minification optimizations
   [ ] Readability mode
 [-] Squiggly operator (~>)
-  [+] Basic implementation with support for basic inference
+  [x] Basic implementation with support for basic inference
   [ ] `@each` dependencies
   [ ] Better tests
 [-] Property annotations
@@ -26,7 +26,7 @@ Features:
   [-] `+observer`
   [ ] Allow for custom annotations
 [ ] Property get/set definitions
-[+] Native member access operator (*.)
+[x] Native member access operator (*.)
 [ ] Optimizations
   [ ] Flatten dependency graphs
 

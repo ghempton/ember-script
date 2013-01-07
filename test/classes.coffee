@@ -53,3 +53,11 @@ suite 'Classes', ->
       ok B.detect(abcd)
       ok C.detect(abcd)
       ok D.detect(abcd)
+
+  suite 'Super', ->
+    test 'super keyword references parent', ->
+      class A
+      class B extends A
+        init: ->
+          equal super, @_super
+      b = B.create()

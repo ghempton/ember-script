@@ -145,7 +145,7 @@ createNodes
       FunctionApplication: null # :: Exprs -> [Arguments] -> FunctionApplication
       SoakedFunctionApplication: null # :: Exprs -> [Arguments] -> SoakedFunctionApplication
     ]
-    Super: [['arguments']] # :: [Arguments] -> Super
+    Super: null # :: Super
 
     Program: [['body']] # :: Maybe Exprs -> Program
     Block: [['statements']] # :: [Statement] -> Block
