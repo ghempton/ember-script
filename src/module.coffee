@@ -1,3 +1,6 @@
+# TODO remove this once we self-host
+require '../ember/ember-runtime'
+
 fs = require 'fs'
 path = require 'path'
 
@@ -80,4 +83,6 @@ module.exports =
 
 CoffeeScript = module.exports.CoffeeScript = module.exports
 
-require './run'
+if (process.title == 'node')
+  noBrowserifyRequire = require
+  noBrowserifyRequire './run'

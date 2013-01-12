@@ -1,6 +1,3 @@
-# TODO remove this once we self-host
-require(require('path').join(__dirname, '..', 'ember', 'ember-runtime'));
-
 {any, concat, concatMap, difference, divMod, foldl1, map, nub, owns, partition, span, union} = require './functional-helpers'
 {beingDeclared, usedAsExpression, envEnrichments} = require './helpers'
 CS = require './nodes'
