@@ -6,3 +6,5 @@ dist
 
 lib/coffee-script/bootstrap
 lib/coffee-script/*.tmp
+
+.DS_Store
