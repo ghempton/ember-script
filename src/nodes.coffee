@@ -343,10 +343,10 @@ RegExps::initialise = (_, flags) ->
   return
 
 PostIncrementOp::initialise = ->
-  @isAssignment = true
+  @expression.isAssignment = true
 
 PostDecrementOp::initialise = ->
-  @isAssignment = true
+  @expression.isAssignment = true
 
 
 ## Syntactic nodes
