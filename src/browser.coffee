@@ -1,11 +1,4 @@
-window.EmberScript = require './module'
-
-# Equivalent to original CS compile
-EmberScript.em2js = (input, options = {}) ->
-  options.optimise ?= on
-  csAST = EmberScript.parse input, options
-  jsAST = EmberScript.compile csAST, bare: options.bare
-  EmberScript.js jsAST, compact: options.minify
+module.exports = EmberScript = require './module'
 
 # Use standard JavaScript `eval` to eval code.
 EmberScript.eval = (code, options = {}) ->

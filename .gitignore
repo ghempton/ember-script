@@ -8,3 +8,6 @@ lib/coffee-script/bootstrap
 lib/coffee-script/*.tmp
 
 .DS_Store
+dist
+lib/bootstrap
+coffee-script-redux-*.tgz

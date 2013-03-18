@@ -1,8 +1,5 @@
 # TODO remove this once we self-host
-require '../ember/ember-runtime'
-
-fs = require 'fs'
-path = require 'path'
+require './ember/ember-runtime'
 
 {formatParserError} = require './helpers'
 Nodes = require './nodes'
@@ -14,7 +11,7 @@ cscodegen = try require 'cscodegen'
 escodegen = try require 'escodegen'
 
 
-pkg = require './../../package.json'
+pkg = require './../package.json'
 
 escodegenFormatDefaults =
   indent:
@@ -60,25 +57,31 @@ module.exports =
       throw new Error formatParserError preprocessed, e
 
   compile: (csAst, options) ->
-    Compiler.compile csAst, options
+    (Compiler.compile csAst, options).toBasicObject()
 
   # TODO
   cs: (csAst, options) ->
     # TODO: opt: format (default: nice defaults)
 
-  js: (jsAst, options = {}) ->
+  jsWithSourceMap: (jsAst, name = 'unknown', options = {}) ->
     # TODO: opt: minify (default: no)
     throw new Error 'escodegen not found: run `npm install escodegen`' unless escodegen?
+    unless {}.hasOwnProperty.call jsAst, 'type'
+      jsAst = jsAst.toBasicObject()
     escodegen.generate jsAst,
       comment: not options.compact
-      format: if options.compact then escodegenCompactDefaults else options.format ? escodegenFormatDefaults
-
-  sourceMap: (jsAst, name = 'unknown', options = {}) ->
-    throw new Error 'escodegen not found: run `npm install escodegen`' unless escodegen?
-    escodegen.generate jsAst.toJSON(),
-      comment: not options.compact
+      sourceMapWithCode: yes
       sourceMap: name
       format: if options.compact then escodegenCompactDefaults else options.format ? escodegenFormatDefaults
+
+  js: (jsAst, options) -> (@jsWithSourceMap jsAst, null, options).code
+  sourceMap: (jsAst, name, options) -> (@jsWithSourceMap jsAst, name, options).map
+
+  em2js: (input, options = {}) ->
+    options.optimise ?= on
+    csAST = EmberScript.parse input, options
+    jsAST = EmberScript.compile csAST, bare: options.bare
+    EmberScript.js jsAST, compact: options.compact or options.minify
 
 
 CoffeeScript = module.exports.CoffeeScript = module.exports

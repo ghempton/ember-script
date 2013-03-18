@@ -173,7 +173,7 @@ memberAccess = (e, member) ->
 dynamicMemberAccess = (e, index) ->
   if (index.instanceof JS.Literal) and typeof index.value is 'string'
   then memberAccess e, index.value
-  else new JS.MemberExpression yes, e, index
+  else new JS.MemberExpression yes, (expr e), index
 
 forceComputedProperty = (fn, chains) ->
   # TODO check if already a computed property
@@ -365,7 +365,7 @@ helpers =
       new JS.VariableDeclarator i, new JS.Literal 0
       new JS.VariableDeclarator length, memberAccess list, 'length'
     ]
-    loopBody = new JS.IfStatement (new JS.BinaryExpression '&&', (new JS.BinaryExpression 'in', i, list), (new JS.BinaryExpression '===', (new JS.MemberExpression yes, list, i), member)), new JS.ReturnStatement new JS.Literal yes
+    loopBody = new JS.IfStatement (new JS.LogicalExpression '&&', (new JS.BinaryExpression 'in', i, list), (new JS.BinaryExpression '===', (new JS.MemberExpression yes, list, i), member)), new JS.ReturnStatement new JS.Literal yes
     functionBody = [
       new JS.ForStatement varDeclaration, (new JS.BinaryExpression '<', i, length), (new JS.UpdateExpression '++', yes, i), loopBody
       new JS.Literal no
@@ -420,7 +420,7 @@ class exports.Compiler
           # add a function wrapper
           block = [stmt new JS.UnaryExpression 'void', new JS.CallExpression (memberAccess (new JS.FunctionExpression null, [], new JS.BlockStatement block), 'call'), [new JS.ThisExpression]]
       # generate node
-      pkg = require './../../package.json'
+      pkg = require './../package.json'
       program = new JS.Program block
       program.leadingComments = [
         type: 'Line'
@@ -432,7 +432,10 @@ class exports.Compiler
       switch statements.length
         when 0 then new JS.EmptyStatement
         when 1 then new stmt statements[0]
-        else new JS.BlockStatement map statements, stmt
+        else new JS.BlockStatement concatMap statements, (s) ->
+          if s.instanceof JS.BlockStatement then map s.body, stmt
+          else if s.instanceof JS.SequenceExpression then map s.expressions, stmt
+          else [stmt s]
     ]
     [CS.SeqOp, ({left, right})-> new JS.SequenceExpression [left, right]]
     [CS.Conditional, ({condition, consequent, alternate, ancestry}) ->
@@ -441,7 +444,6 @@ class exports.Compiler
         alternate = forceBlock alternate unless alternate.instanceof JS.IfStatement
       if alternate? or ancestry[0]?.instanceof CS.Conditional
         consequent = forceBlock consequent
-      inspect = (o) -> require('util').inspect o, no, 2, yes
       new JS.IfStatement (expr condition), (stmt consequent), alternate
     ]
     [CS.ForIn, ({valAssignee, keyAssignee, target, step, filter, body}) ->
@@ -561,11 +563,11 @@ class exports.Compiler
           [ys].concat groupMembers zs
       ({members, compile}) ->
         if any members, (m) -> m.spread
-          grouped = groupMembers members
+          grouped = map (groupMembers members), expr
           new JS.CallExpression (memberAccess grouped[0], 'concat'), grouped[1..]
         else new JS.ArrayExpression map members, expr
     ]
-    [CS.Spread, ({expression}) -> {spread: yes, expression}]
+    [CS.Spread, ({expression}) -> {spread: yes, expression: expr expression}]
     [CS.ObjectInitialiser, ({members}) -> new JS.ObjectExpression members]
     [CS.ObjectInitialiserMember, ({key, expression}) ->
       expression = expr expression
@@ -741,10 +743,11 @@ class exports.Compiler
     [CS.AssignOp, ({assignee, expression, ancestry}) ->
       assignment assignee, expression, usedAsExpression this, ancestry
     ]
-    [CS.CompoundAssignOp, ({assignee, expression}) ->
+    [CS.CompoundAssignOp, ({assignee, expression, inScope}) ->
       op = switch @op
         when CS.LogicalAndOp::className         then '&&'
         when CS.LogicalOrOp::className          then '||'
+        when CS.ExistsOp::className             then '?'
         when CS.BitOrOp::className              then '|'
         when CS.BitXorOp::className             then '^'
         when CS.BitAndOp::className             then '&'
@@ -758,18 +761,20 @@ class exports.Compiler
         when CS.RemOp::className                then '%'
         when CS.ExpOp::className                then '**'
         else throw new Error 'Unrecognised compound assignment operator'
-      # TODO: if assignee is an identifier, fail unless assignee is in scope
-      if op in ['&&', '||']
-        new JS.BinaryExpression op, assignee, new JS.AssignmentExpression '=', assignee, expr expression
-      else if op is '**'
-        new JS.AssignmentExpression '=', assignee, helpers.exp assignee, expr expression
-      else new JS.AssignmentExpression "#{op}=", assignee, expression
-    ]
-    [CS.ExistsAssignOp, ({assignee, expression, inScope}) ->
-      if (assignee.instanceof JS.Identifier) and assignee.name not in inScope
+
+      # if assignee is an identifier, fail unless assignee is in scope
+      if op in ['&&', '||', '?'] and (assignee.instanceof JS.Identifier) and assignee.name not in inScope
         throw new Error "the variable \"#{assignee.name}\" can't be assigned with ?= because it has not been defined."
-      condition = new JS.BinaryExpression '!=', (new JS.Literal null), assignee
-      new JS.ConditionalExpression condition, assignee, new JS.AssignmentExpression '=', assignee, expr expression
+
+      switch op
+        when '&&', '||'
+          new JS.LogicalExpression op, assignee, new JS.AssignmentExpression '=', assignee, expr expression
+        when '?'
+          condition = new JS.BinaryExpression '!=', (new JS.Literal null), assignee
+          new JS.ConditionalExpression condition, assignee, new JS.AssignmentExpression '=', assignee, expr expression
+        when '**'
+          new JS.AssignmentExpression '=', assignee, helpers.exp assignee, expr expression
+        else new JS.AssignmentExpression "#{op}=", assignee, expr expression
     ]
     [CS.ChainedComparisonOp, ({expression, compile}) ->
       return expression unless @expression.left.instanceof CS.ComparisonOps
@@ -781,7 +786,7 @@ class exports.Compiler
         if @expression.left.left.instanceof CS.ComparisonOps
           lhs.right.right = new JS.AssignmentExpression '=', left, lhs.right.right
         else lhs.right = new JS.AssignmentExpression '=', left, lhs.right
-      new JS.BinaryExpression '&&', lhs, new JS.BinaryExpression expression.operator, left, expression.right
+      new JS.LogicalExpression '&&', lhs, new JS.BinaryExpression expression.operator, left, expression.right
     ]
     [CS.FunctionApplication, ({function: fn, arguments: args, compile}) ->
       if any args, (m) -> m.spread
@@ -869,7 +874,7 @@ class exports.Compiler
         args.push if @isInclusive
           if (right.instanceof JS.Literal) and typeof right.data is 'number'
           then new JS.Literal right.data + 1
-          else new JS.BinaryExpression '||', (new JS.BinaryExpression '+', (new JS.UnaryExpression '+', right), new JS.Literal 1), new JS.Literal 9e9
+          else new JS.LogicalExpression '||', (new JS.BinaryExpression '+', (new JS.UnaryExpression '+', right), new JS.Literal 1), new JS.Literal 9e9
         else right
       new JS.CallExpression (memberAccess expression, 'slice'), args
     ]
@@ -877,7 +882,7 @@ class exports.Compiler
       e = if needsCaching @left then genSym 'cache' else expr left
       condition = new JS.BinaryExpression '!=', (new JS.Literal null), e
       if (e.instanceof JS.Identifier) and e.name not in inScope
-        condition = new JS.BinaryExpression '&&', (new JS.BinaryExpression '!==', (new JS.Literal 'undefined'), new JS.UnaryExpression 'typeof', e), condition
+        condition = new JS.LogicalExpression '&&', (new JS.BinaryExpression '!==', (new JS.Literal 'undefined'), new JS.UnaryExpression 'typeof', e), condition
       node = new JS.ConditionalExpression condition, e, expr right
       if e is left then node
       else new JS.SequenceExpression [(new JS.AssignmentExpression '=', e, left), node]
@@ -886,7 +891,7 @@ class exports.Compiler
       nullTest = new JS.BinaryExpression '!=', (new JS.Literal null), expression
       if (expression.instanceof JS.Identifier) and expression.name not in inScope
         typeofTest = new JS.BinaryExpression '!==', (new JS.Literal 'undefined'), new JS.UnaryExpression 'typeof', expression
-        new JS.BinaryExpression '&&', typeofTest, nullTest
+        new JS.LogicalExpression '&&', typeofTest, nullTest
       else nullTest
     ]
     [CS.DoOp, do ->
@@ -937,15 +942,15 @@ class exports.Compiler
               helpers.in (expr left), expr right
             else
               comparisons = map right.elements, (e) -> new JS.BinaryExpression '===', left, e
-              foldl1 comparisons, (l, r) -> new JS.BinaryExpression '||', l, r
+              foldl1 comparisons, (l, r) -> new JS.LogicalExpression '||', l, r
       else
         helpers.in (expr left), expr right
     ]
     [CS.ExtendsOp, ({left, right}) -> helpers.extends (expr left), expr right]
     [CS.InstanceofOp, ({left, right}) -> new JS.BinaryExpression 'instanceof', (expr left), expr right]
 
-    [CS.LogicalAndOp, ({left, right}) -> new JS.BinaryExpression '&&', (expr left), expr right]
-    [CS.LogicalOrOp, ({left, right}) -> new JS.BinaryExpression '||', (expr left), expr right]
+    [CS.LogicalAndOp, ({left, right}) -> new JS.LogicalExpression '&&', (expr left), expr right]
+    [CS.LogicalOrOp, ({left, right}) -> new JS.LogicalExpression '||', (expr left), expr right]
 
     [CS.EQOp , ({left, right}) -> new JS.BinaryExpression '===', (expr left), expr right]
     [CS.NEQOp , ({left, right}) -> new JS.BinaryExpression '!==', (expr left), expr right]
@@ -1123,8 +1128,9 @@ class exports.Compiler
     (ast, options = {}) ->
       options.bare ?= no
       rules = @rules
-      jsAST = walk.call ast, (-> (rules[@className] ? defaultRule).apply this, arguments), [], [], options
+      inScope = options.inScope ? []
+      jsAST = walk.call ast, (-> (rules[@className] ? defaultRule).apply this, arguments), inScope, [], options
       generateSymbols jsAST,
-        declaredSymbols: []
+        declaredSymbols: inScope
         usedSymbols: union jsReserved[..], collectIdentifiers jsAST
         nsCounters: {}

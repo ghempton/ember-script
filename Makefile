@@ -1,22 +1,23 @@
 default: all
 
 SRC = $(shell find src -name "*.coffee" -type f | sort)
-LIB = $(SRC:src/%.coffee=lib/coffee-script/%.js) lib/coffee-script/parser.js
-BOOTSTRAPS = $(SRC:src/%.coffee=lib/coffee-script/bootstrap/%.js) lib/coffee-script/bootstrap/parser.js
-LIBMIN = $(LIB:lib/coffee-script/%.js=lib/coffee-script/%.min.js)
+LIB = $(SRC:src/%.coffee=lib/%.js) lib/parser.js
+BOOTSTRAPS = $(SRC:src/%.coffee=lib/bootstrap/%.js) lib/bootstrap/parser.js
+LIBMIN = $(LIB:lib/%.js=lib/%.min.js)
+TEST = $(shell echo test/*.coffee | sort)
 ROOT = $(shell pwd)
 
 EMBER_SCRIPT = ./bin/ember-script --js --bare
 COFFEE = node_modules/.bin/coffee --js --bare
 PEGJS = node_modules/.bin/pegjs --cache --export-var 'module.exports'
 MOCHA = node_modules/.bin/mocha --compilers coffee:. -u tdd
-BROWSERIFY = node_modules/.bin/browserify
+CJSIFY = node_modules/.bin/cjsify --export EmberScript
 MINIFIER = node_modules/.bin/esmangle
 
 all: $(LIB)
 build: all
-parser: lib/coffee-script/parser.js
-browser: build dist/ember-script.min.js
+parser: lib/parser.js
+browser: dist/ember-script.js
 min: minify
 minify: $(LIBMIN)
 # TODO: test-browser
@@ -26,37 +27,34 @@ minify: $(LIBMIN)
 
 lib:
 	mkdir lib/
-lib/coffee-script: lib
-	mkdir -p lib/coffee-script/
-lib/coffee-script/bootstrap: lib/coffee-script
-	mkdir -p lib/coffee-script/bootstrap
+lib/bootstrap: lib
+	mkdir -p lib/bootstrap
 
 
-lib/coffee-script/parser.js: src/grammar.pegjs bootstraps lib/coffee-script
+lib/parser.js: src/grammar.pegjs bootstraps lib
 	$(PEGJS) <"$<" >"$(@:%=%.tmp)" && mv "$(@:%=%.tmp)" "$@"
-lib/coffee-script/bootstrap/parser.js: src/grammar.pegjs lib/coffee-script/bootstrap
+lib/bootstrap/parser.js: src/grammar.pegjs lib/bootstrap
 	$(PEGJS) <"$<" >"$@"
-lib/coffee-script/bootstrap/%.js: src/%.coffee lib/coffee-script/bootstrap
+lib/bootstrap/%.js: src/%.coffee lib/bootstrap
 	$(COFFEE) -i "$<" >"$@"
-bootstraps: $(BOOTSTRAPS) lib/coffee-script/bootstrap
-	mv lib/coffee-script/bootstrap/* lib/coffee-script
-	rmdir lib/coffee-script/bootstrap
-lib/coffee-script/%.js: src/%.coffee lib/coffee-script/bootstrap/%.js bootstraps lib/coffee-script
+bootstraps: $(BOOTSTRAPS) lib/bootstrap
+	cp lib/bootstrap/* lib
+lib/%.js: src/%.coffee lib/bootstrap/%.js bootstraps lib
 	$(COFFEE) -i "$<" >"$(@:%=%.tmp)" && mv "$(@:%=%.tmp)" "$@"
 
 
 dist:
 	mkdir dist/
 
-dist/ember-script.js: dist
-	$(BROWSERIFY) lib/coffee-script/browser.js > dist/ember-script.js
+dist/ember-script.js: lib/browser.js dist
+	./build-browser
 
-dist/ember-script.min.js: dist/ember-script.js
-	$(MINIFIER) < dist/ember-script.js > dist/ember-script.min.js
+#dist/coffee-script-redux.min.js: lib/browser.js dist
+#	$(CJSIFY) lib/browser.js --minify --source-map-file dist/coffee-script-redux.js.map > dist/coffee-script-redux.js
 
 
 
-lib/coffee-script/%.min.js: lib/coffee-script/%.js lib/coffee-script
+lib/%.min.js: lib/%.js lib/coffee-script
 	$(MINIFIER) <"$<" >"$@"
 
 
@@ -64,14 +62,15 @@ lib/coffee-script/%.min.js: lib/coffee-script/%.js lib/coffee-script
 
 
 test:
-	$(MOCHA) -R dot
+	$(MOCHA) -R dot $(TEST)
 
+# TODO: use Constellation/ibrik for coverage
 coverage:
 	@which jscoverage || (echo "install node-jscoverage"; exit 1)
 	rm -rf instrumented
 	jscoverage -v lib instrumented
 	$(MOCHA) -R dot
-	$(MOCHA) -r instrumented/coffee-script/compiler -R html-cov > coverage.html
+	$(MOCHA) -r instrumented/compiler -R html-cov > coverage.html
 	@xdg-open coverage.html &> /dev/null
 
 install:

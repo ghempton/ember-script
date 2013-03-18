@@ -48,7 +48,6 @@ createNodes
         AssignOp: null # :: Assignables -> Exprs -> AssignOp
         ClassProtoAssignOp: null # :: ObjectInitialiserKeys -> Exprs -> ClassProtoAssignOp
         CompoundAssignOp: [['op', 'assignee', 'expression']] # :: string -> Assignables -> Exprs -> CompoundAssignOp
-        ExistsAssignOp: null # :: Assignables -> Exprs -> ExistsAssignOp
       ]
       BitOps: [
         null
@@ -214,29 +213,29 @@ createNodes
   Identifier, ForOf, Functions, While, Mixin, Class, Block, NewOp, Bool,
   FunctionApplications, RegExps, RegExp, HeregExp, Super, Slice, Switch,
   Identifiers, SwitchCase, GenSym, ComputedProperty, ObjectInitialiserMember,
-  Annotations
+  Annotations, PostIncrementOp, PostDecrementOp
 } = exports
 
 
-Nodes.fromJSON = (json) -> exports[json.type].fromJSON json
+Nodes.fromBasicObject = (obj) -> exports[obj.type].fromBasicObject obj
 Nodes::listMembers = []
-Nodes::toJSON = ->
-  json = { type: @className }
-  if @line? then json.line = @line
-  if @column? then json.column = @column
+Nodes::toBasicObject = ->
+  obj = { type: @className }
+  if @line? then obj.line = @line
+  if @column? then obj.column = @column
   if @raw?
-    json.raw = @raw
+    obj.raw = @raw
     if @offset?
-      json.range = [
+      obj.range = [
         @offset
         @offset + @raw.length
       ]
   for child in @childNodes
     if child in @listMembers
-      json[child] = (p.toJSON() for p in @[child])
+      obj[child] = (p.toBasicObject() for p in @[child])
     else
-      json[child] = if @[child]? then @[child].toJSON()
-  json
+      obj[child] = if @[child]? then @[child].toBasicObject()
+  obj
 Nodes::fold = (memo, fn) ->
   for child in @childNodes
     if child in @listMembers
@@ -268,11 +267,11 @@ Nodes::g = ->
 
 handlePrimitives = (ctor, primitives...) ->
   ctor::childNodes = difference ctor::childNodes, primitives
-  ctor::toJSON = ->
-    json = Nodes::toJSON.call this
+  ctor::toBasicObject = ->
+    obj = Nodes::toBasicObject.call this
     for primitive in primitives
-      json[primitive] = @[primitive]
-    json
+      obj[primitive] = @[primitive]
+    obj
 
 handlePrimitives Class, 'boundMembers'
 handlePrimitives CompoundAssignOp, 'op'
@@ -342,6 +341,12 @@ RegExps::initialise = (_, flags) ->
   for flag in ['g', 'i', 'm', 'y']
     @flags[flag] = flag in flags
   return
+
+PostIncrementOp::initialise = ->
+  @isAssignment = true
+
+PostDecrementOp::initialise = ->
+  @isAssignment = true
 
 
 ## Syntactic nodes
