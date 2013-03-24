@@ -1,4 +1,4 @@
 #!/usr/bin/env node
 Error.stackTraceLimit = Infinity;
-require(require('path').join(__dirname, '..', 'lib', 'ember', 'ember-runtime'));
+require(require('path').join(__dirname, '..', 'lib', 'ember-runtime'));
 require(require('path').join(__dirname, '..', 'lib', 'command'));

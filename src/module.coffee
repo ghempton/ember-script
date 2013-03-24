@@ -1,12 +1,10 @@
-# TODO remove this once we self-host
-require './ember/ember-runtime'
-
 {formatParserError} = require './helpers'
 Nodes = require './nodes'
 {Preprocessor} = require './preprocessor'
 Parser = require './parser'
 {Optimiser} = require './optimiser'
 {Compiler} = require './compiler'
+require './ember-runtime'
 cscodegen = try require 'cscodegen'
 escodegen = try require 'escodegen'
 

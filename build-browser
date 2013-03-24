@@ -1,4 +1,4 @@
-#!/usr/bin/env node bin/coffee
+#!/usr/bin/env node bin/ember-script
 fs = require 'fs'
 path = require 'path'
 
