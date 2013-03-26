@@ -4,14 +4,18 @@ path = require 'path'
 
 CJSEverywhere = require 'commonjs-everywhere'
 escodegen = require 'escodegen'
+esmangle = require 'esmangle'
 
 root = __dirname
 
-ast = CJSEverywhere.cjsify './src/browser.coffee', root,
+ast = CJSEverywhere.cjsifySync './src/browser.coffee', root,
   aliases:
     '/src/parser.coffee': '/lib/parser.js'
   export: 'EmberScript'
+  ignoreMissing: yes
   verbose: yes
+
+#ast = esmangle.mangle (esmangle.optimize ast), destructive: yes
 
 {code, map} = escodegen.generate ast,
   sourceMapRoot: path.resolve root

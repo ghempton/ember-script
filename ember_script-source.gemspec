@@ -4,7 +4,7 @@ require 'json'
 package = JSON.parse(File.read('package.json'))
 
 Gem::Specification.new do |gem|
-  gem.name          = "ember-script-source"
+  gem.name          = "ember_script-source"
   gem.authors       = ["Gordon Hempton"]
   gem.email         = ["ghempton@gmail.com"]
   gem.date          = Time.now.strftime("%Y-%m-%d")

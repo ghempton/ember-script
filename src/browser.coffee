@@ -1,5 +1,7 @@
 module.exports = EmberScript = require './module'
 
+global.EmberScript = EmberScript
+
 # Use standard JavaScript `eval` to eval code.
 EmberScript.eval = (code, options = {}) ->
   options.bare ?= on

@@ -11,3 +11,5 @@ lib/coffee-script/*.tmp
 dist
 lib/bootstrap
 coffee-script-redux-*.tgz
+
+*.gem

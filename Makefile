@@ -17,6 +17,7 @@ MINIFIER = node_modules/.bin/esmangle
 all: $(LIB)
 build: all
 parser: lib/parser.js
+#browser: dist/ember-script.min.js
 browser: dist/ember-script.js
 min: minify
 minify: $(LIBMIN)
@@ -46,12 +47,13 @@ lib/%.js: src/%.coffee lib/bootstrap/%.js bootstraps lib
 dist:
 	mkdir dist/
 
+
 dist/ember-script.js: lib/browser.js dist
 	./build-browser
+#	$(CJSIFY) lib/browser.js --source-map-file dist/coffee-script-redux.js.map > dist/coffee-script-redux.js
 
-#dist/coffee-script-redux.min.js: lib/browser.js dist
-#	$(CJSIFY) lib/browser.js --minify --source-map-file dist/coffee-script-redux.js.map > dist/coffee-script-redux.js
-
+# dist/ember-script.min.js: lib/browser.js dist
+# 	./build-browser
 
 
 lib/%.min.js: lib/%.js lib/coffee-script
