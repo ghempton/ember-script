@@ -100,7 +100,7 @@ suite 'Properties', ->
       equal obj*.x, 5
 
     test 'should return raw computed property', ->
-      obj = Ember.Object.create
+      obj = Ember.Object.createWithMixins
         +computed
         prop: -> 5
       equal obj.prop, 5

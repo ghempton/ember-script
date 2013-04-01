@@ -1,6 +1,8 @@
 {map, concat, concatMap, difference, nub, union} = require './functional-helpers'
 exports = module?.exports ? this
 
+require './ember-runtime' unless Ember?
+
 # TODO: make sure all the type signatures are correct
 
 createNodes = (subclasses, superclasses = []) ->
@@ -372,7 +374,12 @@ MemberAccessOp::dependentKeys = (scope={}) ->
     c.push(memberName)
     c
 
-enumerableMethods = ["isEnumerable", "nextObject", "firstObject", "lastObject", "contains", "forEach", "getEach", "setEach", "map", "mapProperty", "filter", "reject", "filterProperty", "rejectProperty", "find", "findProperty", "every", "everyProperty", "some", "someProperty", "reduce", "invoke", "toArray", "compact", "without", "uniq", "[]", "addEnumerableObserver", "removeEnumerableObserver", "hasEnumerableObservers", "enumerableContentWillChange", "enumerableContentDidChange"]
+# Compile a list of methods which are used to infer an @each dependency
+enumerableMethods = Ember.Set.create()
+enumerableMethods.addObjects(Ember.Enumerable.keys())
+enumerableMethods.addObjects(Ember.Array.keys())
+enumerableMethods.addObjects(Ember.MutableArray.keys())
+enumerableMethods.addObjects(Ember.MutableEnumerable.keys())
 
 FunctionApplications::dependentKeys = (scope={}) ->
   res = @function.dependentKeys(scope)
@@ -382,7 +389,7 @@ FunctionApplications::dependentKeys = (scope={}) ->
       c.pop()
       c
     # Add @each dependency if enumerable method
-    if @function.memberName in enumerableMethods
+    if enumerableMethods.contains(@function.memberName)
       res = res.map (c) ->
         c.push('@each')
         c
