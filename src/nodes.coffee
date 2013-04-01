@@ -261,16 +261,6 @@ Nodes::generated = no
 Nodes::g = ->
   @generated = yes
   this
-Nodes::dependentKeys = ->
-  chains = []
-  for childName in @childNodes when @[childName]?
-    if childName in @listMembers
-      for member in @[childName]
-        chains = chains.concat member.dependentKeys()
-    else
-      child = @[childName]
-      chains = chains.concat child.dependentKeys()
-  chains
 
 
 ## Nodes that contain primitive properties
@@ -359,6 +349,19 @@ PostDecrementOp::initialise = ->
   @expression.isAssignment = true
 
 
+## Dependency Inference
+
+Nodes::dependentKeys = ->
+  chains = []
+  for childName in @childNodes when @[childName]?
+    if childName in @listMembers
+      for member in @[childName]
+        chains = chains.concat member.dependentKeys()
+    else
+      child = @[childName]
+      chains = chains.concat child.dependentKeys()
+  chains
+
 This::dependentKeys = ->
   [[]]
 
@@ -367,6 +370,23 @@ MemberAccessOp::dependentKeys = ->
   @expression.dependentKeys().map (c) ->
     c.push(memberName)
     c
+
+enumerableMethods = ["isEnumerable", "nextObject", "firstObject", "lastObject", "contains", "forEach", "getEach", "setEach", "map", "mapProperty", "filter", "reject", "filterProperty", "rejectProperty", "find", "findProperty", "every", "everyProperty", "some", "someProperty", "reduce", "invoke", "toArray", "compact", "without", "uniq", "[]", "addEnumerableObserver", "removeEnumerableObserver", "hasEnumerableObservers", "enumerableContentWillChange", "enumerableContentDidChange"]
+
+FunctionApplications::dependentKeys = ->
+  res = @function.dependentKeys()
+  if @function.instanceof(MemberAccessOp)
+    # pop the function name
+    res = res.map (c) ->
+      c.pop()
+      c
+    # Add @each dependency if enumerable method
+    if @function.memberName in enumerableMethods
+      res = res.map (c) ->
+        c.push('@each')
+        c
+  res
+
 
 
 ## Syntactic nodes

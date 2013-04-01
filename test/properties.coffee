@@ -21,6 +21,14 @@ suite 'Properties', ->
       cp = ~> @x + @y + @z.name
       ok @hasDependentKeys(cp, ['x', 'y', 'z.name'])
 
+    test 'should infer enumerable dependency', ->
+      cp = ~> @x.y.forEach(->)
+      ok @hasDependentKeys(cp, ['x.y.@each'])
+
+    test 'should not add function name to dependent keys', ->
+      cp = ~> @content.someMethod()
+      ok @hasDependentKeys(cp, ['content'])
+
   suite 'Annotations', ->
 
     test 'computed annotation should create computed property', ->
