@@ -213,7 +213,7 @@ createNodes
   Identifier, ForOf, Functions, While, Mixin, Class, Block, NewOp, Bool,
   FunctionApplications, RegExps, RegExp, HeregExp, Super, Slice, Switch,
   Identifiers, SwitchCase, GenSym, ComputedProperty, ObjectInitialiserMember,
-  Annotations, PostIncrementOp, PostDecrementOp
+  Annotations, PostIncrementOp, PostDecrementOp, MemberAccessOp, This
 } = exports
 
 
@@ -261,6 +261,16 @@ Nodes::generated = no
 Nodes::g = ->
   @generated = yes
   this
+Nodes::dependentKeys = ->
+  chains = []
+  for childName in @childNodes when @[childName]?
+    if childName in @listMembers
+      for member in @[childName]
+        chains = chains.concat member.dependentKeys()
+    else
+      child = @[childName]
+      chains = chains.concat child.dependentKeys()
+  chains
 
 
 ## Nodes that contain primitive properties
@@ -347,6 +357,16 @@ PostIncrementOp::initialise = ->
 
 PostDecrementOp::initialise = ->
   @expression.isAssignment = true
+
+
+This::dependentKeys = ->
+  [[]]
+
+MemberAccessOp::dependentKeys = ->
+  memberName = @memberName
+  @expression.dependentKeys().map (c) ->
+    c.push(memberName)
+    c
 
 
 ## Syntactic nodes

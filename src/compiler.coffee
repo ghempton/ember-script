@@ -661,7 +661,8 @@ class exports.Compiler
             fn
           ]
         if @instanceof CS.ComputedProperty
-          emberComputedProperty(fn, @chains)
+          chains = @dependentKeys().map((c) -> c.join('.'))
+          emberComputedProperty(fn, chains)
         else
           fn
     ]
@@ -1013,30 +1014,6 @@ class exports.Compiler
   # TODO: comment
   compile: do ->
 
-    # Traverse the CS AST and attempt to infer all of the property chains
-    # for a computed property
-    # TODO: this could be a *lot* better
-    computePropertyChains = ->
-      chains = []
-      if @instanceof(CS.MemberAccessOps) && @expression.instanceof(CS.This)
-        return [@memberName]
-      for childName in @childNodes when @[childName]?
-        if childName in @listMembers
-          for member in @[childName]
-            childChains = computePropertyChains.call member
-            if @instanceof CS.MemberAccessOps
-              memberName = @memberName
-              childChains = childChains.map( (c) -> "#{c}.#{memberName}" )
-            chains = chains.concat childChains
-        else
-          child = @[childName]
-          childChains = computePropertyChains.call child
-          if @instanceof CS.MemberAccessOps
-            memberName = @memberName
-            childChains = childChains.map( (c) -> "#{c}.#{memberName}" )
-          chains = chains.concat childChains
-      chains
-
     walk = (fn, inScope, ancestry, options) ->
 
       if (ancestry[0]?.instanceof CS.Function, CS.BoundFunction, CS.ComputedProperty) and this is ancestry[0].body
@@ -1044,9 +1021,6 @@ class exports.Compiler
 
       ancestry.unshift this
       children = {}
-
-      if(this.instanceof CS.ComputedProperty)
-        @chains = computePropertyChains.call this
 
       for childName in @childNodes when @[childName]?
         children[childName] =
