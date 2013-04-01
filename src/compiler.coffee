@@ -661,7 +661,7 @@ class exports.Compiler
             fn
           ]
         if @instanceof CS.ComputedProperty
-          chains = @dependentKeys().map((c) -> c.join('.'))
+          chains = Ember.A(@dependentKeys().map((c) -> c.join('.'))).uniq()
           emberComputedProperty(fn, chains)
         else
           fn

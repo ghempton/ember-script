@@ -213,7 +213,8 @@ createNodes
   Identifier, ForOf, Functions, While, Mixin, Class, Block, NewOp, Bool,
   FunctionApplications, RegExps, RegExp, HeregExp, Super, Slice, Switch,
   Identifiers, SwitchCase, GenSym, ComputedProperty, ObjectInitialiserMember,
-  Annotations, PostIncrementOp, PostDecrementOp, MemberAccessOp, This
+  Annotations, PostIncrementOp, PostDecrementOp, MemberAccessOp, This,
+  AssignOp
 } = exports
 
 
@@ -351,30 +352,30 @@ PostDecrementOp::initialise = ->
 
 ## Dependency Inference
 
-Nodes::dependentKeys = ->
+Nodes::dependentKeys = (scope={}) ->
   chains = []
   for childName in @childNodes when @[childName]?
     if childName in @listMembers
       for member in @[childName]
-        chains = chains.concat member.dependentKeys()
+        chains = chains.concat member.dependentKeys(scope)
     else
       child = @[childName]
-      chains = chains.concat child.dependentKeys()
+      chains = chains.concat child.dependentKeys(scope)
   chains
 
-This::dependentKeys = ->
+This::dependentKeys = (scope={}) ->
   [[]]
 
-MemberAccessOp::dependentKeys = ->
+MemberAccessOp::dependentKeys = (scope={}) ->
   memberName = @memberName
-  @expression.dependentKeys().map (c) ->
+  @expression.dependentKeys(scope).map (c) ->
     c.push(memberName)
     c
 
 enumerableMethods = ["isEnumerable", "nextObject", "firstObject", "lastObject", "contains", "forEach", "getEach", "setEach", "map", "mapProperty", "filter", "reject", "filterProperty", "rejectProperty", "find", "findProperty", "every", "everyProperty", "some", "someProperty", "reduce", "invoke", "toArray", "compact", "without", "uniq", "[]", "addEnumerableObserver", "removeEnumerableObserver", "hasEnumerableObservers", "enumerableContentWillChange", "enumerableContentDidChange"]
 
-FunctionApplications::dependentKeys = ->
-  res = @function.dependentKeys()
+FunctionApplications::dependentKeys = (scope={}) ->
+  res = @function.dependentKeys(scope)
   if @function.instanceof(MemberAccessOp)
     # pop the function name
     res = res.map (c) ->
@@ -386,6 +387,24 @@ FunctionApplications::dependentKeys = ->
         c.push('@each')
         c
   res
+
+Block::dependentKeys = (scope={}) ->
+  res = []
+  newScope = Ember.copy(scope)
+  @statements.forEach (s) -> res = res.concat(s.dependentKeys(scope))
+  # only update the scope with common elements
+  for key in scope
+    scope[key] = newScope[key]
+  res
+
+AssignOp::dependentKeys = (scope={}) ->
+  res = @expression.dependentKeys(scope)
+  if @assignee.instanceof(Identifier)
+    scope[@assignee.data] = res
+  res
+
+Identifier::dependentKeys = (scope={}) ->
+  scope[@data] || []
 
 
 

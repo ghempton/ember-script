@@ -3,7 +3,7 @@
   "description":  "Ember-infused CoffeeScript",
   "keywords":     ["javascript", "language", "coffeescript", "compiler", "ember.js"],
   "author":       "Gordon Hempton/Michael Ficarra",
-  "version":      "0.0.2",
+  "version":      "0.0.3",
   "main" :        "./lib/module",
   "bin":          {
     "ember-script":     "./bin/ember-script"

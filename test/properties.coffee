@@ -7,7 +7,7 @@ suite 'Properties', ->
       Ember.A(deps).every (key) ->
         Ember.meta(prop).source._dependentKeys.contains(key)
 
-  suite 'Squiggly Operator', ->
+  suite 'Dependency Inference', ->
 
     test 'should create property', ->
       cp = ~> 1
@@ -28,6 +28,29 @@ suite 'Properties', ->
     test 'should not add function name to dependent keys', ->
       cp = ~> @content.someMethod()
       ok @hasDependentKeys(cp, ['content'])
+
+    test 'should not create duplicate keys', ->
+      cp = ~> @x + @x
+      ok @hasDependentKeys(cp, ['x'])
+
+    test 'should concat property dependencies from variables in scope', ->
+      cp = ~>
+        x = @x
+        y = x.y
+        z = y.z
+      ok @hasDependentKeys(cp, ['x.y.z'])
+
+    test 'should concat property dependencies in complex scope', ->
+      cp = ~>
+        if @content
+          x = @x
+          y = x.y
+          z = y.z
+        else
+          x = @s
+        x.q
+      ok @hasDependentKeys(cp, ['content', 'x.y.z', 's.q'])
+
 
   suite 'Annotations', ->
 
