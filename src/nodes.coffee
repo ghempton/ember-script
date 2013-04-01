@@ -391,20 +391,21 @@ FunctionApplications::dependentKeys = (scope={}) ->
 Block::dependentKeys = (scope={}) ->
   res = []
   newScope = Ember.copy(scope)
+  for key in newScope
+    newScope[key] = Ember.copy(newScope[key])
   @statements.forEach (s) -> res = res.concat(s.dependentKeys(scope))
-  # only update the scope with common elements
   for key in scope
-    scope[key] = newScope[key]
+    scope[key] = scope[key].concat(newScope[key])
   res
 
 AssignOp::dependentKeys = (scope={}) ->
   res = @expression.dependentKeys(scope)
   if @assignee.instanceof(Identifier)
-    scope[@assignee.data] = res
+    scope[@assignee.data] = (scope[@assignee.data] || []).concat(res)
   res
 
 Identifier::dependentKeys = (scope={}) ->
-  scope[@data] || []
+  Ember.copy(scope[@data]) || []
 
 
 

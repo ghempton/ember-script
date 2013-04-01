@@ -16,10 +16,11 @@ Features:
   [ ] Better tests
   [ ] Performance/minification optimizations
   [ ] Readability mode
-[-] Squiggly operator (~>)
+[x] Squiggly operator (~>)
   [x] Basic implementation with support for basic inference
-  [ ] `@each` dependencies
-  [ ] Better tests
+  [x] Chained scope dependencies
+  [x] `@each` dependencies
+  [x] Better tests
 [-] Property annotations
   [x] `+computed`
   [x] `+volatile`

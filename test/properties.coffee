@@ -49,7 +49,7 @@ suite 'Properties', ->
         else
           x = @s
         x.q
-      ok @hasDependentKeys(cp, ['content', 'x.y.z', 's.q'])
+      ok @hasDependentKeys(cp, ['content', 'x.y.z.q', 's.q'])
 
 
   suite 'Annotations', ->
