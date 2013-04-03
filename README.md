@@ -1,197 +1,51 @@
-# Ember Script
+# EmberScript
 
-Ember Script is coffee-derived inspired language which takes advantage of the [Ember.js](http://emberjs.com) runtime. Ember constructs such as Inheritance, Mixins, Bindings, Observers, etc. are all first-class citizens within Ember Script.
-
-## Is this ready to use?
-
-No, it is still being developed. See the [todo](https://github.com/ghempton/ember-script/blob/master/TODO.txt) list for details.
-
-## Installation
-
-Being as EmberScript is still in early development, it is best to install via npm from source. After installing [Node.js](http://nodejs.org/), run the following commands:
-
-```
-git clone git@github.com:ghempton/ember-script.git
-cd ember-script
-npm install
-make -j
-bin/ember-script --help
-```
-
-To use EmberScript inside of a Rails application through the asset pipeline, see [ember-script-rails](https://github.com/ghempton/ember-script-rails).
+EmberScript is CoffeeScript inspired language which takes advantage of the [Ember.js](http://emberjs.com) runtime. Ember constructs such as Inheritance, Mixins, Bindings, Observers, etc. are all first-class citizens within Ember Script.
 
 ## Examples
 
-### Object Model
-
 ```coffeescript
-animal = new Animal
+class PostsController extends Ember.ArrayController
+
+  trimmedPosts: ~>
+    @content.slice(0, 3)
 ```
 
-Compiles to:
+compiles to:
 
 ```javascript
-animal = Animal.create();
-```
-
-### Inheritance and Mixins
-
-```coffeescript
-mixin CanFly
-  fly: -> console.log('flying')
-
-class Animal
-
-class Bird extends Animal with CanFly
-
-  fly: ->
-    super()
-    console.log('flap wings')
-```
-
-Compiles to:
-
-```javascript
-CanFly = Ember.Mixin.create({
-  fly: function() {
-    return console.log('flying');
-  }
-});
-
-Animal = Ember.Object.extend();
-
-Bird = Animal.extend(CanFly, {
-  fly: function() {
-    _super();
-    return console.log('flap wings');
-  }
+var PostsController;
+var get$ = Ember.get;
+PostsController = Ember.ArrayController.extend({
+  trimmedPosts: Ember.computed(function () {
+    return get$(this, 'content').slice(0, 3);
+  }).property('content.@each')
 });
 ```
 
-### Properties: Getters and Setters
+For a more comprehensive list of live examples, check out the main [EmberScript website](http://emberscript.com).
 
-```coffeescript
-class Person
-  get name: -> @_name
-  set name: (value) -> @_name = value
+## Is this ready to use?
 
-  get firstName: @name.split(' ')[0]
+For the most part, but use at your own risk. See the [todo](https://github.com/ghempton/ember-script/blob/master/TODO.txt) list for details. It is recommended to use EmberScript side by side with javascript and/or coffeescript.
 
-  lastName: ~> @name.split(' ')[1]
-```
+## Installation
 
-Compiles to:
+### Ruby on Rails
 
-```javascript
-var get = Ember.get, set = Ember.set;
-
-Person = Ember.Object.extend({
-
-  name: Ember.computed(function(value) {
-    if (arguments.length === 2) {
-      set(this, '_name', value);
-      return value;
-    } else {
-      return Ember.get(this, '_name');
-    }
-  }),
-
-  firstName: Ember.computed(function() {
-    return get(this, 'name').split(' ')[0];
-  }),
-
-  lastName: Ember.computed(function() {
-    return get(this, 'name').split(' ')[1];
-  }).property('name')
-
-});
+If you are using Rails as your backend, simply add the following to your Gemfile:
 
 ```
-
-### Annotations: Dependencies, Observers, and More
-
-```coffeescript
-class Person
-
-  +computed firstName, lastName
-  initials: -> "#{@firstName.split('')[0], @lastName.split('')[0]}"
-
-  +observes name
-  nameChanged: -> console.log("new name: #{@name}")
-
-  +volatile
-  favoriteNumber: -> Math.round(Math.random() * 10)
-
+gem 'ember_script-rails'
 ```
 
-Compiles to:
+All assets ending in `.em` will be compiled by EmberScript.
 
-```javascript
-Person = Ember.Object.extend({
+### Npm
 
-  initials: Ember.computed(function() {
-    return get(this, 'firstName').split('')[0] + " " + get(this, 'lastName').split('')[0];
-  }).property("firstName", "lastName"),
-
-  nameChanged: Ember.observes(function() {
-    return console.log("new name: " + get(this, 'name'));
-  }, 'name'),
-
-  favoriteNumber: Ember.computed(function() {
-    return Math.round(Math.random() * 10);
-  }).volatile()
-
-});
 ```
-
-### Dependency Inferrence
-
-Because Ember Script is a compiled language, property dependencies can be computed at compile time. In fact, there is a special operator to declare a computed property with it's dependencies inferred, the `~>` operator. The `initials` property above could be rewritten more simply as:
-
-```coffeescript
-  initials: ~> "#{@firstName.split('')[0], @lastName.split('')[0]}"
-```
-
-The dependency on the `firstName` and `lastName` properties will be determined at compile time.
-
-### Accessors
-
-In general, normal dot-syntax property access is delegated to Ember's get and set methods. To use javascript's native property access operator, use Ember Script's *. operator:
-
-```coffeescript
-person.firstName
-person.address.city
-person.address?.city
-person?.address?.city
-
-person.firstName = "Wes"
-person.address.city = "San Diego"
-
-@person.firstName
-@person.firstName = "Andrew"
-
-person*.firstName
-person*.firstName = "Manuel"
-```
-
-Roughly compiles to:
-
-```javascript
-var get = Ember.get, set = Ember.set;
-
-get(person, 'firstName');
-get(get(person, 'address'), 'city');
-get(person, 'address.city');
-person && get(person, 'address.city');
-
-set(person, 'firstName', "Wes");
-set(person, 'address.city', "San Diego");
-
-get(get(this, 'person'), 'firstName');
-set(get(this, 'person'), 'firstName', "Andrew");
-
-person.firstName
-person.firstName = "Manuel"
+sudo npm install -g 'git://github.com/ghempton/ember-script.git#HEAD'
+ember-script --help
 ```
 
 ## Development
