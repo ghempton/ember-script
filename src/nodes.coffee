@@ -216,7 +216,7 @@ createNodes
   FunctionApplications, RegExps, RegExp, HeregExp, Super, Slice, Switch,
   Identifiers, SwitchCase, GenSym, ComputedProperty, ObjectInitialiserMember,
   Annotations, PostIncrementOp, PostDecrementOp, MemberAccessOp, This,
-  AssignOp
+  AssignOp, SoakedMemberAccessOp
 } = exports
 
 
@@ -373,6 +373,7 @@ MemberAccessOp::dependentKeys = (scope={}) ->
   @expression.dependentKeys(scope).map (c) ->
     c.push(memberName)
     c
+SoakedMemberAccessOp::dependentKeys = MemberAccessOp::dependentKeys
 
 # Compile a list of methods which are used to infer an @each dependency
 enumerableMethods = Ember.Set.create()
@@ -383,7 +384,7 @@ enumerableMethods.addObjects(Ember.MutableEnumerable.keys())
 
 FunctionApplications::dependentKeys = (scope={}) ->
   res = @function.dependentKeys(scope)
-  if @function.instanceof(MemberAccessOp)
+  if @function.instanceof(MemberAccessOp) || @function.instanceof(SoakedMemberAccessOp)
     # pop the function name
     res = res.map (c) ->
       c.pop()

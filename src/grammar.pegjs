@@ -1031,7 +1031,7 @@ null = NULL { return rp(new CS.Null); }
 
 // Additional book-keeping is needed here. Ember.get should not be used
 // on the left-hand side of an assignment operation
-// TODO: to make this code work, PEGJS needs caching turned off. Fix this.
+// TODO: convert this into a node
 memberAssign = access:memberAccess { access.isAssignment = true; return access }
 contextAssign = a:("@" { return rp(new CS.This); }) m:MemberNames {
   return rp(new CS.NativeMemberAccessOp(a, m));

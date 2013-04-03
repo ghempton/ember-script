@@ -17,6 +17,10 @@ suite 'Properties', ->
       cp = ~> @y.z
       ok @hasDependentKeys(cp, ['y.z'])
 
+    test 'should infer simple dependency from soaked', ->
+      cp = ~> @y?.z
+      ok @hasDependentKeys(cp, ['y.z'])
+
     test 'should infer multiple dependencies', ->
       cp = ~> @x + @y + @z.name
       ok @hasDependentKeys(cp, ['x', 'y', 'z.name'])
@@ -24,6 +28,10 @@ suite 'Properties', ->
     test 'should infer enumerable dependency', ->
       cp = ~> @x.y.forEach(->)
       ok @hasDependentKeys(cp, ['x.y.@each'])
+
+    test 'should infer enumerable dependency from soaked operation', ->
+      cp = ~> @x?.forEach(->)
+      ok @hasDependentKeys(cp, ['x.@each'])
 
     test 'should not add function name to dependent keys', ->
       cp = ~> @content.someMethod()
