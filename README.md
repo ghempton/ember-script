@@ -1,12 +1,11 @@
 # EmberScript
 
-EmberScript is CoffeeScript inspired language which takes advantage of the [Ember.js](http://emberjs.com) runtime. Ember constructs such as Inheritance, Mixins, Bindings, Observers, etc. are all first-class citizens within Ember Script.
+EmberScript is a CoffeeScript-derived language which takes advantage of the [Ember.js](http://emberjs.com) runtime. Ember constructs such as Inheritance, Mixins, Bindings, Observers, etc. are all first-class citizens within EmberScript.
 
 ## Examples
 
 ```coffeescript
 class PostsController extends Ember.ArrayController
-
   trimmedPosts: ~>
     @content.slice(0, 3)
 ```
