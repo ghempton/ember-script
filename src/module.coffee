@@ -77,9 +77,9 @@ module.exports =
 
   em2js: (input, options = {}) ->
     options.optimise ?= on
-    csAST = EmberScript.parse input, options
-    jsAST = EmberScript.compile csAST, bare: options.bare
-    EmberScript.js jsAST, compact: options.compact or options.minify
+    csAST = @parse input, options
+    jsAST = @compile csAST, bare: options.bare
+    @js jsAST, compact: options.compact or options.minify
 
 
 CoffeeScript = module.exports.CoffeeScript = module.exports
