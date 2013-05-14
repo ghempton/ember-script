@@ -10,7 +10,7 @@ ROOT = $(shell pwd)
 EMBER_SCRIPT = ./bin/ember-script --js --bare
 COFFEE = node_modules/.bin/coffee --js --bare
 PEGJS = node_modules/.bin/pegjs --cache --export-var 'module.exports'
-MOCHA = node_modules/.bin/mocha --compilers coffee:. -u tdd
+MOCHA = node_modules/.bin/mocha --compilers coffee:./register -u tdd
 CJSIFY = node_modules/.bin/cjsify --export EmberScript
 MINIFIER = node_modules/.bin/esmangle
 
@@ -64,7 +64,7 @@ lib/%.min.js: lib/%.js lib/coffee-script
 
 
 test:
-	$(MOCHA) -R dot $(TEST)
+	$(MOCHA) -R dot test/*.coffee
 
 # TODO: use Constellation/ibrik for coverage
 coverage:

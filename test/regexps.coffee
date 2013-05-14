@@ -40,3 +40,6 @@ suite 'Regular Expressions', ->
 
   test 'regexps can be empty', ->
     ok //.test ''
+
+  test '#190: heregexen can contain 2 or fewer consecutive slashes', ->
+    ok /// / // /// instanceof RegExp

@@ -111,8 +111,7 @@ generateMutatingWalker = (fn) -> (node, args...) ->
 declarationsNeeded = (node) ->
   return [] unless node?
   if (node.instanceof JS.AssignmentExpression) and node.operator is '=' and node.left.instanceof JS.Identifier then [node.left]
-  else if node.instanceof JS.ForInStatement then [node.left]
-  #TODO: else if node.instanceof JS.CatchClause then [node.param]
+  else if (node.instanceof JS.ForInStatement) and node.left.instanceof JS.Identifier then [node.left]
   else []
 
 declarationsNeededRecursive = (node) ->
@@ -322,7 +321,7 @@ helpers =
     ctor = new JS.Identifier 'ctor'
     key = new JS.Identifier 'key'
     block = [
-      new JS.ForInStatement key, parent, new JS.IfStatement (helpers.isOwn parent, key), f = # TODO: figure out how we can allow this
+      new JS.ForInStatement (new JS.VariableDeclaration 'var', [new JS.VariableDeclarator key, null]), parent, new JS.IfStatement (helpers.isOwn parent, key), f = # TODO: figure out how we can allow this
         stmt new JS.AssignmentExpression '=', (new JS.MemberExpression yes, child, key), new JS.MemberExpression yes, parent, key
       new JS.FunctionDeclaration ctor, [], new JS.BlockStatement [
         stmt new JS.AssignmentExpression '=', (memberAccess new JS.ThisExpression, 'constructor'), child
@@ -446,11 +445,27 @@ class exports.Compiler
         consequent = forceBlock consequent
       new JS.IfStatement (expr condition), (stmt consequent), alternate
     ]
-    [CS.ForIn, ({valAssignee, keyAssignee, target, step, filter, body}) ->
+    [CS.ForIn, ({valAssignee, keyAssignee, target, step, filter, body, compile}) ->
       i = genSym 'i'
       length = genSym 'length'
       block = forceBlock body
       block.body.push stmt helpers.undef() unless block.body.length
+
+      # optimise loops over static, integral ranges
+      if (@target.instanceof CS.Range) and
+      # TODO: extract this test to some "static, integral range" helper
+      ((@target.left.instanceof CS.Int) or ((@target.left.instanceof CS.UnaryNegateOp) and @target.left.expression.instanceof CS.Int)) and
+      ((@target.right.instanceof CS.Int) or ((@target.right.instanceof CS.UnaryNegateOp) and @target.right.expression.instanceof CS.Int))
+        varDeclaration = new JS.AssignmentExpression '=', i, compile @target.left
+        update = new JS.UpdateExpression '++', yes, i
+        if keyAssignee
+          k = genSym 'k'
+          varDeclaration = new JS.SequenceExpression [(new JS.AssignmentExpression '=', k, new JS.Literal 0), varDeclaration]
+          update = new JS.SequenceExpression [(new JS.UpdateExpression '++', yes, k), update]
+          block.body.unshift stmt new JS.AssignmentExpression '=', keyAssignee, k
+        block.body.unshift stmt new JS.AssignmentExpression '=', valAssignee, i
+        return new JS.ForStatement varDeclaration, (new JS.BinaryExpression '<', i, compile @target.right), update, block
+
       e = if needsCaching @target then genSym 'cache' else target
       varDeclaration = new JS.VariableDeclaration 'var', [
         new JS.VariableDeclarator i, new JS.Literal 0
@@ -504,12 +519,15 @@ class exports.Compiler
       cases
     ]
     [CS.Try, ({body, catchAssignee, catchBody, finallyBody}) ->
-      finallyBlock = if finallyBody? then forceBlock finallyBody else null
-      e = genSym 'e'
-      catchBlock = forceBlock catchBody
-      if catchAssignee?
-        catchBlock.body.unshift stmt assignment catchAssignee, e
-      handlers = [new JS.CatchClause e, catchBlock]
+      finallyBlock = if @finallyBody? then forceBlock finallyBody else null
+      if @catchBody? or not @finallyBody?
+        e = genSym 'e'
+        catchBlock = forceBlock catchBody
+        if catchAssignee?
+          catchBlock.body.unshift stmt assignment catchAssignee, e
+        handlers = [new JS.CatchClause e, catchBlock]
+      else
+        handlers = []
       new JS.TryStatement (forceBlock body), handlers, finallyBlock
     ]
     [CS.Throw, ({expression}) -> new JS.ThrowStatement expression]

@@ -22,7 +22,7 @@
     "mocha": "~1.6.0",
     "pegjs": "git://github.com/dmajda/pegjs.git#bea6b1fde74c8aebf802f9bcc3380c65b241e1b7",
     "coffee-script-redux": "2.0.0-beta4",
-    "commonjs-everywhere": "~0.5.0"
+    "commonjs-everywhere": "~0.6.0"
   },
   "dependencies": {
     "StringScanner": "~0.0.3",
@@ -31,10 +31,10 @@
   "optionalDependencies": {
     "esmangle": "~0.0.8",
     "source-map": "~0.1.7",
-    "escodegen": "~0.0.12",
+    "escodegen": "~0.0.21",
     "cscodegen": "git://github.com/michaelficarra/cscodegen.git#73fd7202ac086c26f18c9d56f025b18b3c6f5383"
   },
-  "engines": { "node": "0.6.x || 0.8.x" },
+  "engines": { "node": "0.8.x || 0.10.x" },
   "licenses": [
     {
       "type": "3-clause BSD",
