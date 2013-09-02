@@ -21,80 +21,84 @@ suite 'REPL', ->
   MockOutputStream.prototype.write = (data) ->
     @written.push data
   MockOutputStream.prototype.lastWrite = (fromEnd) ->
-    @written[@written.length - 1 - fromEnd].replace /\n$/, '' 
+    @written[@written.length - 1 - fromEnd].replace /\n$/, ''
+  MockOutputStream.prototype.cursorTo = ->
+  MockOutputStream.prototype.clearLine = ->
   MockOutputStream.prototype.constructor = MockOutputStream
 
   historyFile = path.join __dirname, 'coffee_history_test'
   process.on 'exit', -> fs.unlinkSync historyFile
 
-  testRepl = (desc, fn) ->
+  input = null
+  output = null
+  repl = null
+
+  beforeEach ->
     input = new MockInputStream
     output = new MockOutputStream
     repl = Repl.start {input, output, historyFile}
-    test desc, -> fn input, output, repl
+
+  afterEach ->
     repl.emit 'exit'
 
   ctrlV = { ctrl: true, name: 'v'}
 
 
-  testRepl 'starts with coffee prompt', (input, output) ->
-    eq 'coffee> ', output.lastWrite 1
+  test 'starts with coffee prompt', ->
+    eq 'coffee> ', output.lastWrite 0
 
-  testRepl 'writes eval to output', (input, output) ->
+  test 'writes eval to output', ->
     input.emitLine '1+1'
     eq '2', output.lastWrite 1
 
-  testRepl 'comments are ignored', (input, output) ->
+  test 'comments are ignored', ->
     input.emitLine '1 + 1 #foo'
     eq '2', output.lastWrite 1
 
-  testRepl 'output in inspect mode', (input, output) ->
+  test 'output in inspect mode', ->
     input.emitLine '"1 + 1\\n"'
     eq "'1 + 1\\n'", output.lastWrite 1
 
-  testRepl "variables are saved", (input, output) ->
+  test "variables are saved", ->
     input.emitLine 'foo = "foo"'
     input.emitLine 'foobar = "#{foo}bar"'
     eq "'foobar'", output.lastWrite 1
 
-  testRepl 'empty command evaluates to undefined', (input, output) ->
+  test 'empty command evaluates to undefined', ->
     input.emitLine ''
     eq 'coffee> ', output.lastWrite 0
-    eq 'coffee> ', output.lastWrite 2
+    eq 'coffee> ', output.lastWrite 1
 
-  testRepl 'ctrl-v toggles multiline prompt', (input, output) ->
+  test 'ctrl-v toggles multiline prompt', ->
     input.emit 'keypress', null, ctrlV
     eq '------> ', output.lastWrite 0
     input.emit 'keypress', null, ctrlV
     eq 'coffee> ', output.lastWrite 0
 
-  testRepl 'multiline continuation changes prompt', (input, output) ->
+  test 'multiline continuation changes prompt', ->
     input.emit 'keypress', null, ctrlV
     input.emitLine ''
     eq '....... ', output.lastWrite 0
 
-  testRepl 'evaluates multiline', (input, output) ->
-    # Stubs. Could assert on their use.
-    output.cursorTo = output.clearLine = ->
-
+  test 'evaluates multiline', ->
     input.emit 'keypress', null, ctrlV
     input.emitLine 'do ->'
     input.emitLine '  1 + 1'
     input.emit 'keypress', null, ctrlV
     eq '2', output.lastWrite 1
 
-  testRepl 'variables in scope are preserved', (input, output) ->
+  test 'variables in scope are preserved', ->
     input.emitLine 'a = 1'
     input.emitLine 'do -> a = 2'
     input.emitLine 'a'
     eq '2', output.lastWrite 1
 
-  testRepl 'existential assignment of previously declared variable', (input, output) ->
+  test 'existential assignment of previously declared variable', ->
     input.emitLine 'a = null'
     input.emitLine 'a ?= 42'
     eq '42', output.lastWrite 1
 
-  testRepl 'keeps running after runtime error', (input, output) ->
+  test 'keeps running after runtime error', ->
     input.emitLine 'a = b'
     ok 0 <= (output.lastWrite 1).indexOf 'ReferenceError: b is not defined'
     input.emitLine 'a'
@@ -109,19 +113,19 @@ suite 'REPL', ->
     repl = Repl.start {input, output, historyFile}
     arrayEq ['1', '0'], repl.rli.history
 
-  #testRepl 'writes history to persistence file', (input, output, repl) ->
+  #test 'writes history to persistence file', ->
   #  fs.writeFileSync historyFile, ''
   #  input.emitLine '2'
   #  input.emitLine '3'
   #  eq '2\n3\n', (fs.readFileSync historyFile).toString()
 
-  testRepl '.history shows history', (input, output, repl) ->
+  test '.history shows history', ->
     repl.rli.history = history = ['1', '2', '3']
     fs.writeFileSync historyFile, "#{history.join '\n'}\n"
     input.emitLine '.history'
     eq (history.reverse().join '\n'), output.lastWrite 1
 
-  #testRepl '.clear clears history', (input, output, repl) ->
+  #test '.clear clears history', ->
   #  input = new MockInputStream
   #  output = new MockOutputStream
   #  fs.writeFileSync historyFile, ''
