@@ -140,7 +140,7 @@ collectIdentifiers = (node) -> nub switch
 needsCaching = (node) ->
   return no unless node?
   (envEnrichments node, []).length > 0 or
-  (node.instanceof CS.FunctionApplications, CS.DoOp, CS.NewOp, CS.ArrayInitialiser, CS.ObjectInitialiser, CS.RegExp, CS.HeregExp, CS.PreIncrementOp, CS.PostIncrementOp, CS.PreDecrementOp, CS.PostDecrementOp) or
+  (node.instanceof CS.FunctionApplications, CS.DoOp, CS.NewOp, CS.ArrayInitialiser, CS.ObjectInitialiser, CS.RegExp, CS.HeregExp, CS.PreIncrementOp, CS.PostIncrementOp, CS.PreDecrementOp, CS.PostDecrementOp, CS.Range) or
   (any (difference node.childNodes, node.listMembers), (n) -> needsCaching node[n]) or
   any node.listMembers, (n) -> any node[n], needsCaching
 
@@ -436,7 +436,7 @@ class exports.Compiler
           else if s.instanceof JS.SequenceExpression then map s.expressions, stmt
           else [stmt s]
     ]
-    [CS.SeqOp, ({left, right})-> new JS.SequenceExpression [left, right]]
+    [CS.SeqOp, ({left, right}) -> new JS.SequenceExpression [left, right]]
     [CS.Conditional, ({condition, consequent, alternate, ancestry}) ->
       if alternate?
         throw new Error 'Conditional with non-null alternate requires non-null consequent' unless consequent?
@@ -458,13 +458,15 @@ class exports.Compiler
       ((@target.right.instanceof CS.Int) or ((@target.right.instanceof CS.UnaryNegateOp) and @target.right.expression.instanceof CS.Int))
         varDeclaration = new JS.AssignmentExpression '=', i, compile @target.left
         update = new JS.UpdateExpression '++', yes, i
-        if keyAssignee
+        if keyAssignee?
           k = genSym 'k'
           varDeclaration = new JS.SequenceExpression [(new JS.AssignmentExpression '=', k, new JS.Literal 0), varDeclaration]
           update = new JS.SequenceExpression [(new JS.UpdateExpression '++', yes, k), update]
           block.body.unshift stmt new JS.AssignmentExpression '=', keyAssignee, k
-        block.body.unshift stmt new JS.AssignmentExpression '=', valAssignee, i
-        return new JS.ForStatement varDeclaration, (new JS.BinaryExpression '<', i, compile @target.right), update, block
+        if valAssignee?
+          block.body.unshift stmt new JS.AssignmentExpression '=', valAssignee, i
+        op = if @target.isInclusive then '<=' else '<'
+        return new JS.ForStatement varDeclaration, (new JS.BinaryExpression op, i, compile @target.right), update, block
 
       e = if needsCaching @target then genSym 'cache' else target
       varDeclaration = new JS.VariableDeclaration 'var', [
@@ -478,7 +480,8 @@ class exports.Compiler
         block.body.unshift stmt new JS.IfStatement (new JS.UnaryExpression '!', filter), new JS.ContinueStatement
       if keyAssignee?
         block.body.unshift stmt assignment keyAssignee, i
-      block.body.unshift stmt assignment valAssignee, new JS.MemberExpression yes, e, i
+      if valAssignee?
+        block.body.unshift stmt assignment valAssignee, new JS.MemberExpression yes, e, i
       new JS.ForStatement varDeclaration, (new JS.BinaryExpression '<', i, length), (new JS.UpdateExpression '++', yes, i), block
     ]
     [CS.ForOf, ({keyAssignee, valAssignee, target, filter, body}) ->
@@ -582,8 +585,10 @@ class exports.Compiler
       ({members, compile}) ->
         if any members, (m) -> m.spread
           grouped = map (groupMembers members), expr
-          new JS.CallExpression (memberAccess grouped[0], 'concat'), grouped[1..]
-        else new JS.ArrayExpression map members, expr
+          if grouped.length <= 1 then grouped[0]
+          else new JS.CallExpression (memberAccess grouped[0], 'concat'), grouped[1..]
+        else
+          new JS.ArrayExpression map members, expr
     ]
     [CS.Spread, ({expression}) -> {spread: yes, expression: expr expression}]
     [CS.ObjectInitialiser, ({members}) -> new JS.ObjectExpression members]
@@ -615,8 +620,9 @@ class exports.Compiler
           block.body.unshift stmt assignment param, p
           p
         when original.instanceof CS.DefaultParam
-          block.body.unshift new JS.IfStatement (new JS.BinaryExpression '==', (new JS.Literal null), param.param), stmt new JS.AssignmentExpression '=', param.param, param.default
-          handleParam.call this, param.param, original.param, block
+          p = handleParam.call this, param.param, original.param, block
+          block.body.unshift new JS.IfStatement (new JS.BinaryExpression '==', (new JS.Literal null), p), stmt assignment p, param.default
+          p
         else throw new Error "Unsupported parameter type: #{original.className}"
 
       ({parameters, body, ancestry}) ->
@@ -674,10 +680,9 @@ class exports.Compiler
 
         fn = new JS.FunctionExpression null, parameters, block
         if performedRewrite
-          fn = new JS.SequenceExpression [
-            new JS.AssignmentExpression '=', newThis, new JS.ThisExpression
-            fn
-          ]
+          new JS.CallExpression (new JS.FunctionExpression null, [newThis], new JS.BlockStatement [
+            new JS.ReturnStatement fn
+          ]), [new JS.ThisExpression]
         if @instanceof CS.ComputedProperty
           chains = Ember.A(@dependentKeys().map((c) -> c.join('.'))).uniq()
           emberComputedProperty(fn, chains)
@@ -1040,15 +1045,15 @@ class exports.Compiler
       ancestry.unshift this
       children = {}
 
-      for childName in @childNodes when @[childName]?
+      for childName in @childNodes when this[childName]?
         children[childName] =
           if childName in @listMembers
-            for member in @[childName]
+            for member in this[childName]
               jsNode = walk.call member, fn, inScope, ancestry
               inScope = union inScope, envEnrichments member, inScope
               jsNode
           else
-            child = @[childName]
+            child = this[childName]
             jsNode = walk.call child, fn, inScope, ancestry
             inScope = union inScope, envEnrichments child, inScope
             jsNode
@@ -1109,7 +1114,9 @@ class exports.Compiler
             usedSymbols: union usedSymbols, params
             nsCounters: nsCounters_
           newNode.body = forceBlock newNode.body
-          declNames = nub difference (map (declarationsNeededRecursive @body), (id) -> id.name), union declaredSymbols, params
+          undeclared = map (declarationsNeededRecursive @body), (id) -> id.name
+          alreadyDeclared = union declaredSymbols, concatMap @params, collectIdentifiers
+          declNames = nub difference undeclared, alreadyDeclared
           decls = map declNames, (name) -> new JS.Identifier name
           newNode.body.body.unshift makeVarDeclaration decls if decls.length > 0
           newNode

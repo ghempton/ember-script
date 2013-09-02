@@ -23,7 +23,7 @@ createNodes = (subclasses, superclasses = []) ->
         if isCategory then ->
         else ->
           for param, i in params
-            @[param] = arguments[i]
+            this[param] = arguments[i]
           if @initialise?
             @initialise.apply this, arguments
           this
@@ -151,7 +151,7 @@ createNodes
     Program: [['body']] # :: Maybe Exprs -> Program
     Block: [['statements']] # :: [Statement] -> Block
     Conditional: [['condition', 'consequent', 'alternate']] # :: Exprs -> Maybe Exprs -> Maybe Exprs -> Conditional
-    ForIn: [['valAssignee', 'keyAssignee', 'target', 'step', 'filter', 'body']] # :: Assignable -> Maybe Assignable -> Exprs -> Exprs -> Maybe Exprs -> Maybe Exprs -> ForIn
+    ForIn: [['valAssignee', 'keyAssignee', 'target', 'step', 'filter', 'body']] # :: Maybe Assignable -> Maybe Assignable -> Exprs -> Exprs -> Maybe Exprs -> Maybe Exprs -> ForIn
     ForOf: [['isOwn', 'keyAssignee', 'valAssignee', 'target', 'filter', 'body']] # :: bool -> Assignable -> Maybe Assignable -> Exprs -> Maybe Exprs -> Maybe Exprs -> ForOf
     Switch: [['expression', 'cases', 'alternate']] # :: Maybe Exprs -> [SwitchCase] -> Maybe Exprs -> Switch
     SwitchCase: [['conditions', 'consequent']] # :: [Exprs] -> Maybe Expr -> SwitchCase
@@ -235,16 +235,16 @@ Nodes::toBasicObject = ->
       ]
   for child in @childNodes
     if child in @listMembers
-      obj[child] = (p.toBasicObject() for p in @[child])
+      obj[child] = (p.toBasicObject() for p in this[child])
     else
-      obj[child] = if @[child]? then @[child].toBasicObject()
+      obj[child] = if this[child]? then this[child].toBasicObject()
   obj
 Nodes::fold = (memo, fn) ->
   for child in @childNodes
     if child in @listMembers
-      memo = (p.fold memo, fn for p in @[child])
+      memo = (p.fold memo, fn for p in this[child])
     else
-      memo = @[child].fold memo, fn
+      memo = this[child].fold memo, fn
   fn memo, this
 Nodes::clone = ->
   ctor = ->
@@ -273,7 +273,7 @@ handlePrimitives = (ctor, primitives...) ->
   ctor::toBasicObject = ->
     obj = Nodes::toBasicObject.call this
     for primitive in primitives
-      obj[primitive] = @[primitive]
+      obj[primitive] = this[primitive]
     obj
 
 handlePrimitives Class, 'boundMembers'

@@ -33,7 +33,7 @@ lib/bootstrap: lib
 
 
 lib/parser.js: src/grammar.pegjs bootstraps lib
-	$(PEGJS) <"$<" >"$(@:%=%.tmp)" && mv "$(@:%=%.tmp)" "$@"
+	$(PEGJS) <"$<" >"$@.tmp" && mv "$@.tmp" "$@"
 lib/bootstrap/parser.js: src/grammar.pegjs lib/bootstrap
 	$(PEGJS) <"$<" >"$@"
 lib/bootstrap/%.js: src/%.coffee lib/bootstrap
@@ -41,7 +41,7 @@ lib/bootstrap/%.js: src/%.coffee lib/bootstrap
 bootstraps: $(BOOTSTRAPS) lib/bootstrap
 	cp lib/bootstrap/* lib
 lib/%.js: src/%.coffee lib/bootstrap/%.js bootstraps lib
-	$(COFFEE) -i "$<" >"$(@:%=%.tmp)" && mv "$(@:%=%.tmp)" "$@"
+	$(COFFEE) -i "$<" >"$@.tmp" && mv "$@.tmp" "$@"
 
 
 dist:
@@ -52,16 +52,14 @@ dist/ember-script.js: lib/browser.js dist
 		-a fs: -a child_process: \
 		-a /src/register.coffee: \
 		-a /src/parser.coffee:/lib/parser.js \
-		--source-map dist/ember-script.js.map \
-		> dist/ember-script.js
+		--source-map "$@.map" > "$@"
 
 dist/ember-script.min.js: lib/browser.js dist
 	$(CJSIFY) src/browser.coffee -vmx EmberScript \
 		-a fs: -a child_process: \
 		-a /src/register.coffee: \
 		-a /src/parser.coffee:/lib/parser.js \
-		--source-map dist/ember-script.min.js.map \
-		> dist/ember-script.min.js
+		--source-map "$@.map" > "$@"
 
 
 lib/%.min.js: lib/%.js lib/coffee-script
