@@ -1,10 +1,10 @@
 default: all
 
-SRC = $(shell find src -name "*.coffee" -type f | sort)
+SRC = $(wildcard src/*.coffee | sort)
 LIB = $(SRC:src/%.coffee=lib/%.js) lib/parser.js
 BOOTSTRAPS = $(SRC:src/%.coffee=lib/bootstrap/%.js) lib/bootstrap/parser.js
 LIBMIN = $(LIB:lib/%.js=lib/%.min.js)
-TEST = $(shell echo test/*.coffee | sort)
+TEST = $(wildcard test/*.coffee | sort)
 ROOT = $(shell pwd)
 
 EMBER_SCRIPT = ./bin/ember-script --js --bare
@@ -47,13 +47,21 @@ lib/%.js: src/%.coffee lib/bootstrap/%.js bootstraps lib
 dist:
 	mkdir dist/
 
-
 dist/ember-script.js: lib/browser.js dist
-	./build-browser
-#	$(CJSIFY) lib/browser.js --source-map-file dist/coffee-script-redux.js.map > dist/coffee-script-redux.js
+	$(CJSIFY) src/browser.coffee -vx EmberScript \
+		-a fs: -a child_process: \
+		-a /src/register.coffee: \
+		-a /src/parser.coffee:/lib/parser.js \
+		--source-map dist/ember-script.js.map \
+		> dist/ember-script.js
 
-# dist/ember-script.min.js: lib/browser.js dist
-# 	./build-browser
+dist/ember-script.min.js: lib/browser.js dist
+	$(CJSIFY) src/browser.coffee -vmx EmberScript \
+		-a fs: -a child_process: \
+		-a /src/register.coffee: \
+		-a /src/parser.coffee:/lib/parser.js \
+		--source-map dist/ember-script.min.js.map \
+		> dist/ember-script.min.js
 
 
 lib/%.min.js: lib/%.js lib/coffee-script

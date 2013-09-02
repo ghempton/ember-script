@@ -20,7 +20,7 @@ suite 'REPL', ->
   MockOutputStream.prototype.writable = true
   MockOutputStream.prototype.write = (data) ->
     @written.push data
-  MockOutputStream.prototype.lastWrite = (fromEnd = -1) ->
+  MockOutputStream.prototype.lastWrite = (fromEnd) ->
     @written[@written.length - 1 - fromEnd].replace /\n$/, '' 
   MockOutputStream.prototype.constructor = MockOutputStream
 

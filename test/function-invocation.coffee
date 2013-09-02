@@ -226,11 +226,11 @@ suite 'Function Invocation', ->
   #    101
   #  eq func(), 101
 
-  #test "Implicit objects with number arguments.", ->
-  #  func = (x, y) -> y
-  #  obj =
-  #    prop: func "a", 1
-  #  ok obj.prop is 1
+  test "Implicit objects with number arguments.", ->
+    func = (x, y) -> y
+    obj =
+      prop: func "a", 1
+    ok obj.prop is 1
 
   test "Non-spaced unary and binary operators should cause a function call.", ->
     func = (val) -> val + 1
@@ -481,3 +481,24 @@ suite 'Function Invocation', ->
       a: 0
     eq nonce, f? 0,
       a: 1
+
+  test '#205: implicit objects on the same line should not consume following key-value pairs', ->
+    fn = (o) ->
+      ok 'a' of o
+      ok 'b' not of o
+    fn a: 0
+    b: 1
+    0
+
+  test '#220: `do` on bound functions with non-empty parameter lists', ->
+    i = 1
+    ok not do (i) =>
+      ok i
+      --i
+    ok i
+
+    k = 1
+    ok not do =>
+      ok k
+      --k
+    ok not k

@@ -1,25 +1,27 @@
-{EventEmitter} = require 'events'
 {pointToErrorLocation} = require './helpers'
 StringScanner = require 'StringScanner'
 
 
 # TODO: better comments
 # TODO: support win32-style line endings
+# TODO: now that the preprocessor doesn't support streaming input, optimise the `process` method
 
-@Preprocessor = class Preprocessor extends EventEmitter
+@Preprocessor = class Preprocessor
 
   ws = '\\t\\x0B\\f\\r \\xA0\\u1680\\u180E\\u2000-\\u200A\\u202F\\u205F\\u3000\\uFEFF'
   INDENT = '\uEFEF'
   DEDENT = '\uEFFE'
   TERM   = '\uEFFF'
 
-  constructor: ->
+  constructor: (@options = {}) ->
+    @preprocessed = ''
     # `base` is either `null` or a regexp that matches the base indentation
     @base = null
     # `indents` is an array of successive indentation characters.
     @indents = []
     @context = []
-    @ss = new StringScanner ''
+
+  @process: (input, options = {}) -> (new Preprocessor options).process input
 
   err: (c) ->
     token =
@@ -73,13 +75,15 @@ StringScanner = require 'StringScanner'
     @context
 
   p: (s) ->
-    if s? then @emit 'data', s
+    if s? then @preprocessed = "#{@preprocessed}#{s}"
     s
 
   scan: (r) -> @p @ss.scan r
 
-  processInput = (isEnd) -> (data) ->
-    @ss.concat data unless isEnd
+  process: (input) ->
+    if @options.literate
+      input = input.replace /^( {0,3}\S)/gm, '    #$1'
+    @ss = new StringScanner input
 
     until @ss.eos()
       switch @peek()
@@ -88,12 +92,9 @@ StringScanner = require 'StringScanner'
 
             @scan /// (?: [#{ws}]* (\#\#?(?!\#)[^\n]*)? \n )+ ///
 
-            # we might require more input to determine indentation
-            return if not isEnd and (@ss.check /// [#{ws}\n]* $ ///)?
-
             # consume base indentation
             if @base?
-              unless (@scan @base)?
+              if not (@ss.eos() or (@scan @base)?)
                 throw new Error "inconsistent base indentation"
             else
               @base = /// #{@scan /// [#{ws}]* ///} ///
@@ -105,7 +106,7 @@ StringScanner = require 'StringScanner'
               if @ss.check /// #{indent} ///
                 # an existing indent
                 @scan /// #{indent} ///
-              else if @ss.check /// [^#{ws}] ///
+              else if @ss.eos() or @ss.check /// [^#{ws}] ///
                 # we lost an indent
                 @indents.splice indentIndex, 1
                 --indentIndex
@@ -114,7 +115,7 @@ StringScanner = require 'StringScanner'
               else
                 # Some ambiguous dedent
                 lines = @ss.str.substr(0, @ss.pos).split(/\n/) || ['']
-                message = "Syntax error on line #{lines.length}: indention is ambiguous"
+                message = "Syntax error on line #{lines.length}: indentation is ambiguous"
                 lineLen = @indents.reduce ((l, r) -> l + r.length), 0
                 context = pointToErrorLocation @ss.str, lines.length, lineLen
                 throw new Error "#{message}\n#{context}"
@@ -224,30 +225,17 @@ StringScanner = require 'StringScanner'
         #  else if tok = @scan /[[({]/ then @observe "regexp-#{tok}"
 
     # reached the end of the file
-    if isEnd
-      @scan /// [#{ws}\n]* $ ///
-      while @context.length
-        switch @peek()
-          when INDENT
-            @observe DEDENT
-            @p "#{DEDENT}#{TERM}"
-          when '#'
-            @observe '\n'
-            @p '\n'
-          else
-            # TODO: store offsets of tokens when inserted and report position of unclosed starting token
-            throw new Error "Unclosed \"#{@peek().replace /"/g, '\\"'}\" at EOF"
-      @emit 'end'
-      return
+    @scan /// [#{ws}\n]* $ ///
+    while @context.length
+      switch @peek()
+        when INDENT
+          @observe DEDENT
+          @p "#{DEDENT}#{TERM}"
+        when '#'
+          @observe '\n'
+          @p '\n'
+        else
+          # TODO: store offsets of tokens when inserted and report position of unclosed starting token
+          throw new Error "Unclosed \"#{@peek().replace /"/g, '\\"'}\" at EOF"
 
-    return
-
-  processData: processInput no
-  processEnd: processInput yes
-  @processSync = (input) ->
-    pre = new Preprocessor
-    output = ''
-    pre.emit = (type, data) -> output += data if type is 'data'
-    pre.processData input
-    do pre.processEnd
-    output
+    @preprocessed

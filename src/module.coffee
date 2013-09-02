@@ -11,7 +11,7 @@ escodegen = try require 'escodegen'
 
 pkg = require './../package.json'
 
-escodegenFormatDefaults =
+escodegenFormat =
   indent:
     style: '  '
     base: 0
@@ -19,18 +19,6 @@ escodegenFormatDefaults =
   hexadecimal: yes
   quotes: 'auto'
   parentheses: no
-
-escodegenCompactDefaults =
-  indent:
-    style: ''
-    base: 0
-  renumber: yes
-  hexadecimal: yes
-  quotes: 'auto'
-  escapeless: yes
-  compact: yes
-  parentheses: no
-  semicolons: no
 
 
 CoffeeScript =
@@ -46,7 +34,7 @@ CoffeeScript =
 
   parse: (coffee, options = {}) ->
     try
-      preprocessed = Preprocessor.processSync coffee
+      preprocessed = Preprocessor.process coffee, literate: options.literate
       parsed = Parser.parse preprocessed,
         raw: options.raw
         inputSource: options.inputSource
@@ -67,11 +55,13 @@ CoffeeScript =
     throw new Error 'escodegen not found: run `npm install escodegen`' unless escodegen?
     unless {}.hasOwnProperty.call jsAst, 'type'
       jsAst = jsAst.toBasicObject()
+    targetName = options['source-map-file'] or (options['source-map'] and (options.output.match /^.*[\\\/]([^\\\/]+)$/)[1])
     escodegen.generate jsAst,
       comment: not options.compact
       sourceMapWithCode: yes
       sourceMap: name
-      format: if options.compact then escodegenCompactDefaults else options.format ? escodegenFormatDefaults
+      file: targetName or 'unknown'
+      format: if options.compact then escodegen.FORMAT_MINIFY else options.format ? escodegenFormat
 
   js: (jsAst, options) -> (@jsWithSourceMap jsAst, null, options).code
   sourceMap: (jsAst, name, options) -> (@jsWithSourceMap jsAst, name, options).map
@@ -85,5 +75,5 @@ CoffeeScript =
 
 module.exports = CoffeeScript
 
-if process.title is 'node'
+if require.extensions?['.node']?
   CoffeeScript.register = -> require './register'

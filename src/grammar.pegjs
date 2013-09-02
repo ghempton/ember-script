@@ -543,6 +543,7 @@ leftHandSideExpression = callExpression / newExpression
     / TERMINDENT o:implicitObjectLiteral DEDENT { return [o]; }
   secondaryArgument
     = spread
+    / singleLineImplicitObjectLiteral
     / secondaryExpression
 leftHandSideExpressionNoImplicitObjectCall = callExpressionNoImplicitObjectCall / newExpressionNoImplicitObjectCall
   secondaryArgumentListNoImplicitObjectCall
@@ -890,18 +891,17 @@ objectLiteral
     / string
     / Numbers
 
-// TODO: complete support for implicit objects
 implicitObjectLiteral
   = members:implicitObjectLiteralMemberList {
     return rp(new CS.ObjectInitialiser(members));
   }
   implicitObjectLiteralMemberList
-    = e:implicitObjectLiteralMember es:(implicitObjectLiteralMemberSeparator _ implicitObjectLiteralMember)* {
-        return [e].concat(es.map(function(e){ return e[2]; }));
+    = e:implicitObjectLiteralMember es:(implicitObjectLiteralMemberSeparator implicitObjectLiteralMember)* {
+        return [e].concat(es.map(function(e){ return e[1]; }));
       }
   implicitObjectLiteralMemberSeparator
     = TERMINATOR ","? _
-    / "," TERMINATOR?
+    / _ "," TERMINATOR? _
   implicitObjectLiteralMember
     = annotations:annotation* key:ObjectInitialiserKeys _ ":" _ val:implicitObjectLiteralMemberValue {
         return rp(new CS.ObjectInitialiserMember(key, val, annotations));
@@ -909,6 +909,16 @@ implicitObjectLiteral
   implicitObjectLiteralMemberValue
     = expression
     / TERMINDENT o:implicitObjectLiteral DEDENT { return o; }
+singleLineImplicitObjectLiteral
+  = members:singleLineImplicitObjectLiteralMemberList {
+    return rp(new CS.ObjectInitialiser(members));
+  }
+  singleLineImplicitObjectLiteralMemberList
+    = e:implicitObjectLiteralMember es:(singleLineImplicitObjectLiteralMemberSeparator implicitObjectLiteralMember)* {
+        return [e].concat(es.map(function(e){ return e[1]; }));
+      }
+  singleLineImplicitObjectLiteralMemberSeparator
+    = _ "," _
 
 
 macro

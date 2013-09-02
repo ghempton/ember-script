@@ -172,7 +172,7 @@ memberAccess = (e, member) ->
 dynamicMemberAccess = (e, index) ->
   if (index.instanceof JS.Literal) and typeof index.value is 'string'
   then memberAccess e, index.value
-  else new JS.MemberExpression yes, (expr e), index
+  else new JS.MemberExpression yes, (expr e), expr index
 
 forceComputedProperty = (fn, chains) ->
   # TODO check if already a computed property
@@ -924,9 +924,9 @@ class exports.Compiler
             else helpers.undef()
       ({expression, compile}) ->
         args = []
-        if (@expression.instanceof CS.AssignOp) and @expression.expression.instanceof CS.Function
+        if (@expression.instanceof CS.AssignOp) and @expression.expression.instanceof CS.Functions
           args = deriveArgsFromParams @expression.expression.parameters
-        else if @expression.instanceof CS.Function
+        else if @expression.instanceof CS.Functions
           args = deriveArgsFromParams @expression.parameters
         compile new CS.FunctionApplication @expression, args
     ]

@@ -16,18 +16,19 @@ inspect = (o) -> (require 'util').inspect o, no, 9e9, yes
 
 optionParser = new Jedediah
 
-optionParser.addOption 'parse',   'p', off, 'output a JSON-serialised AST representation of the input'
-optionParser.addOption 'compile', 'c', off, 'output a JSON-serialised AST representation of the output'
-optionParser.addOption 'optimise'    ,  on, 'enable optimisations (default: on)'
-optionParser.addOption 'debug'       , off, 'output intermediate representations on stderr for debug'
-optionParser.addOption 'raw'         , off, 'preserve source position and raw parse information'
-optionParser.addOption 'version', 'v', off, 'display the version number'
-optionParser.addOption 'help'        , off, 'display this help message'
+optionParser.addOption 'parse',    'p', off, 'output a JSON-serialised AST representation of the input'
+optionParser.addOption 'compile',  'c', off, 'output a JSON-serialised AST representation of the output'
+optionParser.addOption 'optimise'     ,  on, 'enable optimisations (default: on)'
+optionParser.addOption 'debug'        , off, 'output intermediate representations on stderr for debug'
+optionParser.addOption 'literate', 'l', off, 'treat the input as literate CoffeeScript code'
+optionParser.addOption 'raw'          , off, 'preserve source position and raw parse information'
+optionParser.addOption 'version',  'v', off, 'display the version number'
+optionParser.addOption 'help'         , off, 'display this help message'
 
 optionParser.addParameter 'cli'        , 'INPUT', 'pass a string from the command line as input'
 optionParser.addParameter 'input',  'i', 'FILE' , 'file to be used as input instead of STDIN'
 optionParser.addParameter 'nodejs'     , 'OPTS' , 'pass options through to the node binary'
-optionParser.addParameter 'output', 'o', 'FILE' , 'file to be used as output instead of STDIN'
+optionParser.addParameter 'output', 'o', 'FILE' , 'file to be used as output instead of STDOUT'
 optionParser.addParameter 'watch',  'w', 'FILE' , 'watch the given file/directory for changes'
 
 if escodegen?
@@ -143,6 +144,8 @@ else if options.version
   console.log "CoffeeScript version #{pkg.version}"
 
 else if options.repl
+  CoffeeScript.register()
+  do process.argv.shift
   do Repl.start
 
 else
@@ -167,7 +170,8 @@ else
     if options.debug
       try
         console.error '### PREPROCESSED CS ###'
-        console.error numberLines humanReadable Preprocessor.processSync input
+        preprocessed = Preprocessor.process input, literate: options.literate
+        console.error numberLines humanReadable preprocessed
 
     # parse
     try
@@ -175,6 +179,7 @@ else
         optimise: no
         raw: options.raw or options['source-map'] or options['source-map-file'] or options.eval
         inputSource: inputSource
+        literate: options.literate
     catch e
       console.error e.message
       process.exit 1
@@ -260,9 +265,7 @@ else
         js = """
           #{js}
 
-          /*
-          //@ sourceMappingURL=#{options['source-map-file']}
-          */
+          //# sourceMappingURL=#{options['source-map-file']}
         """
       output js
       return
@@ -270,6 +273,7 @@ else
     # --eval
     if options.eval
       CoffeeScript.register()
+      process.argv = ['coffee'].concat [].slice.call process.argv, 2
       runMain input, js, jsAST, inputSource
       return
 
