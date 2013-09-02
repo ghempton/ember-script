@@ -52,8 +52,9 @@ suite 'Operators', ->
     ok new Number not instanceof String
     ok new Array not instanceof Boolean
 
-  test "use `::` operator on keyword `this`", ->
+  test "use `::` operator on keywords `this` and `@`", ->
     obj = prototype: prop: nonce = {}
+    eq nonce, (-> @::prop).call obj
     eq nonce, (-> this::prop).call obj
 
 

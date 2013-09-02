@@ -23,7 +23,7 @@ createNodes = (subclasses, superclasses = []) ->
         if isCategory then ->
         else ->
           for param, i in params
-            this[param] = arguments[i]
+            @[param] = arguments[i]
           if @initialise?
             @initialise.apply this, arguments
           this
@@ -235,16 +235,16 @@ Nodes::toBasicObject = ->
       ]
   for child in @childNodes
     if child in @listMembers
-      obj[child] = (p.toBasicObject() for p in this[child])
+      obj[child] = (p.toBasicObject() for p in @[child])
     else
-      obj[child] = if this[child]? then this[child].toBasicObject()
+      obj[child] = if @[child]? then @[child].toBasicObject()
   obj
 Nodes::fold = (memo, fn) ->
   for child in @childNodes
     if child in @listMembers
-      memo = (p.fold memo, fn for p in this[child])
+      memo = (p.fold memo, fn for p in @[child])
     else
-      memo = this[child].fold memo, fn
+      memo = @[child].fold memo, fn
   fn memo, this
 Nodes::clone = ->
   ctor = ->
@@ -273,7 +273,7 @@ handlePrimitives = (ctor, primitives...) ->
   ctor::toBasicObject = ->
     obj = Nodes::toBasicObject.call this
     for primitive in primitives
-      obj[primitive] = this[primitive]
+      obj[primitive] = @[primitive]
     obj
 
 handlePrimitives Class, 'boundMembers'

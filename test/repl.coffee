@@ -16,7 +16,7 @@ suite 'REPL', ->
     Stream.call(@)
     @written = []
     @
-  MockOutputStream.prototype = {}
+  MockOutputStream.prototype = new Stream
   MockOutputStream.prototype.writable = true
   MockOutputStream.prototype.write = (data) ->
     @written.push data
