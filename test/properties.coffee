@@ -100,6 +100,12 @@ suite 'Properties', ->
         prop: -> @arr
       ok @hasDependentKeys(obj['prop'], ['arr.@each'])
 
+    test 'annotations parameters should accept []', ->
+      obj =
+        +computed arr.[]
+        prop: -> @arr
+      ok @hasDependentKeys(obj['prop'], ['arr.[]'])
+
 
   suite 'Native Member Property Accessor', ->
 
