@@ -1128,6 +1128,7 @@ propertyChainPart
   / identifierName
   / "@each"
   / "this"
+  / "[]"
 
 __ = $(whitespace+ (blockComment whitespace+)?)
 _ = __?
