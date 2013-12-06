@@ -62,6 +62,7 @@ CoffeeScript =
       sourceMap: name
       file: targetName or 'unknown'
       format: if options.compact then escodegen.FORMAT_MINIFY else options.format ? escodegenFormat
+      verbatim: 'verbatim'
 
   js: (jsAst, options) -> (@jsWithSourceMap jsAst, null, options).code
   sourceMap: (jsAst, name, options) -> (@jsWithSourceMap jsAst, name, options).map

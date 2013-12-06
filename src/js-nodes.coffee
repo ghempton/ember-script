@@ -31,6 +31,7 @@ createNode = (type, props) ->
         if @raw? then @offset + @raw.length else undefined
       ]
     if @raw? then obj.raw = @raw
+    if @verbatim? then obj.verbatim = @verbatim
     obj
 
 nodeData = [

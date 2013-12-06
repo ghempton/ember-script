@@ -1018,7 +1018,11 @@ class exports.Compiler
     [CS.Undefined, -> helpers.undef()]
     [CS.This, -> new JS.ThisExpression]
     [CS.Super, -> memberAccess(new JS.ThisExpression, '_super')]
-    [CS.JavaScript, -> new JS.CallExpression (new JS.Identifier 'eval'), [new JS.Literal @data]]
+    [CS.JavaScript, ->
+      js = new JS.CallExpression (new JS.Identifier 'eval'), [new JS.Literal @data]
+      js.verbatim = @data
+      js
+    ]
 
     # Annotations are handled by the nodes which are annotated
     [CS.Volatile, CS.Computed, CS.Observes, -> new JS.EmptyStatement()]
