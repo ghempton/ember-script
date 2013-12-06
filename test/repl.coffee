@@ -45,7 +45,7 @@ describe 'REPL', ->
 
 
   it 'starts with coffee prompt', ->
-    eq 'coffee> ', output.lastWrite 0
+    eq 'emberscript> ', output.lastWrite 0
 
   it 'writes eval to output', ->
     input.emitLine '1+1'
@@ -66,19 +66,19 @@ describe 'REPL', ->
 
   it 'empty command evaluates to undefined', ->
     input.emitLine ''
-    eq 'coffee> ', output.lastWrite 0
-    eq 'coffee> ', output.lastWrite 1
+    eq 'emberscript> ', output.lastWrite 0
+    eq 'emberscript> ', output.lastWrite 1
 
   it 'ctrl-v toggles multiline prompt', ->
     input.emit 'keypress', null, ctrlV
-    eq '------> ', output.lastWrite 0
+    eq '-----------> ', output.lastWrite 0
     input.emit 'keypress', null, ctrlV
-    eq 'coffee> ', output.lastWrite 0
+    eq 'emberscript> ', output.lastWrite 0
 
   it 'multiline continuation changes prompt', ->
     input.emit 'keypress', null, ctrlV
     input.emitLine ''
-    eq '....... ', output.lastWrite 0
+    eq '............ ', output.lastWrite 0
 
   it 'evaluates multiline', ->
     input.emit 'keypress', null, ctrlV

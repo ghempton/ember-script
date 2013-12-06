@@ -2,7 +2,7 @@ fs = require 'fs'
 path = require 'path'
 vm = require 'vm'
 nodeREPL = require 'repl'
-CoffeeScript = require './module'
+EmberScript = require './module'
 CS = require './nodes'
 {merge} = require './helpers'
 
@@ -83,7 +83,7 @@ addHistory = (repl, filename, maxSize) ->
       lastLine = code
       fs.writeSync fd, "#{code}\n"
 
-  repl.rli.on 'close', -> fs.closeSync fd
+  repl.rli.on 'exit', -> fs.closeSync fd
 
   # .clear should also clear history
   original_clear = repl.commands['.clear'].action
@@ -105,9 +105,9 @@ addHistory = (repl, filename, maxSize) ->
 module.exports =
   start: (opts = {}) ->
     # REPL defaults
-    opts.prompt or= 'coffee> '
+    opts.prompt or= 'emberscript> '
     opts.ignoreUndefined ?= yes
-    opts.historyFile ?= path.join process.env.HOME, '.coffee_history'
+    opts.historyFile ?= path.join process.env.HOME, '.emberscript_history'
     opts.historyMaxInputSize ?= 10 * 1024 # 10KiB
     opts.eval or= (input, context, filename, cb) ->
       # XXX: multiline hack
@@ -119,10 +119,10 @@ module.exports =
       # empty command
       return cb null if /^\s*$/.test input
       try
-        inputAst = CoffeeScript.parse input, {filename, raw: yes}
+        inputAst = EmberScript.parse input, {filename, raw: yes}
         transformedAst = new CS.AssignOp (new CS.Identifier '_'), inputAst.body
-        jsAst = CoffeeScript.compile transformedAst, bare: yes, inScope: Object.keys context
-        js = CoffeeScript.js jsAst
+        jsAst = EmberScript.compile transformedAst, bare: yes, inScope: Object.keys context
+        js = EmberScript.js jsAst
         cb null, vm.runInContext js, context, filename
       catch err
         cb "\x1B[0;31m#{err.constructor.name}: #{err.message}\x1B[0m"
