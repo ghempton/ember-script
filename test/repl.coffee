@@ -1,4 +1,4 @@
-suite 'REPL', ->
+describe 'REPL', ->
 
   Stream = require 'stream'
 
@@ -44,61 +44,61 @@ suite 'REPL', ->
   ctrlV = { ctrl: true, name: 'v'}
 
 
-  test 'starts with coffee prompt', ->
+  it 'starts with coffee prompt', ->
     eq 'coffee> ', output.lastWrite 0
 
-  test 'writes eval to output', ->
+  it 'writes eval to output', ->
     input.emitLine '1+1'
     eq '2', output.lastWrite 1
 
-  test 'comments are ignored', ->
+  it 'comments are ignored', ->
     input.emitLine '1 + 1 #foo'
     eq '2', output.lastWrite 1
 
-  test 'output in inspect mode', ->
+  it 'output in inspect mode', ->
     input.emitLine '"1 + 1\\n"'
     eq "'1 + 1\\n'", output.lastWrite 1
 
-  test "variables are saved", ->
+  it "variables are saved", ->
     input.emitLine 'foo = "foo"'
     input.emitLine 'foobar = "#{foo}bar"'
     eq "'foobar'", output.lastWrite 1
 
-  test 'empty command evaluates to undefined', ->
+  it 'empty command evaluates to undefined', ->
     input.emitLine ''
     eq 'coffee> ', output.lastWrite 0
     eq 'coffee> ', output.lastWrite 1
 
-  test 'ctrl-v toggles multiline prompt', ->
+  it 'ctrl-v toggles multiline prompt', ->
     input.emit 'keypress', null, ctrlV
     eq '------> ', output.lastWrite 0
     input.emit 'keypress', null, ctrlV
     eq 'coffee> ', output.lastWrite 0
 
-  test 'multiline continuation changes prompt', ->
+  it 'multiline continuation changes prompt', ->
     input.emit 'keypress', null, ctrlV
     input.emitLine ''
     eq '....... ', output.lastWrite 0
 
-  test 'evaluates multiline', ->
+  it 'evaluates multiline', ->
     input.emit 'keypress', null, ctrlV
     input.emitLine 'do ->'
     input.emitLine '  1 + 1'
     input.emit 'keypress', null, ctrlV
     eq '2', output.lastWrite 1
 
-  test 'variables in scope are preserved', ->
+  it 'variables in scope are preserved', ->
     input.emitLine 'a = 1'
     input.emitLine 'do -> a = 2'
     input.emitLine 'a'
     eq '2', output.lastWrite 1
 
-  test 'existential assignment of previously declared variable', ->
+  it 'existential assignment of previously declared variable', ->
     input.emitLine 'a = null'
     input.emitLine 'a ?= 42'
     eq '42', output.lastWrite 1
 
-  test 'keeps running after runtime error', ->
+  it 'keeps running after runtime error', ->
     input.emitLine 'a = b'
     ok 0 <= (output.lastWrite 1).indexOf 'ReferenceError: b is not defined'
     input.emitLine 'a'
@@ -106,26 +106,26 @@ suite 'REPL', ->
     input.emitLine '0'
     eq '0', output.lastWrite 1
 
-  test 'reads history from persistence file', ->
+  it 'reads history from persistence file', ->
     input = new MockInputStream
     output = new MockOutputStream
     fs.writeFileSync historyFile, '0\n1\n'
     repl = Repl.start {input, output, historyFile}
     arrayEq ['1', '0'], repl.rli.history
 
-  #test 'writes history to persistence file', ->
+  #it 'writes history to persistence file', ->
   #  fs.writeFileSync historyFile, ''
   #  input.emitLine '2'
   #  input.emitLine '3'
   #  eq '2\n3\n', (fs.readFileSync historyFile).toString()
 
-  test '.history shows history', ->
+  it '.history shows history', ->
     repl.rli.history = history = ['1', '2', '3']
     fs.writeFileSync historyFile, "#{history.join '\n'}\n"
     input.emitLine '.history'
     eq (history.reverse().join '\n'), output.lastWrite 1
 
-  #test '.clear clears history', ->
+  #it '.clear clears history', ->
   #  input = new MockInputStream
   #  output = new MockOutputStream
   #  fs.writeFileSync historyFile, ''

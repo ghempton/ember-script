@@ -1,19 +1,51 @@
+child_process = require 'child_process'
 fs = require 'fs'
-CoffeeScript = require './module'
+path = require 'path'
+
+EmberScript = require './module'
 {runModule} = require './run'
 
-module.exports = not require.extensions['.coffee']?
+module.exports = not require.extensions['.em']?
 
+# Keep around coffee extensions for time being, eventually we will
+# move all files over to .em
 require.extensions['.coffee'] ?= (module, filename) ->
   input = fs.readFileSync filename, 'utf8'
-  csAst = CoffeeScript.parse input, raw: yes
-  jsAst = CoffeeScript.compile csAst
-  js = CoffeeScript.js jsAst
+  csAst = EmberScript.parse input, raw: yes
+  jsAst = EmberScript.compile csAst
+  js = EmberScript.js jsAst
   runModule module, js, jsAst, filename
 
 require.extensions['.litcoffee'] ?= (module, filename) ->
   input = fs.readFileSync filename, 'utf8'
-  csAst = CoffeeScript.parse input, raw: yes, literate: yes
-  jsAst = CoffeeScript.compile csAst
-  js = CoffeeScript.js jsAst
+  csAst = EmberScript.parse input, raw: yes, literate: yes
+  jsAst = EmberScript.compile csAst
+  js = EmberScript.js jsAst
   runModule module, js, jsAst, filename
+
+require.extensions['.em'] ?= (module, filename) ->
+  input = fs.readFileSync filename, 'utf8'
+  csAst = EmberScript.parse input, raw: yes
+  jsAst = EmberScript.compile csAst
+  js = EmberScript.js jsAst
+  runModule module, js, jsAst, filename
+
+require.extensions['.litem'] ?= (module, filename) ->
+  input = fs.readFileSync filename, 'utf8'
+  csAst = EmberScript.parse input, raw: yes, literate: yes
+  jsAst = EmberScript.compile csAst
+  js = EmberScript.js jsAst
+  runModule module, js, jsAst, filename
+
+# patch child_process.fork to default to the em binary as the execPath for em/litem files
+{fork} = child_process
+unless fork.emPatched
+  emBinary = path.resolve 'bin', 'ember-script'
+  child_process.fork = (file, args = [], options = {}) ->
+    if (path.extname file) in ['.em', '.litem', '.coffee', '.litcoffee']
+      if not Array.isArray args
+        args = []
+        options = args or {}
+      options.execPath or= emBinary
+    fork file, args, options
+  child_process.fork.emPatched = yes

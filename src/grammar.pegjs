@@ -346,10 +346,10 @@ expressionworthy
   / try
   / forOf
   / forIn
-  / class
-  / mixin
   / switch
   / implicitObjectLiteral
+  / class
+  / mixin
 
 
 seqExpression
@@ -645,7 +645,7 @@ primaryExpression
   / undefined
   / contextVar
   / SUPER { return rp(new CS.Super); }
-  / r:(THIS / "@") { return rp(new CS.This); }
+  / (THIS / "@") { return rp(new CS.This); }
   / identifier
   / range
   / arrayLiteral
