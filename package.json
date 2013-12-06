@@ -3,7 +3,7 @@
   "description":  "Ember-infused CoffeeScript",
   "keywords":     ["javascript", "language", "coffeescript", "compiler", "ember.js"],
   "author":       "Gordon L. Hempton, Michael Ficarra",
-  "version":      "0.0.9",
+  "version":      "0.0.11",
   "main" :        "./lib/module",
   "bin":          {
     "ember-script":     "./bin/ember-script"
@@ -21,7 +21,7 @@
   "devDependencies": {
     "mocha": "~1.12.0",
     "pegjs": "git://github.com/dmajda/pegjs.git#bea6b1fde74c8aebf802f9bcc3380c65b241e1b7",
-    "coffee-script-redux": "git://github.com/michaelficarra/CoffeeScriptRedux.git#eafd6b3a8aa8261536bd2b9508427e830e06cc2d",
+    "coffee-script-redux": "git://github.com/michaelficarra/CoffeeScriptRedux.git#38e7ee5654d38afd5ec20e7f52bf9849903e2597",
     "commonjs-everywhere": "~0.9.0",
     "cluster": "~0.7.7",
     "semver": "~2.1.0"
