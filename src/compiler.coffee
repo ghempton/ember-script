@@ -680,7 +680,7 @@ class exports.Compiler
 
         fn = new JS.FunctionExpression null, parameters, block
         if performedRewrite
-          new JS.CallExpression (new JS.FunctionExpression null, [newThis], new JS.BlockStatement [
+          fn = new JS.CallExpression (new JS.FunctionExpression null, [newThis], new JS.BlockStatement [
             new JS.ReturnStatement fn
           ]), [new JS.ThisExpression]
         if @instanceof CS.ComputedProperty
