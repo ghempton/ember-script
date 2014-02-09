@@ -1,4 +1,4 @@
-{any, concat, concatMap, difference, divMod, foldl1, map, nub, owns, partition, span, union} = require './functional-helpers'
+{any, concat, concatMap, difference, divMod, foldl1, intersect, map, nub, owns, partition, span, union} = require './functional-helpers'
 {beingDeclared, usedAsExpression, envEnrichments} = require './helpers'
 CS = require './nodes'
 JS = require './js-nodes'
@@ -64,11 +64,11 @@ expr = (s) ->
       s.body.body.push push helpers.undef()
     block = new JS.BlockStatement [s, new JS.ReturnStatement accum]
     iife = new JS.FunctionExpression null, [accum], block
-    new JS.CallExpression (memberAccess iife, 'call'), [new JS.ThisExpression, new JS.ArrayExpression []]
+    new JS.CallExpression (memberAccess iife.g(), 'call'), [new JS.ThisExpression, new JS.ArrayExpression []]
   else if s.instanceof JS.SwitchStatement, JS.TryStatement
     block = new JS.BlockStatement [makeReturn s]
     iife = new JS.FunctionExpression null, [], block
-    new JS.CallExpression (memberAccess iife, 'call'), [new JS.ThisExpression]
+    new JS.CallExpression (memberAccess iife.g(), 'call'), [new JS.ThisExpression]
   else
     # TODO: comprehensive
     throw new Error "expr: Cannot use a #{s.type} as a value"
@@ -117,12 +117,24 @@ declarationsNeeded = (node) ->
 declarationsNeededRecursive = (node) ->
   return [] unless node?
   # don't cross scope boundaries
-  if node.instanceof JS.FunctionExpression, JS.FunctionDeclaration then []
+  if (node.instanceof JS.FunctionExpression, JS.FunctionDeclaration) and not node.generated then []
   else union (declarationsNeeded node), concatMap node.childNodes, (childName) ->
     # TODO: this should make use of an fmap method
     return [] unless node[childName]?
     if childName in node.listMembers then concatMap node[childName], declarationsNeededRecursive
     else declarationsNeededRecursive node[childName]
+
+variableDeclarations = (node) ->
+  return [] unless node?
+  # don't cross scope boundaries
+  if node.instanceof JS.FunctionDeclaration then [node.id]
+  else if (node.instanceof JS.FunctionExpression) and not node.generated then []
+  else if node.instanceof JS.VariableDeclarator then [node.id]
+  else concatMap node.childNodes, (childName) ->
+    # TODO: this should make use of an fmap method
+    return [] unless node[childName]?
+    if childName in node.listMembers then concatMap node[childName], variableDeclarations
+    else variableDeclarations node[childName]
 
 collectIdentifiers = (node) -> nub switch
   when !node? then []
@@ -186,15 +198,16 @@ emberComputedProperty = (fn, chains) ->
 # TODO: rewrite this whole thing using the CS AST nodes
 assignment = (assignee, expression, valueUsed = no) ->
   assignments = []
+  expression = expr expression
   switch
     when assignee.rest then # do nothing for right now
     when assignee.instanceof JS.ArrayExpression
-      e = expr expression
+      e = expression
       # TODO: only cache expression when it needs it
       #if valueUsed or @assignee.members.length > 1 and needsCaching @expression
       if valueUsed or assignee.elements.length > 1
         e = genSym 'cache'
-        assignments.push new JS.AssignmentExpression '=', e, expr expression
+        assignments.push new JS.AssignmentExpression '=', e, expression
 
       elements = assignee.elements
 
@@ -536,7 +549,7 @@ class exports.Compiler
     [CS.Throw, ({expression}) -> new JS.ThrowStatement expression]
 
     # data structures
-    [CS.Range, ({left: left_, right: right_}) ->
+    [CS.Range, ({left: left_, right: right_, ancestry}) ->
       # enumerate small integral ranges
       if ((@left.instanceof CS.Int) or  ((@left.instanceof CS.UnaryNegateOp) and  @left.expression.instanceof CS.Int)) and
       (  (@right.instanceof CS.Int) or ((@right.instanceof CS.UnaryNegateOp) and @right.expression.instanceof CS.Int))
@@ -570,7 +583,10 @@ class exports.Compiler
 
       body.push new JS.ForStatement vars, condition, update, stmt new JS.CallExpression (memberAccess accum, 'push'), [i]
       body.push new JS.ReturnStatement accum
-      new JS.CallExpression (memberAccess (new JS.FunctionExpression null, [], new JS.BlockStatement body), 'apply'), [new JS.ThisExpression, new JS.Identifier 'arguments']
+      if any ancestry, (ancestor) -> ancestor.instanceof CS.Functions
+        new JS.CallExpression (memberAccess (new JS.FunctionExpression null, [], new JS.BlockStatement body), 'apply'), [new JS.ThisExpression, new JS.Identifier 'arguments']
+      else
+        new JS.CallExpression (memberAccess (new JS.FunctionExpression null, [], new JS.BlockStatement body), 'call'), [new JS.ThisExpression]
     ]
     [CS.ArrayInitialiser, do ->
       groupMembers = (members) ->
@@ -612,20 +628,23 @@ class exports.Compiler
     ]
     [CS.DefaultParam, ({param, default: d}) -> {param, default: d}]
     [CS.Function, CS.BoundFunction, CS.ComputedProperty, do ->
-      handleParam = (param, original, block) -> switch
+
+      handleParam = (param, original, block, inScope) -> switch
         when original.instanceof CS.Rest then param # keep these for special processing later
         when original.instanceof CS.Identifier then param
         when original.instanceof CS.MemberAccessOps, CS.ObjectInitialiser, CS.ArrayInitialiser
           p = genSym 'param'
+          decls = map (intersect inScope, beingDeclared original), (i) -> new JS.Identifier i
           block.body.unshift stmt assignment param, p
+          block.body.unshift makeVarDeclaration decls if decls.length
           p
         when original.instanceof CS.DefaultParam
-          p = handleParam.call this, param.param, original.param, block
+          p = handleParam.call this, param.param, original.param, block, inScope
           block.body.unshift new JS.IfStatement (new JS.BinaryExpression '==', (new JS.Literal null), p), stmt assignment p, param.default
           p
         else throw new Error "Unsupported parameter type: #{original.className}"
 
-      ({parameters, body, ancestry}) ->
+      ({parameters, body, ancestry, inScope}) ->
         unless ancestry[0]?.instanceof CS.Constructor
           body = makeReturn body
         block = forceBlock body
@@ -638,16 +657,18 @@ class exports.Compiler
           else
             pIndex = parameters.length
             while pIndex--
-              handleParam.call this, parameters[pIndex], @parameters[pIndex], block
+              handleParam.call this, parameters[pIndex], @parameters[pIndex], block, inScope
         parameters = parameters_.reverse()
 
         if parameters.length > 0
           if parameters[-1..][0].rest
+            paramName = parameters.pop().expression
             numParams = parameters.length
-            paramName = parameters[numParams - 1] = parameters[numParams - 1].expression
-            test = new JS.BinaryExpression '<=', (new JS.Literal numParams), memberAccess (new JS.Identifier 'arguments'), 'length'
-            consequent = helpers.slice (new JS.Identifier 'arguments'), new JS.Literal (numParams - 1)
+            test = new JS.BinaryExpression '>', (memberAccess (new JS.Identifier 'arguments'), 'length'), new JS.Literal numParams
+            consequent = helpers.slice (new JS.Identifier 'arguments'), new JS.Literal numParams
             alternate = new JS.ArrayExpression []
+            if (paramName.instanceof JS.Identifier) and paramName.name in inScope
+              block.body.unshift makeVarDeclaration [paramName]
             block.body.unshift stmt new JS.AssignmentExpression '=', paramName, new JS.ConditionalExpression test, consequent, alternate
           else if any parameters, (p) -> p.rest
             paramName = index = null
@@ -663,6 +684,8 @@ class exports.Compiler
             ]), new JS.BlockStatement [stmt new JS.AssignmentExpression '=', paramName, new JS.ArrayExpression []]
             for p, i in parameters[index...]
               reassignments.consequent.body.push stmt new JS.AssignmentExpression '=', p, new JS.MemberExpression yes, (new JS.Identifier 'arguments'), new JS.BinaryExpression '-', numArgs, new JS.Literal numParams - index - i
+            if (paramName.instanceof JS.Identifier) and paramName.name in inScope
+              block.body.unshift makeVarDeclaration [paramName]
             block.body.unshift reassignments
           if any parameters, (p) -> p.rest
             throw new Error 'Parameter lists may not have more than one rest operator'
@@ -902,12 +925,14 @@ class exports.Compiler
         else right
       new JS.CallExpression (memberAccess expression, 'slice'), args
     ]
-    [CS.ExistsOp, ({left, right, inScope}) ->
-      e = if needsCaching @left then genSym 'cache' else expr left
+    [CS.ExistsOp, ({left, right, ancestry, inScope}) ->
+      left = expr left
+      right = expr right
+      e = if needsCaching @left then genSym 'cache' else left
       condition = new JS.BinaryExpression '!=', (new JS.Literal null), e
       if (e.instanceof JS.Identifier) and e.name not in inScope
         condition = new JS.LogicalExpression '&&', (new JS.BinaryExpression '!==', (new JS.Literal 'undefined'), new JS.UnaryExpression 'typeof', e), condition
-      node = new JS.ConditionalExpression condition, e, expr right
+      node = new JS.ConditionalExpression condition, e, right
       if e is left then node
       else new JS.SequenceExpression [(new JS.AssignmentExpression '=', e, left), node]
     ]
@@ -1066,7 +1091,7 @@ class exports.Compiler
       children.ancestry = ancestry
       children.options = options
       children.compile = (node) ->
-        walk.call node.g(), fn, inScope, ancestry
+        walk.call node, fn, inScope, ancestry
 
       do ancestry.shift
       jsNode = fn.call this, children
@@ -1109,7 +1134,7 @@ class exports.Compiler
           newNode = new JS.Identifier generateName this, state
           usedSymbols.push newNode.name
           newNode
-        else if @instanceof JS.FunctionExpression, JS.FunctionDeclaration
+        else if (@instanceof JS.FunctionExpression, JS.FunctionDeclaration) and not @generated
           params = concatMap @params, collectIdentifiers
           nsCounters_ = {}
           nsCounters_[k] = v for own k, v of nsCounters
@@ -1119,6 +1144,7 @@ class exports.Compiler
             nsCounters: nsCounters_
           newNode.body = forceBlock newNode.body
           undeclared = map (declarationsNeededRecursive @body), (id) -> id.name
+          undeclared = difference undeclared, map (variableDeclarations @body), (id) -> id.name
           alreadyDeclared = union declaredSymbols, concatMap @params, collectIdentifiers
           declNames = nub difference undeclared, alreadyDeclared
           decls = map declNames, (name) -> new JS.Identifier name

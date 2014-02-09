@@ -82,6 +82,18 @@ suite 'Operators', ->
     eq nonce, (o[1] / p)
     eq nonce, (o[p] / p)
 
+  test 'jashkenas/coffee-script#2026: exponentiation operator via `**`', ->
+    eq 27, 3 ** 3
+    # precedence
+    eq 55, 1 + 3 ** 3 * 2
+    # right associativity
+    eq 2, 2 ** 1 ** 3
+    eq 2 ** 8, 2 ** 2 ** 3
+    # compound assignment with exponentiation
+    a = 2
+    a **= 2
+    eq 4, a
+
 
   suite 'Existential Operator (Binary)', ->
 
@@ -114,17 +126,19 @@ suite 'Operators', ->
       a = null ? - 1
       eq -1, a
 
-    test 'jashkenas/coffee-script#2026: exponentiation operator via `**`', ->
-      eq 27, 3 ** 3
-      # precedence
-      eq 55, 1 + 3 ** 3 * 2
-      # right associativity
-      eq 2, 2 ** 1 ** 3
-      eq 2 ** 8, 2 ** 2 ** 3
-      # compound assignment with exponentiation
-      a = 2
-      a **= 2
-      eq 4, a
+    test 'binary existential with statement LHS', ->
+      nonce = {}
+      a = null
+      b = true
+      c = -> nonce
+      d = (if a then b else c()) ? c
+      eq nonce, d
+
+    test '#85: binary existential with cached LHS', ->
+      a = {b: ->}
+      c = true
+      a?.b() ? c
+      return
 
 
   suite 'Existential Operator (Unary)', ->
@@ -225,7 +239,7 @@ suite 'Operators', ->
     test 'jashkenas/coffee-script#1630: `in` should check `hasOwnProperty`', ->
       ok undefined not in {length: 1}
 
-    #test 'jashkenas/coffee-script#1714: lexer bug with raw range `for` followed by `in`', ->
+    test.skip 'jashkenas/coffee-script#1714: lexer bug with raw range `for` followed by `in`', -> # Currently syntax error.
     #  0 for [1..2]
     #  ok not ('a' in ['b'])
     #
@@ -268,9 +282,9 @@ suite 'Operators', ->
     a = 0
     ok 1 > a++ < 1
 
-  #test 'jashkenas/coffee-script#891: incorrect inversion of chained comparisons', ->
-  #  ok (true unless 0 > 1 > 2)
-  #  ok (true unless (NaN = 0/0) < 0/0 < NaN)
+  test 'jashkenas/coffee-script#891: incorrect inversion of chained comparisons', ->
+    ok (true unless 0 > 1 > 2)
+    ok (true unless (NaN = 0/0) < 0/0 < NaN)
 
   test 'jashkenas/coffee-script#1234: Applying a splat to :: applies the splat to the wrong object', ->
     nonce = {}
@@ -289,10 +303,10 @@ suite 'Operators', ->
     x = 2
     eq (- --x), -1
 
-  #test 'Regression with implicit calls against an indented assignment', ->
-  #  eq 1, a =
-  #    1
-  #  eq a, 1
+  test 'Regression with implicit calls against an indented assignment', ->
+    eq 1, a =
+      1
+    eq a, 1
 
   test 'jashkenas/coffee-script#2155: conditional assignment to a closure', ->
     x = null

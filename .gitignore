@@ -11,5 +11,9 @@ lib/coffee-script/*.tmp
 dist
 lib/bootstrap
 coffee-script-redux-*.tgz
+<<<<<<< HEAD
 
 *.gem
+=======
+node_modules
+>>>>>>> 9929ac312240c0dcc241ec44e86e491f998c8f96

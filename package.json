@@ -21,8 +21,8 @@
   "devDependencies": {
     "mocha": "~1.12.0",
     "pegjs": "git://github.com/dmajda/pegjs.git#bea6b1fde74c8aebf802f9bcc3380c65b241e1b7",
-    "coffee-script-redux": "git://github.com/michaelficarra/CoffeeScriptRedux.git#38e7ee5654d38afd5ec20e7f52bf9849903e2597",
-    "commonjs-everywhere": "~0.9.0",
+    "coffee-script-redux": "git://github.com/michaelficarra/CoffeeScriptRedux.git",
+    "commonjs-everywhere": "git://github.com/ghempton/commonjs-everywhere.git",
     "cluster": "~0.7.7",
     "semver": "~2.1.0"
   },
@@ -31,7 +31,7 @@
     "nopt": "~2.1.2"
   },
   "optionalDependencies": {
-    "esmangle": "~0.0.8",
+    "esmangle": "~1.0.0",
     "source-map": "0.1.11",
     "escodegen": "~0.0.24",
     "cscodegen": "git://github.com/michaelficarra/cscodegen.git#73fd7202ac086c26f18c9d56f025b18b3c6f5383"

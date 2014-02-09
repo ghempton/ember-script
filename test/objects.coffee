@@ -59,11 +59,11 @@ suite 'Object Literals', ->
       {f: -> a = true}.f() + 1
       ok a
 
-    #test 'jashkenas/coffee-script#1274: `{} = a()` should not optimise away a()', ->
-    #  a = false
-    #  fn = -> a = true
-    #  {} = fn()
-    #  ok a
+    test.skip 'jashkenas/coffee-script#1274: `{} = a()` should not optimise away a()', ->
+      a = false
+      fn = -> a = true
+      {} = fn()
+      ok a
 
     # XXX: revist
     # test 'jashkenas/coffee-script#1436: `for` etc. work as normal property names', ->
@@ -72,39 +72,38 @@ suite 'Object Literals', ->
     #   obj.for = 'for' of obj
     #   ok 'for' of obj
 
-    #test 'jashkenas/coffee-script#1513: Top level bare objects need to be wrapped in parens for unary and existence ops', ->
-    #  doesNotThrow -> CoffeeScript.run '{}?', bare: true
-    #  doesNotThrow -> CoffeeScript.run '{}.a++', bare: true
+    test.skip 'jashkenas/coffee-script#1513: Top level bare objects need to be wrapped in parens for unary and existence ops', ->
+      doesNotThrow -> CoffeeScript.run '{}?', bare: true
+      doesNotThrow -> CoffeeScript.run '{}.a++', bare: true
 
   suite 'Implicit Objects', ->
 
-    #test 'implicit object literals', ->
-    #
-    #  obj =
-    #    a: 1,
-    #    b: 2,
-    #  ok obj.a is 1
-    #  ok obj.b is 2
-    #
-    #  config =
-    #    development:
-    #      server: 'localhost'
-    #      timeout: 10
-    #    production:
-    #      server: 'dreamboat'
-    #      timeout: 1000
-    #  ok config.development.server  is 'localhost'
-    #  ok config.production.server   is 'dreamboat'
-    #  ok config.development.timeout is 10
-    #  ok config.production.timeout  is 1000
+    test 'implicit object literals', ->
+      obj =
+        a: 1
+        b: 2
+      ok obj.a is 1
+      ok obj.b is 2
 
-    #test 'implicit objects as part of chained calls', ->
-    #  pluck = (x) -> x.a
-    #  eq 100, pluck pluck pluck a: a: a: 100
+      config =
+        development:
+          server: 'localhost'
+          timeout: 10
+        production:
+          server: 'dreamboat'
+          timeout: 1000
+      eq config.development.server, 'localhost'
+      eq config.production.server, 'dreamboat'
+      eq config.development.timeout, 10
+      eq config.production.timeout, 1000
 
-    #test 'explicit objects nested under implicit objects', ->
+    test 'implicit objects as part of chained calls', ->
+      pluck = (x) -> x.a
+      eq 100, pluck pluck pluck a: a: a: 100
 
-    #test 'invoking functions with implicit object literals', ->
+    test 'explicit objects nested under implicit objects', ->
+
+    test.skip 'invoking functions with implicit object literals', -> # Currently syntax error.
     #  generateGetter = (prop) -> (obj) -> obj[prop]
     #  getA = generateGetter 'a'
     #  getArgs = -> arguments
@@ -164,54 +163,53 @@ suite 'Object Literals', ->
     #
     #  throws -> CoffeeScript.compile 'a = b:1, c'
 
-    #test 'multiple dedentations in implicit object literals', ->
-    #  nonce0 = {}
-    #  nonce1 = {}
-    #  obj =
-    #    a:
-    #      b: ->
-    #        c: nonce0
-    #    d: nonce1
-    #  eq nonce0, obj.a.b().c
-    #  eq nonce1, obj.d
+    test 'multiple dedentations in implicit object literals', ->
+      nonce0 = {}
+      nonce1 = {}
+      obj =
+        a:
+          b: ->
+            c: nonce0
+        d: nonce1
+      eq nonce0, obj.a.b().c
+      eq nonce1, obj.d
 
-    #test 'jashkenas/coffee-script#1871: Special case for IMPLICIT_END in the middle of an implicit object', ->
-    #  result = 'result'
-    #  ident = (x) -> x
-    #
-    #  result = ident one: 1 if false
-    #
-    #  eq result, 'result'
-    #
-    #  result = ident
-    #    one: 1
-    #    two: 2 for i in [1..3]
-    #
-    #  eq result.two.join(' '), '2 2 2'
+    test.skip 'jashkenas/coffee-script#1871: Special case for IMPLICIT_END in the middle of an implicit object', ->
+      result = 'result'
+      ident = (x) -> x
 
-    #test 'jashkenas/coffee-script#1961, jashkenas/coffee-script#1974, regression with compound assigning to an implicit object', ->
-    #
-    #  obj = null
-    #
-    #  obj ?=
-    #    one: 1
-    #    two: 2
-    #
-    #  eq obj.two, 2
-    #
-    #  obj = null
-    #
-    #  obj or=
-    #    three: 3
-    #    four: 4
-    #
-    #  eq obj.four, 4
+      result = ident one: 1 if false
 
-    #test 'jashkenas/coffee-script#2207: Immediate implicit closes don't close implicit objects', ->
-    #  func = ->
-    #    key: for i in [1, 2, 3] then i
-    #
-    #  eq func().key.join(' '), '1 2 3'
+      eq result, 'result'
+
+      result = ident
+        one: 1
+        two: 2 for i in [1..3]
+
+      eq result.two.join(' '), '2 2 2'
+
+    test 'jashkenas/coffee-script#1961, jashkenas/coffee-script#1974, regression with compound assigning to an implicit object', ->
+
+      obj = null
+
+      obj ?=
+        one: 1
+        two: 2
+
+      eq obj.two, 2
+
+      obj = null
+
+      obj or=
+        three: 3
+        four: 4
+
+      eq obj.four, 4
+
+    test 'jashkenas/coffee-script#2207: Immediate implicit closes don not close implicit objects', ->
+      func = ->
+        key: for i in [1, 2, 3] then i
+      eq func().key.join(' '), '1 2 3'
 
     test '#122 implicit object literal in conditional body', ->
       a = yes
@@ -287,6 +285,13 @@ suite 'Object Literals', ->
       eq 3, obj.c.b
       eq 4, obj.d
 
+    test '#266: inline implicit object literals within multiline implicit object literals', ->
+      x =
+        a: aa: 0
+        b: 0
+      eq 0, x.b
+      eq 0, x.a.aa
+
     test '#258: object literals with a key named class', ->
       a = class: 'b'
       eq 'b', a.class
@@ -312,3 +317,15 @@ suite 'Object Literals', ->
       eq f.attributes.class, 'c'
       eq f.render('baz'), 'rendered: baz'
       eq otherRender('baz'), 'rendered: baz'
+
+    test '#253: indented value', ->
+      nonce = {}
+      o = {
+        a:
+          nonce
+      }
+      eq nonce, o.a
+      o =
+        a:
+          nonce
+      eq nonce, o.a

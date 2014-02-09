@@ -291,10 +291,15 @@ else
     if options.js
       if options.sourceMapFile
         fs.writeFileSync options.sourceMapFile, "#{sourceMap}"
+        sourceMappingUrl =
+          if options.output
+            path.relative (path.dirname options.output), options.sourceMapFile
+          else
+            options.sourceMapFile
         js = """
           #{js}
 
-          //# sourceMappingURL=#{options.sourceMapFile}
+          //# sourceMappingURL=#{sourceMappingUrl}
         """
       output js
       return
@@ -302,7 +307,7 @@ else
     # --eval
     if options.eval
       CoffeeScript.register()
-      process.argv = ['coffee'].concat [].slice.call process.argv, 2
+      process.argv = [process.argv[1], options.input].concat additionalArgs
       runMain input, js, jsAST, inputSource
       return
 
