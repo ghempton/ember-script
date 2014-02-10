@@ -1,3 +1,4 @@
+
 child_process = require 'child_process'
 fs = require 'fs'
 path = require 'path'
@@ -6,22 +7,6 @@ EmberScript = require './module'
 {runModule} = require './run'
 
 module.exports = not require.extensions['.em']?
-
-# Keep around coffee extensions for time being, eventually we will
-# move all files over to .em
-require.extensions['.coffee'] ?= (module, filename) ->
-  input = fs.readFileSync filename, 'utf8'
-  csAst = EmberScript.parse input, raw: yes
-  jsAst = EmberScript.compile csAst
-  js = EmberScript.js jsAst
-  runModule module, js, jsAst, filename
-
-require.extensions['.litcoffee'] ?= (module, filename) ->
-  input = fs.readFileSync filename, 'utf8'
-  csAst = EmberScript.parse input, raw: yes, literate: yes
-  jsAst = EmberScript.compile csAst
-  js = EmberScript.js jsAst
-  runModule module, js, jsAst, filename
 
 require.extensions['.em'] ?= (module, filename) ->
   input = fs.readFileSync filename, 'utf8'

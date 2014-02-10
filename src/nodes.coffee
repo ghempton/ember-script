@@ -23,7 +23,7 @@ createNodes = (subclasses, superclasses = []) ->
         if isCategory then ->
         else ->
           for param, i in params
-            @[param] = arguments[i]
+            this[param] = arguments[i]
           if @initialise?
             @initialise.apply this, arguments
           this
@@ -235,16 +235,16 @@ Nodes::toBasicObject = ->
       ]
   for child in @childNodes
     if child in @listMembers
-      obj[child] = (p.toBasicObject() for p in @[child])
+      obj[child] = (p.toBasicObject() for p in this[child])
     else
-      obj[child] = if @[child]? then @[child].toBasicObject()
+      obj[child] = if this[child]? then this[child].toBasicObject()
   obj
 Nodes::fold = (memo, fn) ->
   for child in @childNodes
     if child in @listMembers
-      memo = (p.fold memo, fn for p in @[child])
+      memo = (p.fold memo, fn for p in this[child])
     else
-      memo = @[child].fold memo, fn
+      memo = this[child].fold memo, fn
   fn memo, this
 Nodes::clone = ->
   ctor = ->
@@ -273,7 +273,7 @@ handlePrimitives = (ctor, primitives...) ->
   ctor::toBasicObject = ->
     obj = Nodes::toBasicObject.call this
     for primitive in primitives
-      obj[primitive] = @[primitive]
+      obj[primitive] = this[primitive]
     obj
 
 handlePrimitives Class, 'boundMembers'
@@ -356,12 +356,12 @@ PostDecrementOp::initialise = ->
 
 Nodes::dependentKeys = (scope={}) ->
   chains = []
-  for childName in @childNodes when @[childName]?
+  for childName in @childNodes when this[childName]?
     if childName in @listMembers
-      for member in @[childName]
+      for member in this[childName]
         chains = chains.concat member.dependentKeys(scope)
     else
-      child = @[childName]
+      child = this[childName]
       chains = chains.concat child.dependentKeys(scope)
   chains
 

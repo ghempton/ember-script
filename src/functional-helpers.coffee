@@ -1,3 +1,4 @@
+
 @any = (list, fn) ->
   for e in list
     return yes if fn e

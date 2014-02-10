@@ -2,7 +2,7 @@ child_process = require 'child_process'
 
 suite 'Command line execution', ->
   test "--eval -i", (done) ->
-    child_process.exec 'bin/ember-script --eval -i test/cli-eval-errors-files/1.coffee', (error, stdout, stderr) ->
+    child_process.exec 'bin/ember-script --eval -i test/cli-eval-errors-files/1.em', (error, stdout, stderr) ->
       # Executed module is require.main
       # Module path is relative to the file
       # Can include another CS module
@@ -10,12 +10,12 @@ suite 'Command line execution', ->
       eq stdout, "1 is main true\n0 is main false\n"
 
       console.log stderr
-      ok stderr.indexOf("cli-eval-errors-files/0.coffee:3:26, <js>:6:9)") > 0
-      ok stderr.indexOf("cli-eval-errors-files/1.coffee:4:6, <js>:7:9)") > 0
+      ok stderr.indexOf("cli-eval-errors-files/0.em:3:26, <js>:6:9)") > 0
+      ok stderr.indexOf("cli-eval-errors-files/1.em:4:6, <js>:7:9)") > 0
 
       done()
 
   test "--eval --cli", (done) ->
-    child_process.exec 'bin/ember-script --eval --cli "require \'./test/cli-eval-errors-files/1.coffee\'"', (error, stdout, stderr) ->
+    child_process.exec 'bin/ember-script --eval --cli "require \'./test/cli-eval-errors-files/1.em\'"', (error, stdout, stderr) ->
       eq stdout, "1 is main false\n0 is main false\n"
       done()

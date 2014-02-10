@@ -52,6 +52,7 @@ dist/ember-script.js: lib/browser.js dist
 		-a fs: -a child_process: \
 		-a /src/register.coffee: \
 		-a /src/parser.coffee:/lib/parser.js \
+		-h .coffee:coffee-script-redux \
 		--source-map "$@.map" > "$@"
 
 dist/ember-script.min.js: lib/browser.js dist
@@ -59,6 +60,7 @@ dist/ember-script.min.js: lib/browser.js dist
 		-a fs: -a child_process: \
 		-a /src/register.coffee: \
 		-a /src/parser.coffee:/lib/parser.js \
+		-h .coffee:coffee-script-redux \
 		--source-map "$@.map" > "$@"
 
 
@@ -70,7 +72,7 @@ lib/%.min.js: lib/%.js lib/coffee-script
 
 
 test:
-	$(MOCHA) -R dot test/*.coffee
+	$(MOCHA) -R dot test/*.em
 
 # TODO: use Constellation/ibrik for coverage
 coverage:
