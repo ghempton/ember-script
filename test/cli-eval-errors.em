@@ -9,8 +9,8 @@ suite 'Command line execution', ->
       # Other module is not requires.main
       eq stdout, "1 is main true\n0 is main false\n"
 
-      ok stderr.indexOf("cli-eval-errors-files/0.em:3:26, <js>:6:9)") > 0
-      ok stderr.indexOf("cli-eval-errors-files/1.em <js>:7:9)") > 0
+      ok stderr.indexOf("cli-eval-errors-files/0.em:3:26, <js>:5:9)") > 0
+      ok stderr.indexOf("cli-eval-errors-files/1.em <js>:6:9)") > 0
 
       done()
 

@@ -27,7 +27,7 @@ require.extensions['.litem'] = (module, filename) ->
 unless fork.emPatched
   emBinary = path.resolve 'bin', 'ember-script'
   child_process.fork = (file, args = [], options = {}) ->
-    if (path.extname file) in ['.em', '.litem', '.coffee', '.litcoffee']
+    if (path.extname file) in ['.em', '.litem']
       if not Array.isArray args
         args = []
         options = args or {}

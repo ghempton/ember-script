@@ -637,12 +637,15 @@ memberExpression
       return rp(new CS.NewOp(e, args));
     }
   memberAccess
-    = e:( primaryExpression
+    = e:
+      ( primaryExpression
       / NEW __ e:memberExpression args:argumentList { return rp(new CS.NewOp(e, args.operands[0])); }
       ) accesses:(argumentList MemberAccessOps / MemberAccessOps)+ {
         var acc = foldl(function(memo, a){ return memo.concat(a); }, [], accesses);
         return createMemberExpression(e, acc);
       }
+    / contextVar
+    
   MemberNames
     = identifierName
   MemberAccessOps
