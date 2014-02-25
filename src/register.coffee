@@ -8,14 +8,14 @@ EmberScript = require './module'
 
 module.exports = not require.extensions['.em']?
 
-require.extensions['.em'] ?= (module, filename) ->
+require.extensions['.em'] = (module, filename) ->
   input = fs.readFileSync filename, 'utf8'
   csAst = EmberScript.parse input, raw: yes
   jsAst = EmberScript.compile csAst
   js = EmberScript.js jsAst
   runModule module, js, jsAst, filename
 
-require.extensions['.litem'] ?= (module, filename) ->
+require.extensions['.litem'] = (module, filename) ->
   input = fs.readFileSync filename, 'utf8'
   csAst = EmberScript.parse input, raw: yes, literate: yes
   jsAst = EmberScript.compile csAst
@@ -34,3 +34,5 @@ unless fork.emPatched
       options.execPath or= emBinary
     fork file, args, options
   child_process.fork.emPatched = yes
+
+delete require.cache[__filename]

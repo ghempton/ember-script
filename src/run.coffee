@@ -34,7 +34,7 @@ patchStackTrace = ->
       mapString = Module._sourceMaps[filename]?()
       if mapString
         sourceMap = sourceFiles[filename] ?= new SourceMapConsumer mapString
-        sourceMap.originalPositionFor {line, column}
+        sourceMap.originalPositionFor {line, column: column - 1}
 
     frames = for frame in stack
       break if frame.getFunction() is exports.runMain
@@ -66,7 +66,10 @@ formatSourcePosition = (frame, getSourceMapping) ->
     source = getSourceMapping fileName, line, column
     fileLocation =
       if source
-        "#{fileName}:#{source.line}:#{source.column + 1}, <js>:#{line}:#{column}"
+        if source.line?
+          "#{fileName}:#{source.line}:#{source.column + 1}, <js>:#{line}:#{column}"
+        else
+          "#{fileName} <js>:#{line}:#{column}"
       else
         "#{fileName}:#{line}:#{column}"
 

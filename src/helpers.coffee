@@ -2,6 +2,21 @@
 CS = require './nodes'
 
 
+COLOURS =
+  red: '\x1B[31m'
+  green: '\x1B[32m'
+  yellow: '\x1B[33m'
+  blue: '\x1B[34m'
+  magenta: '\x1B[35m'
+  cyan: '\x1B[36m'
+
+SUPPORTS_COLOUR =
+  process?.stderr?.isTTY and not process.env.NODE_DISABLE_COLORS
+
+colourise = (colour, str) ->
+  if SUPPORTS_COLOUR then "#{COLOURS[colour]}#{str}\x1B[39m" else str
+
+
 @numberLines = numberLines = (input, startLine = 1) ->
   lines = input.split '\n'
   padSize = "#{lines.length + startLine - 1}".length
@@ -29,12 +44,14 @@ cleanMarkers = (str) -> str.replace /[\uEFEF\uEFFE\uEFFF]/g, ''
 
 @pointToErrorLocation = pointToErrorLocation = (source, line, column, numLinesOfContext = 3) ->
   lines = source.split '\n'
+  lines.pop() unless lines[lines.length - 1]
   # figure out which lines are needed for context
   currentLineOffset = line - 1
   startLine = currentLineOffset - numLinesOfContext
   if startLine < 0 then startLine = 0
   # get the context lines
   preLines = lines[startLine..currentLineOffset]
+  preLines[preLines.length - 1] = colourise 'yellow', preLines[preLines.length - 1]
   postLines = lines[currentLineOffset + 1 .. currentLineOffset + numLinesOfContext]
   numberedLines = (numberLines (cleanMarkers [preLines..., postLines...].join '\n'), startLine + 1).split '\n'
   preLines = numberedLines[0...preLines.length]
@@ -44,7 +61,7 @@ cleanMarkers = (str) -> str.replace /[\uEFEF\uEFFE\uEFFF]/g, ''
   padSize = ((currentLineOffset + 1 + postLines.length).toString 10).length
   [
     preLines...
-    "#{(Array padSize + 1).join '^'} :~#{(Array column).join '~'}^"
+    "#{colourise 'red', (Array padSize + 1).join '^'} : #{(Array column).join ' '}#{colourise 'red', '^'}"
     postLines...
   ].join '\n'
 
