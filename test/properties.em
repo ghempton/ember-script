@@ -59,6 +59,17 @@ suite 'Properties', ->
         x.q
       ok @hasDependentKeys(cp, ['content', 'x.y.z.q', 's.q'])
 
+    test 'should create dependencies for arguments to function', ->
+      func = ->
+      cp = ~>
+        func(@content, @otherContent, @content.subProperty, @x.forEach(->))
+      ok @hasDependentKeys(cp, ['content', 'otherContent', 'content.subProperty', 'x.@each'])
+
+    test 'should create dependencies for local bound function', ->
+      cp = ~>
+        [1,2,3,4,5].find (num) ->
+          @content == num
+      ok @hasDependentKeys(cp, ['content'])
 
   suite 'Annotations', ->
 

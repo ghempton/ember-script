@@ -394,6 +394,10 @@ FunctionApplications::dependentKeys = (scope={}) ->
       res = res.map (c) ->
         c.push('@each')
         c
+
+  for argument in @arguments
+    argument.dependentKeys(scope).map (c) ->
+      res.push(c)
   res
 
 Block::dependentKeys = (scope={}) ->
