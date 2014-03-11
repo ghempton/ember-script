@@ -644,7 +644,6 @@ memberExpression
         var acc = foldl(function(memo, a){ return memo.concat(a); }, [], accesses);
         return createMemberExpression(e, acc);
       }
-    / contextVar
     
   MemberNames
     = identifierName
