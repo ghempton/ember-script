@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/ghempton/ember-script.png?branch=master)](https://travis-ci.org/ghempton/ember-script)
+
 # EmberScript
 
 EmberScript is a CoffeeScript-derived language which takes advantage of the [Ember.js](http://emberjs.com) runtime. Ember constructs such as Inheritance, Mixins, Bindings, Observers, etc. are all first-class citizens within EmberScript.
