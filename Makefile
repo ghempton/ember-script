@@ -14,7 +14,7 @@ MOCHA = node_modules/.bin/mocha --compilers em:./register -u tdd
 CJSIFY = node_modules/.bin/cjsify --export EmberScript
 MINIFIER = node_modules/.bin/esmangle
 
-all: $(LIB)
+all: $(LIB) dist/ember-script.js
 build: all
 parser: lib/parser.js
 #browser: dist/ember-script.min.js
