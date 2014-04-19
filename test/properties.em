@@ -71,6 +71,11 @@ suite 'Properties', ->
           @content == num
       ok @hasDependentKeys(cp, ['content'])
 
+    test 'should not create dependency for constructor', ->
+      cp = ~>
+        @x.constructor.toString()
+      ok @hasDependentKeys(cp, ['x'])
+
   suite 'Annotations', ->
 
     test 'computed annotation should create computed property', ->

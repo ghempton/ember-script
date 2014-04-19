@@ -15559,7 +15559,8 @@
         scope = {};
       memberName = this.memberName;
       return this.expression.dependentKeys(scope).map(function (c) {
-        c.push(memberName);
+        if (!(memberName === 'constructor'))
+          c.push(memberName);
         return c;
       });
     };
@@ -38546,7 +38547,8 @@
         scope = {};
       memberName = this.memberName;
       return this.expression.dependentKeys(scope).map(function (c) {
-        c.push(memberName);
+        if (!(memberName === 'constructor'))
+          c.push(memberName);
         return c;
       });
     };
