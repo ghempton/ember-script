@@ -45,7 +45,7 @@ All assets ending in `.em` will be compiled by EmberScript.
 ### Npm
 
 ```
-sudo npm install -g 'git://github.com/ghempton/ember-script.git#HEAD'
+sudo npm install -g ghempton/ember-script
 ember-script --help
 ```
 
