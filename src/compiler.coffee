@@ -454,8 +454,7 @@ class exports.Compiler
       if alternate?
         throw new Error 'Conditional with non-null alternate requires non-null consequent' unless consequent?
         alternate = forceBlock alternate unless alternate.instanceof JS.IfStatement
-      if alternate? or ancestry[0]?.instanceof CS.Conditional
-        consequent = forceBlock consequent
+      consequent = forceBlock consequent
       new JS.IfStatement (expr condition), (stmt consequent), alternate
     ]
     [CS.ForIn, ({valAssignee, keyAssignee, target, step, filter, body, compile}) ->
