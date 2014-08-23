@@ -12603,8 +12603,7 @@
               if (!alternate['instanceof'](JS.IfStatement))
                 alternate = forceBlock(alternate);
             }
-            if (null != alternate || (null != ancestry[0] ? ancestry[0]['instanceof'](CS.Conditional) : void 0))
-              consequent = forceBlock(consequent);
+            consequent = forceBlock(consequent);
             return new JS.IfStatement(expr(condition), stmt(consequent), alternate);
           }
         ],
