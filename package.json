@@ -30,6 +30,7 @@
     "StringScanner": "~0.0.3",
     "nopt": "~2.1.2",
     "LiveScript": "~1.2.0",
+    "coffee-script": "1.8.0",
     "async": "0.9.0"
   },
   "optionalDependencies": {

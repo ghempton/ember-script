@@ -1,5 +1,5 @@
 EmberScript  = require './module'
-CoffeeScript = require './module'
+CoffeeScript = require 'coffee-script'
 
 LiveScript = require('LiveScript')
 
