@@ -54,3 +54,61 @@ ember-script --help
 ```
 make -j build test
 ```
+
+## Script fragments and Multi compilation
+
+This branch support compilation of script fragments (multi compilation).
+It was added in order to better support environments where you need more control of the compilation, such
+as with ember-cli and ES6 modules.
+
+```coffeescript
+var a = "js";
+
+# (coffee)
+
+y = "coffee with a"
+
+# (ember)
+
+class Post
+  trimmedPosts: ~>
+    @content?.slice(0, 3)
+
+# (live)
+
+x = "milk and y"
+```
+
+Valid aliases are: 
+
+- coffeescript: 
+  `cs`,   `coffee`
+- javascript:   
+  `js`,   `ecma`
+- livescript:   
+  `ls`,   `live`
+- emberscript:  
+  `em`, `ember`
+
+The first block is (by default) assumed to be *coffeescript* (unless you have a script identifier comment as the first line of code). 
+
+### Customization
+
+For your own customizations, go to the end of `cli-multi-compile.coffee` and change `compilers` or `codeEmitter`. You can also send an extra `mcOptions` object as the last argument. This object can 
+take a `transformer` function (f.ex to prepend each compiled fragment with a custom comment) and a `lang` (string) argument to override `coffeescript` as the default/first fragment script language.
+
+```coffeescript
+multiCompile = require './multi-compiler'
+
+module.exports = (code, options) ->
+  mcOptions = {
+    lang: 'coffee'
+  }
+  codeEmitter = options.codeEmitter || createCodeEmitter(options)
+  multiCompile code, compilers, codeEmitter, mcOptions
+```
+
+
+
+
+

@@ -35,7 +35,7 @@
       var cwd = '/';
       return {
         title: 'browser',
-        version: 'v0.10.21',
+        version: 'v0.10.32',
         browser: true,
         env: {},
         argv: [],
@@ -267,7 +267,7 @@
         'ember.js'
       ],
       'author': 'Gordon L. Hempton, Michael Ficarra',
-      'version': '0.0.14',
+      'version': '0.0.15',
       'main': './lib/module',
       'bin': { 'ember-script': './bin/ember-script' },
       'homepage': 'https://github.com/ghempton/ember-script',
@@ -290,7 +290,10 @@
       },
       'dependencies': {
         'StringScanner': '~0.0.3',
-        'nopt': '~2.1.2'
+        'nopt': '~2.1.2',
+        'LiveScript': '~1.2.0',
+        'coffee-script': '1.8.0',
+        'async': '0.9.0'
       },
       'optionalDependencies': {
         'esmangle': '~1.0.0',
@@ -2189,9 +2192,8 @@
       'version': '1.2.0',
       'engines': { 'node': '>=0.4.0' },
       'maintainers': [{
-          'name': 'Yusuke Suzuki',
-          'email': 'utatane.tea@gmail.com',
-          'url': 'http://github.com/Constellation'
+          'name': 'constellation',
+          'email': 'utatane.tea@gmail.com'
         }],
       'repository': {
         'type': 'git',
@@ -2229,11 +2231,22 @@
         'build-min': 'cjsify -ma path: tools/entry-point.js > escodegen.browser.min.js',
         'build': 'cjsify -a path: tools/entry-point.js > escodegen.browser.js'
       },
-      'readme': "\n### Escodegen [![Build Status](https://secure.travis-ci.org/Constellation/escodegen.png)](http://travis-ci.org/Constellation/escodegen) [![Build Status](https://drone.io/github.com/Constellation/escodegen/status.png)](https://drone.io/github.com/Constellation/escodegen/latest)\n\nEscodegen ([escodegen](http://github.com/Constellation/escodegen)) is\n[ECMAScript](http://www.ecma-international.org/publications/standards/Ecma-262.htm)\n(also popularly known as [JavaScript](http://en.wikipedia.org/wiki/JavaScript>JavaScript))\ncode generator from [Parser API](https://developer.mozilla.org/en/SpiderMonkey/Parser_API) AST.\nSee [online generator demo](http://constellation.github.com/escodegen/demo/index.html).\n\n\n### Install\n\nEscodegen can be used in a web browser:\n\n    <script src=\"escodegen.browser.js\"></script>\n\nescodegen.browser.js is found in tagged-revision. See Tags on GitHub.\n\nOr in a Node.js application via the package manager:\n\n    npm install escodegen\n\n### Usage\n\nA simple example: the program\n\n    escodegen.generate({\n        type: 'BinaryExpression',\n        operator: '+',\n        left: { type: 'Literal', value: 40 },\n        right: { type: 'Literal', value: 2 }\n    });\n\nproduces the string `'40 + 2'`\n\nSee the [API page](https://github.com/Constellation/escodegen/wiki/API) for\noptions. To run the tests, execute `npm test` in the root directory.\n\n### Building browser bundle / minified browser bundle\n\nAt first, executing `npm install` to install the all dev dependencies.\nAfter that,\n\n    npm run-script build\n\nwill generate `escodegen.browser.js`, it is used on the browser environment.\n\nAnd,\n\n    npm run-script build-min\n\nwill generate minified `escodegen.browser.min.js`.\n\n### License\n\n#### Escodegen\n\nCopyright (C) 2012 [Yusuke Suzuki](http://github.com/Constellation)\n (twitter: [@Constellation](http://twitter.com/Constellation)) and other contributors.\n\nRedistribution and use in source and binary forms, with or without\nmodification, are permitted provided that the following conditions are met:\n\n  * Redistributions of source code must retain the above copyright\n    notice, this list of conditions and the following disclaimer.\n\n  * Redistributions in binary form must reproduce the above copyright\n    notice, this list of conditions and the following disclaimer in the\n    documentation and/or other materials provided with the distribution.\n\nTHIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS \"AS IS\"\nAND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE\nIMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE\nARE DISCLAIMED. IN NO EVENT SHALL <COPYRIGHT HOLDER> BE LIABLE FOR ANY\nDIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES\n(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;\nLOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND\nON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT\n(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF\nTHIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.\n\n#### source-map\n\nSourceNodeMocks has a limited interface of mozilla/source-map SourceNode implementations.\n\nCopyright (c) 2009-2011, Mozilla Foundation and contributors\nAll rights reserved.\n\nRedistribution and use in source and binary forms, with or without\nmodification, are permitted provided that the following conditions are met:\n\n* Redistributions of source code must retain the above copyright notice, this\n  list of conditions and the following disclaimer.\n\n* Redistributions in binary form must reproduce the above copyright notice,\n  this list of conditions and the following disclaimer in the documentation\n  and/or other materials provided with the distribution.\n\n* Neither the names of the Mozilla Foundation nor the names of project\n  contributors may be used to endorse or promote products derived from this\n  software without specific prior written permission.\n\nTHIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS \"AS IS\" AND\nANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED\nWARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE\nDISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE\nFOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL\nDAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR\nSERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER\nCAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,\nOR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE\nOF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.\n",
-      'readmeFilename': 'README.md',
       'bugs': { 'url': 'https://github.com/Constellation/escodegen/issues' },
       '_id': 'escodegen@1.2.0',
-      '_from': 'escodegen@~1.2.0'
+      'dist': {
+        'shasum': '09de7967791cc958b7f89a2ddb6d23451af327e1',
+        'tarball': 'http://registry.npmjs.org/escodegen/-/escodegen-1.2.0.tgz'
+      },
+      '_from': 'escodegen@~1.2.0',
+      '_npmVersion': '1.3.21',
+      '_npmUser': {
+        'name': 'constellation',
+        'email': 'utatane.tea@gmail.com'
+      },
+      'directories': {},
+      '_shasum': '09de7967791cc958b7f89a2ddb6d23451af327e1',
+      '_resolved': 'https://registry.npmjs.org/escodegen/-/escodegen-1.2.0.tgz',
+      'readme': 'ERROR: No README data found!'
     };
   });
   require.define('/node_modules/source-map/lib/source-map.js', function (module, exports, __dirname, __filename) {
@@ -2248,26 +2261,33 @@
     define(function (require, exports, module) {
       var SourceMapGenerator = require('/node_modules/source-map/lib/source-map/source-map-generator.js', module).SourceMapGenerator;
       var util = require('/node_modules/source-map/lib/source-map/util.js', module);
+      var REGEX_NEWLINE = /(\r?\n)/;
+      var REGEX_CHARACTER = /\r\n|[\s\S]/g;
       function SourceNode(aLine, aColumn, aSource, aChunks, aName) {
         this.children = [];
         this.sourceContents = {};
-        this.line = aLine === undefined ? null : aLine;
-        this.column = aColumn === undefined ? null : aColumn;
-        this.source = aSource === undefined ? null : aSource;
-        this.name = aName === undefined ? null : aName;
+        this.line = aLine == null ? null : aLine;
+        this.column = aColumn == null ? null : aColumn;
+        this.source = aSource == null ? null : aSource;
+        this.name = aName == null ? null : aName;
         if (aChunks != null)
           this.add(aChunks);
       }
-      SourceNode.fromStringWithSourceMap = function SourceNode_fromStringWithSourceMap(aGeneratedCode, aSourceMapConsumer) {
+      SourceNode.fromStringWithSourceMap = function SourceNode_fromStringWithSourceMap(aGeneratedCode, aSourceMapConsumer, aRelativePath) {
         var node = new SourceNode;
-        var remainingLines = aGeneratedCode.split('\n');
+        var remainingLines = aGeneratedCode.split(REGEX_NEWLINE);
+        var shiftNextLine = function () {
+          var lineContents = remainingLines.shift();
+          var newLine = remainingLines.shift() || '';
+          return lineContents + newLine;
+        };
         var lastGeneratedLine = 1, lastGeneratedColumn = 0;
         var lastMapping = null;
         aSourceMapConsumer.eachMapping(function (mapping) {
           if (lastMapping !== null) {
             if (lastGeneratedLine < mapping.generatedLine) {
               var code = '';
-              addMappingWithCode(lastMapping, remainingLines.shift() + '\n');
+              addMappingWithCode(lastMapping, shiftNextLine());
               lastGeneratedLine++;
               lastGeneratedColumn = 0;
             } else {
@@ -2281,7 +2301,7 @@
             }
           }
           while (lastGeneratedLine < mapping.generatedLine) {
-            node.add(remainingLines.shift() + '\n');
+            node.add(shiftNextLine());
             lastGeneratedLine++;
           }
           if (lastGeneratedColumn < mapping.generatedColumn) {
@@ -2294,16 +2314,16 @@
         }, this);
         if (remainingLines.length > 0) {
           if (lastMapping) {
-            var lastLine = remainingLines.shift();
-            if (remainingLines.length > 0)
-              lastLine += '\n';
-            addMappingWithCode(lastMapping, lastLine);
+            addMappingWithCode(lastMapping, shiftNextLine());
           }
-          node.add(remainingLines.join('\n'));
+          node.add(remainingLines.join(''));
         }
         aSourceMapConsumer.sources.forEach(function (sourceFile) {
           var content = aSourceMapConsumer.sourceContentFor(sourceFile);
-          if (content) {
+          if (content != null) {
+            if (aRelativePath != null) {
+              sourceFile = util.join(aRelativePath, sourceFile);
+            }
             node.setSourceContent(sourceFile, content);
           }
         });
@@ -2312,7 +2332,8 @@
           if (mapping === null || mapping.source === undefined) {
             node.add(code);
           } else {
-            node.add(new SourceNode(mapping.originalLine, mapping.originalColumn, mapping.source, code, mapping.name));
+            var source = aRelativePath ? util.join(aRelativePath, mapping.source) : mapping.source;
+            node.add(new SourceNode(mapping.originalLine, mapping.originalColumn, source, code, mapping.name));
           }
         }
       };
@@ -2451,8 +2472,8 @@
             lastOriginalSource = null;
             sourceMappingActive = false;
           }
-          chunk.split('').forEach(function (ch, idx, array) {
-            if (ch === '\n') {
+          chunk.match(REGEX_CHARACTER).forEach(function (ch, idx, array) {
+            if (REGEX_NEWLINE.test(ch)) {
               generated.line++;
               generated.column = 0;
               if (idx + 1 === array.length) {
@@ -2473,7 +2494,7 @@
                 });
               }
             } else {
-              generated.column++;
+              generated.column += ch.length;
             }
           });
         });
@@ -2579,6 +2600,12 @@
       }
       exports.normalize = normalize;
       function join(aRoot, aPath) {
+        if (aRoot === '') {
+          aRoot = '.';
+        }
+        if (aPath === '') {
+          aPath = '.';
+        }
         var aPathUrl = urlParse(aPath);
         var aRootUrl = urlParse(aRoot);
         if (aRootUrl) {
@@ -2605,15 +2632,10 @@
         return joined;
       }
       exports.join = join;
-      function toSetString(aStr) {
-        return '$' + aStr;
-      }
-      exports.toSetString = toSetString;
-      function fromSetString(aStr) {
-        return aStr.substr(1);
-      }
-      exports.fromSetString = fromSetString;
       function relative(aRoot, aPath) {
+        if (aRoot === '') {
+          aRoot = '.';
+        }
         aRoot = aRoot.replace(/\/$/, '');
         var url = urlParse(aRoot);
         if (aPath.charAt(0) == '/' && url && url.path == '/') {
@@ -2622,6 +2644,14 @@
         return aPath.indexOf(aRoot + '/') === 0 ? aPath.substr(aRoot.length + 1) : aPath;
       }
       exports.relative = relative;
+      function toSetString(aStr) {
+        return '$' + aStr;
+      }
+      exports.toSetString = toSetString;
+      function fromSetString(aStr) {
+        return aStr.substr(1);
+      }
+      exports.fromSetString = fromSetString;
       function strcmp(aStr1, aStr2) {
         var s1 = aStr1 || '';
         var s2 = aStr2 || '';
@@ -3669,16 +3699,16 @@
                 column: mapping.generatedColumn
               }
             };
-          if (mapping.source) {
+          if (mapping.source != null) {
             newMapping.source = mapping.source;
-            if (sourceRoot) {
+            if (sourceRoot != null) {
               newMapping.source = util.relative(sourceRoot, newMapping.source);
             }
             newMapping.original = {
               line: mapping.originalLine,
               column: mapping.originalColumn
             };
-            if (mapping.name) {
+            if (mapping.name != null) {
               newMapping.name = mapping.name;
             }
           }
@@ -3686,7 +3716,7 @@
         });
         aSourceMapConsumer.sources.forEach(function (sourceFile) {
           var content = aSourceMapConsumer.sourceContentFor(sourceFile);
-          if (content) {
+          if (content != null) {
             generator.setSourceContent(sourceFile, content);
           }
         });
@@ -3698,10 +3728,10 @@
         var source = util.getArg(aArgs, 'source', null);
         var name = util.getArg(aArgs, 'name', null);
         this._validateMapping(generated, original, source, name);
-        if (source && !this._sources.has(source)) {
+        if (source != null && !this._sources.has(source)) {
           this._sources.add(source);
         }
-        if (name && !this._names.has(name)) {
+        if (name != null && !this._names.has(name)) {
           this._names.add(name);
         }
         this._mappings.push({
@@ -3715,15 +3745,15 @@
       };
       SourceMapGenerator.prototype.setSourceContent = function SourceMapGenerator_setSourceContent(aSourceFile, aSourceContent) {
         var source = aSourceFile;
-        if (this._sourceRoot) {
+        if (this._sourceRoot != null) {
           source = util.relative(this._sourceRoot, source);
         }
-        if (aSourceContent !== null) {
+        if (aSourceContent != null) {
           if (!this._sourcesContents) {
             this._sourcesContents = {};
           }
           this._sourcesContents[util.toSetString(source)] = aSourceContent;
-        } else {
+        } else if (this._sourcesContents) {
           delete this._sourcesContents[util.toSetString(source)];
           if (Object.keys(this._sourcesContents).length === 0) {
             this._sourcesContents = null;
@@ -3731,45 +3761,46 @@
         }
       };
       SourceMapGenerator.prototype.applySourceMap = function SourceMapGenerator_applySourceMap(aSourceMapConsumer, aSourceFile, aSourceMapPath) {
-        if (!aSourceFile) {
-          if (!aSourceMapConsumer.file) {
+        var sourceFile = aSourceFile;
+        if (aSourceFile == null) {
+          if (aSourceMapConsumer.file == null) {
             throw new Error('SourceMapGenerator.prototype.applySourceMap requires either an explicit source file, ' + 'or the source map\'s "file" property. Both were omitted.');
           }
-          aSourceFile = aSourceMapConsumer.file;
+          sourceFile = aSourceMapConsumer.file;
         }
         var sourceRoot = this._sourceRoot;
-        if (sourceRoot) {
-          aSourceFile = util.relative(sourceRoot, aSourceFile);
+        if (sourceRoot != null) {
+          sourceFile = util.relative(sourceRoot, sourceFile);
         }
         var newSources = new ArraySet;
         var newNames = new ArraySet;
         this._mappings.forEach(function (mapping) {
-          if (mapping.source === aSourceFile && mapping.originalLine) {
+          if (mapping.source === sourceFile && mapping.originalLine != null) {
             var original = aSourceMapConsumer.originalPositionFor({
                 line: mapping.originalLine,
                 column: mapping.originalColumn
               });
-            if (original.source !== null) {
+            if (original.source != null) {
               mapping.source = original.source;
-              if (aSourceMapPath) {
+              if (aSourceMapPath != null) {
                 mapping.source = util.join(aSourceMapPath, mapping.source);
               }
-              if (sourceRoot) {
+              if (sourceRoot != null) {
                 mapping.source = util.relative(sourceRoot, mapping.source);
               }
               mapping.originalLine = original.line;
               mapping.originalColumn = original.column;
-              if (original.name !== null && mapping.name !== null) {
+              if (original.name != null && mapping.name != null) {
                 mapping.name = original.name;
               }
             }
           }
           var source = mapping.source;
-          if (source && !newSources.has(source)) {
+          if (source != null && !newSources.has(source)) {
             newSources.add(source);
           }
           var name = mapping.name;
-          if (name && !newNames.has(name)) {
+          if (name != null && !newNames.has(name)) {
             newNames.add(name);
           }
         }, this);
@@ -3777,8 +3808,11 @@
         this._names = newNames;
         aSourceMapConsumer.sources.forEach(function (sourceFile) {
           var content = aSourceMapConsumer.sourceContentFor(sourceFile);
-          if (content) {
-            if (sourceRoot) {
+          if (content != null) {
+            if (aSourceMapPath != null) {
+              sourceFile = util.join(aSourceMapPath, sourceFile);
+            }
+            if (sourceRoot != null) {
               sourceFile = util.relative(sourceRoot, sourceFile);
             }
             this.setSourceContent(sourceFile, content);
@@ -3827,14 +3861,14 @@
           }
           result += base64VLQ.encode(mapping.generatedColumn - previousGeneratedColumn);
           previousGeneratedColumn = mapping.generatedColumn;
-          if (mapping.source) {
+          if (mapping.source != null) {
             result += base64VLQ.encode(this._sources.indexOf(mapping.source) - previousSource);
             previousSource = this._sources.indexOf(mapping.source);
             result += base64VLQ.encode(mapping.originalLine - 1 - previousOriginalLine);
             previousOriginalLine = mapping.originalLine - 1;
             result += base64VLQ.encode(mapping.originalColumn - previousOriginalColumn);
             previousOriginalColumn = mapping.originalColumn;
-            if (mapping.name) {
+            if (mapping.name != null) {
               result += base64VLQ.encode(this._names.indexOf(mapping.name) - previousName);
               previousName = this._names.indexOf(mapping.name);
             }
@@ -3847,7 +3881,7 @@
           if (!this._sourcesContents) {
             return null;
           }
-          if (aSourceRoot) {
+          if (aSourceRoot != null) {
             source = util.relative(aSourceRoot, source);
           }
           var key = util.toSetString(source);
@@ -3857,12 +3891,14 @@
       SourceMapGenerator.prototype.toJSON = function SourceMapGenerator_toJSON() {
         var map = {
             version: this._version,
-            file: this._file,
             sources: this._sources.toArray(),
             names: this._names.toArray(),
             mappings: this._serializeMappings()
           };
-        if (this._sourceRoot) {
+        if (this._file != null) {
+          map.file = this._file;
+        }
+        if (this._sourceRoot != null) {
           map.sourceRoot = this._sourceRoot;
         }
         if (this._sourcesContents) {
@@ -4050,7 +4086,7 @@
       Object.defineProperty(SourceMapConsumer.prototype, 'sources', {
         get: function () {
           return this._sources.toArray().map(function (s) {
-            return this.sourceRoot ? util.join(this.sourceRoot, s) : s;
+            return this.sourceRoot != null ? util.join(this.sourceRoot, s) : s;
           }, this);
         }
       });
@@ -4154,7 +4190,7 @@
         var mapping = this._findMapping(needle, this._generatedMappings, 'generatedLine', 'generatedColumn', util.compareByGeneratedPositions);
         if (mapping && mapping.generatedLine === needle.generatedLine) {
           var source = util.getArg(mapping, 'source', null);
-          if (source && this.sourceRoot) {
+          if (source != null && this.sourceRoot != null) {
             source = util.join(this.sourceRoot, source);
           }
           return {
@@ -4175,14 +4211,14 @@
         if (!this.sourcesContent) {
           return null;
         }
-        if (this.sourceRoot) {
+        if (this.sourceRoot != null) {
           aSource = util.relative(this.sourceRoot, aSource);
         }
         if (this._sources.has(aSource)) {
           return this.sourcesContent[this._sources.indexOf(aSource)];
         }
         var url;
-        if (this.sourceRoot && (url = util.urlParse(this.sourceRoot))) {
+        if (this.sourceRoot != null && (url = util.urlParse(this.sourceRoot))) {
           var fileUriAbsPath = aSource.replace(/^file:\/\//, '');
           if (url.scheme == 'file' && this._sources.has(fileUriAbsPath)) {
             return this.sourcesContent[this._sources.indexOf(fileUriAbsPath)];
@@ -4199,7 +4235,7 @@
             originalLine: util.getArg(aArgs, 'line'),
             originalColumn: util.getArg(aArgs, 'column')
           };
-        if (this.sourceRoot) {
+        if (this.sourceRoot != null) {
           needle.source = util.relative(this.sourceRoot, needle.source);
         }
         var mapping = this._findMapping(needle, this._originalMappings, 'originalLine', 'originalColumn', util.compareByOriginalPositions);
@@ -4233,7 +4269,7 @@
         var sourceRoot = this.sourceRoot;
         mappings.map(function (mapping) {
           var source = mapping.source;
-          if (source && sourceRoot) {
+          if (source != null && sourceRoot != null) {
             source = util.join(sourceRoot, source);
           }
           return {
@@ -4607,6 +4643,11 @@
           'body'
         ],
         ForInStatement: [
+          'left',
+          'right',
+          'body'
+        ],
+        ForOfStatement: [
           'left',
           'right',
           'body'
@@ -5021,7 +5062,7 @@
         });
         return tree;
       }
-      exports.version = '1.3.3-dev';
+      exports.version = '1.5.1-dev';
       exports.Syntax = Syntax;
       exports.traverse = traverse;
       exports.replace = replace;

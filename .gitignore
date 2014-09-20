@@ -10,3 +10,4 @@ lib/coffee-script/*.tmp
 lib/bootstrap
 coffee-script-redux-*.tgz
 *.gem
+*.log
