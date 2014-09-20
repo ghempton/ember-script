@@ -4,7 +4,7 @@ CoffeeScript = require 'coffee-script'
 LiveScript = require('LiveScript')
 
 EmberScript.compileCode = (input, options) ->
-  csAst = EmberScript.parse input, 
+  csAst = EmberScript.parse input, raw: yes
   jsAst = EmberScript.compile csAst
   EmberScript.js jsAst
 
@@ -13,15 +13,15 @@ compilers =
     source
 
   coffee: (source) ->
-    console.log 'CoffeeScript.compile:', source
+    # console.log 'CoffeeScript.compile:', source
     CoffeeScript.compile source, { bare: true }
 
   live: (source) ->
-    console.log 'LivesScript.compile:', source
-    LivesScript.compile source, { bare: true }
+    # console.log 'LivesScript.compile:', source
+    LiveScript.compile source, { bare: true }
 
   ember: (source) ->
-    console.log 'EmberScript.compile:', source
+    # console.log 'EmberScript.compile:', source
     EmberScript.compileCode source, {raw: yes, literate: yes}
 
 # emit the code to a file or stdout
@@ -29,6 +29,7 @@ compilers =
 
 createCodeEmitter = (options) ->
   (code) ->
+    code = "#{code}\n"
     if options.output    
       fs.writeFile options.output, code, (err) ->
         throw err if err?
