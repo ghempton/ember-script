@@ -1,5 +1,15 @@
+# (es)
+
 a = "js"
 
-# (ember)
+# (em)
 
-y = "ember"
+e = "ember"
+
+# (ls)
+
+l = "live"
+
+# (js)
+
+j = "live"

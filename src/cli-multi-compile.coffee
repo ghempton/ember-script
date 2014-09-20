@@ -40,5 +40,8 @@ createCodeEmitter = (options) ->
 multiCompile = require './multi-compiler'
 
 module.exports = (code, options) ->
+  mcOptions =
+    lang: 'coffee'
+
   codeEmitter = options.codeEmitter || createCodeEmitter(options)
-  multiCompile code, compilers, codeEmitter
+  multiCompile code, compilers, codeEmitter, mcOptions
