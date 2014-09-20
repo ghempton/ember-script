@@ -54,3 +54,46 @@ ember-script --help
 ```
 make -j build test
 ```
+
+## Script fragments and Multi compilation
+
+This branch support compilation of script fragments (multi compilation).
+It was added in order to better support environments where you need more control of the compilation, such
+as with ember-cli and ES6 modules.
+
+```coffeescript
+var a = "js";
+
+# (coffee)
+
+y = "coffee with a"
+
+# (ember)
+
+class Post
+  trimmedPosts: ~>
+    @content?.slice(0, 3)
+
+# (live)
+
+x = "milk and y"
+```
+
+Valid aliases are: 
+
+- coffeescript: 
+  `cs`,   `coffee`
+- javascript:   
+  `js`,   `ecma`
+- livescript:   
+  `ls`,   `live`
+- emberscript:  
+  `em`, `ember`
+
+The first block is (by default) assumed to be javascript (unless you have a script identifier comment as the first line of code)
+
+
+
+
+
+

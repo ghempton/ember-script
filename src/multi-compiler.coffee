@@ -1,4 +1,4 @@
-anyFragExpr = /#\s\((ember|coffee|js|live)\)\s*/
+anyFragExpr = /#\s\((ember|em|coffee|cs|ecma|js|live|ls)\)\s*/
 
 fragments = []
 
@@ -28,9 +28,19 @@ fragmentize = (code) ->
   # advance code cursor until start of next fragment
   fragmentize code.slice(index + matchTxt.length)
 
+
+compilerAliases =
+  cs: 'coffee'
+  em: 'ember'
+  ecma: 'js'
+  ls: 'live'
+
+resolveCompilerAlias = (alias) ->
+  compilerAliases[alias] || alias
+
 createIterator = (compilers) ->
   (fragment, cb) ->
-    type = fragment.type
+    type = resolveCompilerAlias fragment.type
     code = fragment.code
 
     compiled = compilers[type](code)
