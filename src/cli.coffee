@@ -53,6 +53,9 @@ options.sourceMapFile = options['source-map-file']
 # make false to disable fragments
 options.fragmented = true
 
+# make false to disable multicompile (precedence over fragmented)
+options.multiCompile = true
+
 # input validation
 
 unless options.compile or options.js or options.sourceMap or options.parse or options.eval or options.cscodegen

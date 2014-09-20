@@ -33,7 +33,8 @@ createIterator = (compilers) ->
     type = fragment.type
     code = fragment.code
 
-    compiled = compilers[type].compile(code)
+    compiled = compilers[type](code)
+
     cb null, compiled
 
 async = require 'async'

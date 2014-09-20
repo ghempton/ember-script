@@ -290,7 +290,9 @@
       },
       'dependencies': {
         'StringScanner': '~0.0.3',
-        'nopt': '~2.1.2'
+        'nopt': '~2.1.2',
+        'LiveScript': '~1.2.0',
+        'async': '0.9.0'
       },
       'optionalDependencies': {
         'esmangle': '~1.0.0',

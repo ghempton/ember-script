@@ -32,6 +32,13 @@ module.exports = (input, options, err) ->
       preprocessed = Preprocessor.process input, literate: options.literate
       console.error numberLines humanReadable preprocessed
 
+  # experimental multi compile
+  if options.multiCompile
+    multiCompile = require './cli-multi-compile'
+
+    # get me out of here with the multi compiled code already! :)
+    return multiCompile(input, options)    
+
   # switch outputter if needed!
   if options.fragmented
     fragmenter = require('./cli-fragmenter')

@@ -64,29 +64,4 @@ The fragmenter is currently turned on by default but can be easily turned off in
 options.fragmented = true
 ```
 
-### Script fragmentation
-
-The fragmenter is currently used to enable prepending of javascript before ember-script generated code (resolves issue #42). The fragmenter has been designed to be easy to customize and also allows appending code using the same pattern if necessary. You could even extend it to compile each code fragment separately and merge them all at the end... 
-
-### CoffeeScript/LiveScript compilation
-
-See `process-input.coffee` for examples of usage checkout the Coffeescript npm site/repo
-
-To compile *CoffeeScript* to bare *JavaScript* simply do:
-
-`CoffeeScript.compile source, { bare: true }`
-
-Similar for LiveScript:
-
-`LiveScript.compile code, { bare: true }`
-
-This could be used for a multi-fragment solution:
-
-### Multi-script fragmentation
-
-Allow for a mix of scripting languages in one file:
-
-`# (ember)` emberscript fragment starts
-`# (js)` javascript
-`# (coffee)` coffeescript
-`# (live)` livescript
+See more in [[Script-Fragmentation]]
