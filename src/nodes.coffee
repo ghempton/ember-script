@@ -371,7 +371,7 @@ This::dependentKeys = (scope={}) ->
 MemberAccessOp::dependentKeys = (scope={}) ->
   memberName = @memberName
   @expression.dependentKeys(scope).map (c) ->
-    c.push(memberName)
+    c.push(memberName) unless memberName is 'constructor'
     c
 SoakedMemberAccessOp::dependentKeys = MemberAccessOp::dependentKeys
 
