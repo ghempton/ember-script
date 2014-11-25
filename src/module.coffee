@@ -71,7 +71,7 @@ CoffeeScript =
     options.optimise ?= on
     csAST = @parse input, options
     jsAST = @compile csAST, bare: options.bare
-    @js jsAST, compact: options.compact or options.minify
+    'import Ember from "ember";\n' + @js jsAST, compact: options.compact or options.minify
 
 
 module.exports = CoffeeScript
