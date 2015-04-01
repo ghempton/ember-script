@@ -1,7 +1,7 @@
 {map, concat, concatMap, difference, nub, union} = require './functional-helpers'
 exports = module?.exports ? this
 
-require './ember-runtime' unless Ember?
+_ = require 'lodash'
 
 # TODO: make sure all the type signatures are correct
 
@@ -376,11 +376,7 @@ MemberAccessOp::dependentKeys = (scope={}) ->
 SoakedMemberAccessOp::dependentKeys = MemberAccessOp::dependentKeys
 
 # Compile a list of methods which are used to infer an @each dependency
-enumerableMethods = Ember.Set.create()
-enumerableMethods.addObjects(Ember.Enumerable.keys())
-enumerableMethods.addObjects(Ember.Array.keys())
-enumerableMethods.addObjects(Ember.MutableArray.keys())
-enumerableMethods.addObjects(Ember.MutableEnumerable.keys())
+enumerableMethods = ["nextObject", "firstObject", "lastObject", "contains", "forEach", "getEach", "setEach", "map", "mapProperty", "filter", "reject", "filterProperty", "rejectProperty", "find", "findProperty", "every", "everyProperty", "some", "someProperty", "reduce", "invoke", "toArray", "compact", "without", "uniq"]
 
 FunctionApplications::dependentKeys = (scope={}) ->
   res = @function.dependentKeys(scope)
@@ -390,7 +386,7 @@ FunctionApplications::dependentKeys = (scope={}) ->
       c.pop()
       c
     # Add @each dependency if enumerable method
-    if enumerableMethods.contains(@function.memberName)
+    if _.contains enumerableMethods, @function.memberName
       res = res.map (c) ->
         c.push('@each')
         c
@@ -402,9 +398,9 @@ FunctionApplications::dependentKeys = (scope={}) ->
 
 Block::dependentKeys = (scope={}) ->
   res = []
-  newScope = Ember.copy(scope)
+  newScope = _.clone(scope)
   for key in newScope
-    newScope[key] = Ember.copy(newScope[key])
+    newScope[key] = _.clone(newScope[key])
   @statements.forEach (s) -> res = res.concat(s.dependentKeys(scope))
   for key in scope
     scope[key] = scope[key].concat(newScope[key])
@@ -417,7 +413,7 @@ AssignOp::dependentKeys = (scope={}) ->
   res
 
 Identifier::dependentKeys = (scope={}) ->
-  Ember.copy(scope[@data]) || []
+  _.clone(scope[@data]) || []
 
 
 

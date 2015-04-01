@@ -1,16 +1,22 @@
 {
-  "name":         "ember-script",
-  "description":  "Ember-infused CoffeeScript",
-  "keywords":     ["javascript", "language", "coffeescript", "compiler", "ember.js"],
-  "author":       "Gordon L. Hempton, Michael Ficarra",
-  "version":      "0.0.14",
-  "main" :        "./lib/module",
-  "bin":          {
-    "ember-script":     "./bin/ember-script"
+  "name": "ember-script",
+  "description": "Ember-infused CoffeeScript",
+  "keywords": [
+    "javascript",
+    "language",
+    "coffeescript",
+    "compiler",
+    "ember.js"
+  ],
+  "author": "Gordon L. Hempton, Michael Ficarra",
+  "version": "0.0.14",
+  "main": "./lib/module",
+  "bin": {
+    "ember-script": "./bin/ember-script"
   },
-  "homepage":     "https://github.com/ghempton/ember-script",
-  "bugs":         "https://github.com/ghempton/ember-script/issues",
-  "repository":   {
+  "homepage": "https://github.com/ghempton/ember-script",
+  "bugs": "https://github.com/ghempton/ember-script/issues",
+  "repository": {
     "type": "git",
     "url": "git://github.com/ghempton/ember-script.git"
   },
@@ -19,15 +25,16 @@
     "test": "make -j test"
   },
   "devDependencies": {
-    "mocha": "~1.12.0",
-    "pegjs": "git://github.com/dmajda/pegjs.git#bea6b1fde74c8aebf802f9bcc3380c65b241e1b7",
+    "cluster": "~0.7.7",
     "coffee-script-redux": "git://github.com/michaelficarra/CoffeeScriptRedux.git",
     "commonjs-everywhere": "~0.9.0",
-    "cluster": "~0.7.7",
+    "mocha": "~1.12.0",
+    "pegjs": "git://github.com/dmajda/pegjs.git#bea6b1fde74c8aebf802f9bcc3380c65b241e1b7",
     "semver": "~2.1.0"
   },
   "dependencies": {
     "StringScanner": "~0.0.3",
+    "lodash": "^3.6.0",
     "nopt": "~2.1.2"
   },
   "optionalDependencies": {

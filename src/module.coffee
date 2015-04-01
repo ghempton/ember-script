@@ -4,7 +4,6 @@ Nodes = require './nodes'
 Parser = require './parser'
 {Optimiser} = require './optimiser'
 {Compiler} = require './compiler'
-require './ember-runtime'
 cscodegen = try require 'cscodegen'
 escodegen = try require 'escodegen'
 

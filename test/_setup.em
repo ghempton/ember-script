@@ -1,5 +1,3 @@
-require '../lib/ember-runtime'
-
 global.fs = require 'fs'
 global.path = require 'path'
 

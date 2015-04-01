@@ -3,6 +3,7 @@
 CS = require './nodes'
 JS = require './js-nodes'
 exports = module?.exports ? this
+_ = require 'lodash'
 
 # TODO: this whole file could use a general cleanup
 
@@ -612,12 +613,12 @@ class exports.Compiler
       expression = expr expression
       @annotations ||= []
 
-      if computed = @annotations.find (a) -> a.instanceof CS.Computed
+      if computed = _.find @annotations, (a) -> a.instanceof CS.Computed
         expression = forceComputedProperty(expression, computed.parameters)
-      if volatile = @annotations.find (a) -> a.instanceof CS.Volatile
+      if volatile = _.find @annotations, (a) -> a.instanceof CS.Volatile
         expression = forceComputedProperty(expression, volatile.parameters)
         expression = new JS.CallExpression memberAccess(expression, 'volatile'), []
-      if observes = @annotations.find (a) -> a.instanceof CS.Observes
+      if observes = _.find @annotations, (a) -> a.instanceof CS.Observes
         # TODO: throw error if also computed property
         args = [expression].concat(observes.parameters.map (p) -> new JS.Literal(p))
         expression = new JS.CallExpression memberAccess(new JS.Identifier('Ember'), 'observer'), args
@@ -707,7 +708,7 @@ class exports.Compiler
             new JS.ReturnStatement fn
           ]), [new JS.ThisExpression]
         if @instanceof CS.ComputedProperty
-          chains = Ember.A(@dependentKeys().map((c) -> c.join('.'))).uniq()
+          chains = _.uniq @dependentKeys().map((c) -> c.join('.'))
           emberComputedProperty(fn, chains)
         else
           fn

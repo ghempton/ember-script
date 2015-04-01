@@ -3,6 +3,7 @@ child_process = require 'child_process'
 fs = require 'fs'
 path = require 'path'
 
+require '../ember-runtime.js'
 EmberScript = require './module'
 {runModule} = require './run'
 

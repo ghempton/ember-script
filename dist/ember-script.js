@@ -35,7 +35,7 @@
       var cwd = '/';
       return {
         title: 'browser',
-        version: 'v0.10.21',
+        version: 'v1.6.2',
         browser: true,
         env: {},
         argv: [],
@@ -136,7 +136,6 @@
     Parser = require('/src/parser.coffee', module);
     Optimiser = require('/src/optimiser.coffee', module).Optimiser;
     Compiler = require('/src/compiler.coffee', module).Compiler;
-    require('/src/ember-runtime.js', module);
     cscodegen = function () {
       try {
         return require('/node_modules/cscodegen/lib/cscodegen.js', module);
@@ -281,15 +280,16 @@
         'test': 'make -j test'
       },
       'devDependencies': {
-        'mocha': '~1.12.0',
-        'pegjs': 'git://github.com/dmajda/pegjs.git#bea6b1fde74c8aebf802f9bcc3380c65b241e1b7',
+        'cluster': '~0.7.7',
         'coffee-script-redux': 'git://github.com/michaelficarra/CoffeeScriptRedux.git',
         'commonjs-everywhere': '~0.9.0',
-        'cluster': '~0.7.7',
+        'mocha': '~1.12.0',
+        'pegjs': 'git://github.com/dmajda/pegjs.git#bea6b1fde74c8aebf802f9bcc3380c65b241e1b7',
         'semver': '~2.1.0'
       },
       'dependencies': {
         'StringScanner': '~0.0.3',
+        'lodash': '^3.6.0',
         'nopt': '~2.1.2'
       },
       'optionalDependencies': {
@@ -551,7 +551,7 @@
         var match, result, flags, i, iz, ch, characterInBrack, previousIsBackslash;
         result = reg.toString();
         if (reg.source) {
-          match = result.match(/\/([^/]*)$/);
+          match = result.match(/\/([^\/]*)$/);
           if (!match) {
             return result;
           }
@@ -2233,7 +2233,9 @@
       'readmeFilename': 'README.md',
       'bugs': { 'url': 'https://github.com/Constellation/escodegen/issues' },
       '_id': 'escodegen@1.2.0',
-      '_from': 'escodegen@~1.2.0'
+      '_shasum': '09de7967791cc958b7f89a2ddb6d23451af327e1',
+      '_resolved': 'https://registry.npmjs.org/escodegen/-/escodegen-1.2.0.tgz',
+      '_from': 'escodegen@>=1.2.0 <1.3.0'
     };
   });
   require.define('/node_modules/source-map/lib/source-map.js', function (module, exports, __dirname, __filename) {
@@ -2248,26 +2250,35 @@
     define(function (require, exports, module) {
       var SourceMapGenerator = require('/node_modules/source-map/lib/source-map/source-map-generator.js', module).SourceMapGenerator;
       var util = require('/node_modules/source-map/lib/source-map/util.js', module);
+      var REGEX_NEWLINE = /(\r?\n)/;
+      var NEWLINE_CODE = 10;
+      var isSourceNode = '$$$isSourceNode$$$';
       function SourceNode(aLine, aColumn, aSource, aChunks, aName) {
         this.children = [];
         this.sourceContents = {};
-        this.line = aLine === undefined ? null : aLine;
-        this.column = aColumn === undefined ? null : aColumn;
-        this.source = aSource === undefined ? null : aSource;
-        this.name = aName === undefined ? null : aName;
+        this.line = aLine == null ? null : aLine;
+        this.column = aColumn == null ? null : aColumn;
+        this.source = aSource == null ? null : aSource;
+        this.name = aName == null ? null : aName;
+        this[isSourceNode] = true;
         if (aChunks != null)
           this.add(aChunks);
       }
-      SourceNode.fromStringWithSourceMap = function SourceNode_fromStringWithSourceMap(aGeneratedCode, aSourceMapConsumer) {
+      SourceNode.fromStringWithSourceMap = function SourceNode_fromStringWithSourceMap(aGeneratedCode, aSourceMapConsumer, aRelativePath) {
         var node = new SourceNode;
-        var remainingLines = aGeneratedCode.split('\n');
+        var remainingLines = aGeneratedCode.split(REGEX_NEWLINE);
+        var shiftNextLine = function () {
+          var lineContents = remainingLines.shift();
+          var newLine = remainingLines.shift() || '';
+          return lineContents + newLine;
+        };
         var lastGeneratedLine = 1, lastGeneratedColumn = 0;
         var lastMapping = null;
         aSourceMapConsumer.eachMapping(function (mapping) {
           if (lastMapping !== null) {
             if (lastGeneratedLine < mapping.generatedLine) {
               var code = '';
-              addMappingWithCode(lastMapping, remainingLines.shift() + '\n');
+              addMappingWithCode(lastMapping, shiftNextLine());
               lastGeneratedLine++;
               lastGeneratedColumn = 0;
             } else {
@@ -2281,7 +2292,7 @@
             }
           }
           while (lastGeneratedLine < mapping.generatedLine) {
-            node.add(remainingLines.shift() + '\n');
+            node.add(shiftNextLine());
             lastGeneratedLine++;
           }
           if (lastGeneratedColumn < mapping.generatedColumn) {
@@ -2294,16 +2305,16 @@
         }, this);
         if (remainingLines.length > 0) {
           if (lastMapping) {
-            var lastLine = remainingLines.shift();
-            if (remainingLines.length > 0)
-              lastLine += '\n';
-            addMappingWithCode(lastMapping, lastLine);
+            addMappingWithCode(lastMapping, shiftNextLine());
           }
-          node.add(remainingLines.join('\n'));
+          node.add(remainingLines.join(''));
         }
         aSourceMapConsumer.sources.forEach(function (sourceFile) {
           var content = aSourceMapConsumer.sourceContentFor(sourceFile);
-          if (content) {
+          if (content != null) {
+            if (aRelativePath != null) {
+              sourceFile = util.join(aRelativePath, sourceFile);
+            }
             node.setSourceContent(sourceFile, content);
           }
         });
@@ -2312,7 +2323,8 @@
           if (mapping === null || mapping.source === undefined) {
             node.add(code);
           } else {
-            node.add(new SourceNode(mapping.originalLine, mapping.originalColumn, mapping.source, code, mapping.name));
+            var source = aRelativePath ? util.join(aRelativePath, mapping.source) : mapping.source;
+            node.add(new SourceNode(mapping.originalLine, mapping.originalColumn, source, code, mapping.name));
           }
         }
       };
@@ -2321,7 +2333,7 @@
           aChunk.forEach(function (chunk) {
             this.add(chunk);
           }, this);
-        } else if (aChunk instanceof SourceNode || typeof aChunk === 'string') {
+        } else if (aChunk[isSourceNode] || typeof aChunk === 'string') {
           if (aChunk) {
             this.children.push(aChunk);
           }
@@ -2335,7 +2347,7 @@
           for (var i = aChunk.length - 1; i >= 0; i--) {
             this.prepend(aChunk[i]);
           }
-        } else if (aChunk instanceof SourceNode || typeof aChunk === 'string') {
+        } else if (aChunk[isSourceNode] || typeof aChunk === 'string') {
           this.children.unshift(aChunk);
         } else {
           throw new TypeError('Expected a SourceNode, string, or an array of SourceNodes and strings. Got ' + aChunk);
@@ -2346,7 +2358,7 @@
         var chunk;
         for (var i = 0, len = this.children.length; i < len; i++) {
           chunk = this.children[i];
-          if (chunk instanceof SourceNode) {
+          if (chunk[isSourceNode]) {
             chunk.walk(aFn);
           } else {
             if (chunk !== '') {
@@ -2377,7 +2389,7 @@
       };
       SourceNode.prototype.replaceRight = function SourceNode_replaceRight(aPattern, aReplacement) {
         var lastChild = this.children[this.children.length - 1];
-        if (lastChild instanceof SourceNode) {
+        if (lastChild[isSourceNode]) {
           lastChild.replaceRight(aPattern, aReplacement);
         } else if (typeof lastChild === 'string') {
           this.children[this.children.length - 1] = lastChild.replace(aPattern, aReplacement);
@@ -2391,7 +2403,7 @@
       };
       SourceNode.prototype.walkSourceContents = function SourceNode_walkSourceContents(aFn) {
         for (var i = 0, len = this.children.length; i < len; i++) {
-          if (this.children[i] instanceof SourceNode) {
+          if (this.children[i][isSourceNode]) {
             this.children[i].walkSourceContents(aFn);
           }
         }
@@ -2451,11 +2463,11 @@
             lastOriginalSource = null;
             sourceMappingActive = false;
           }
-          chunk.split('').forEach(function (ch, idx, array) {
-            if (ch === '\n') {
+          for (var idx = 0, length = chunk.length; idx < length; idx++) {
+            if (chunk.charCodeAt(idx) === NEWLINE_CODE) {
               generated.line++;
               generated.column = 0;
-              if (idx + 1 === array.length) {
+              if (idx + 1 === length) {
                 lastOriginalSource = null;
                 sourceMappingActive = false;
               } else if (sourceMappingActive) {
@@ -2475,7 +2487,7 @@
             } else {
               generated.column++;
             }
-          });
+          }
         });
         this.walkSourceContents(function (sourceFile, sourceContent) {
           map.setSourceContent(sourceFile, sourceContent);
@@ -2579,6 +2591,12 @@
       }
       exports.normalize = normalize;
       function join(aRoot, aPath) {
+        if (aRoot === '') {
+          aRoot = '.';
+        }
+        if (aPath === '') {
+          aPath = '.';
+        }
         var aPathUrl = urlParse(aPath);
         var aRootUrl = urlParse(aRoot);
         if (aRootUrl) {
@@ -2605,15 +2623,10 @@
         return joined;
       }
       exports.join = join;
-      function toSetString(aStr) {
-        return '$' + aStr;
-      }
-      exports.toSetString = toSetString;
-      function fromSetString(aStr) {
-        return aStr.substr(1);
-      }
-      exports.fromSetString = fromSetString;
       function relative(aRoot, aPath) {
+        if (aRoot === '') {
+          aRoot = '.';
+        }
         aRoot = aRoot.replace(/\/$/, '');
         var url = urlParse(aRoot);
         if (aPath.charAt(0) == '/' && url && url.path == '/') {
@@ -2622,6 +2635,14 @@
         return aPath.indexOf(aRoot + '/') === 0 ? aPath.substr(aRoot.length + 1) : aPath;
       }
       exports.relative = relative;
+      function toSetString(aStr) {
+        return '$' + aStr;
+      }
+      exports.toSetString = toSetString;
+      function fromSetString(aStr) {
+        return aStr.substr(1);
+      }
+      exports.fromSetString = fromSetString;
       function strcmp(aStr1, aStr2) {
         var s1 = aStr1 || '';
         var s2 = aStr2 || '';
@@ -3644,15 +3665,17 @@
       var base64VLQ = require('/node_modules/source-map/lib/source-map/base64-vlq.js', module);
       var util = require('/node_modules/source-map/lib/source-map/util.js', module);
       var ArraySet = require('/node_modules/source-map/lib/source-map/array-set.js', module).ArraySet;
+      var MappingList = require('/node_modules/source-map/lib/source-map/mapping-list.js', module).MappingList;
       function SourceMapGenerator(aArgs) {
         if (!aArgs) {
           aArgs = {};
         }
         this._file = util.getArg(aArgs, 'file', null);
         this._sourceRoot = util.getArg(aArgs, 'sourceRoot', null);
+        this._skipValidation = util.getArg(aArgs, 'skipValidation', false);
         this._sources = new ArraySet;
         this._names = new ArraySet;
-        this._mappings = [];
+        this._mappings = new MappingList;
         this._sourcesContents = null;
       }
       SourceMapGenerator.prototype._version = 3;
@@ -3669,16 +3692,16 @@
                 column: mapping.generatedColumn
               }
             };
-          if (mapping.source) {
+          if (mapping.source != null) {
             newMapping.source = mapping.source;
-            if (sourceRoot) {
+            if (sourceRoot != null) {
               newMapping.source = util.relative(sourceRoot, newMapping.source);
             }
             newMapping.original = {
               line: mapping.originalLine,
               column: mapping.originalColumn
             };
-            if (mapping.name) {
+            if (mapping.name != null) {
               newMapping.name = mapping.name;
             }
           }
@@ -3686,7 +3709,7 @@
         });
         aSourceMapConsumer.sources.forEach(function (sourceFile) {
           var content = aSourceMapConsumer.sourceContentFor(sourceFile);
-          if (content) {
+          if (content != null) {
             generator.setSourceContent(sourceFile, content);
           }
         });
@@ -3697,14 +3720,16 @@
         var original = util.getArg(aArgs, 'original', null);
         var source = util.getArg(aArgs, 'source', null);
         var name = util.getArg(aArgs, 'name', null);
-        this._validateMapping(generated, original, source, name);
-        if (source && !this._sources.has(source)) {
+        if (!this._skipValidation) {
+          this._validateMapping(generated, original, source, name);
+        }
+        if (source != null && !this._sources.has(source)) {
           this._sources.add(source);
         }
-        if (name && !this._names.has(name)) {
+        if (name != null && !this._names.has(name)) {
           this._names.add(name);
         }
-        this._mappings.push({
+        this._mappings.add({
           generatedLine: generated.line,
           generatedColumn: generated.column,
           originalLine: original != null && original.line,
@@ -3715,15 +3740,15 @@
       };
       SourceMapGenerator.prototype.setSourceContent = function SourceMapGenerator_setSourceContent(aSourceFile, aSourceContent) {
         var source = aSourceFile;
-        if (this._sourceRoot) {
+        if (this._sourceRoot != null) {
           source = util.relative(this._sourceRoot, source);
         }
-        if (aSourceContent !== null) {
+        if (aSourceContent != null) {
           if (!this._sourcesContents) {
             this._sourcesContents = {};
           }
           this._sourcesContents[util.toSetString(source)] = aSourceContent;
-        } else {
+        } else if (this._sourcesContents) {
           delete this._sourcesContents[util.toSetString(source)];
           if (Object.keys(this._sourcesContents).length === 0) {
             this._sourcesContents = null;
@@ -3731,45 +3756,46 @@
         }
       };
       SourceMapGenerator.prototype.applySourceMap = function SourceMapGenerator_applySourceMap(aSourceMapConsumer, aSourceFile, aSourceMapPath) {
-        if (!aSourceFile) {
-          if (!aSourceMapConsumer.file) {
+        var sourceFile = aSourceFile;
+        if (aSourceFile == null) {
+          if (aSourceMapConsumer.file == null) {
             throw new Error('SourceMapGenerator.prototype.applySourceMap requires either an explicit source file, ' + 'or the source map\'s "file" property. Both were omitted.');
           }
-          aSourceFile = aSourceMapConsumer.file;
+          sourceFile = aSourceMapConsumer.file;
         }
         var sourceRoot = this._sourceRoot;
-        if (sourceRoot) {
-          aSourceFile = util.relative(sourceRoot, aSourceFile);
+        if (sourceRoot != null) {
+          sourceFile = util.relative(sourceRoot, sourceFile);
         }
         var newSources = new ArraySet;
         var newNames = new ArraySet;
-        this._mappings.forEach(function (mapping) {
-          if (mapping.source === aSourceFile && mapping.originalLine) {
+        this._mappings.unsortedForEach(function (mapping) {
+          if (mapping.source === sourceFile && mapping.originalLine != null) {
             var original = aSourceMapConsumer.originalPositionFor({
                 line: mapping.originalLine,
                 column: mapping.originalColumn
               });
-            if (original.source !== null) {
+            if (original.source != null) {
               mapping.source = original.source;
-              if (aSourceMapPath) {
+              if (aSourceMapPath != null) {
                 mapping.source = util.join(aSourceMapPath, mapping.source);
               }
-              if (sourceRoot) {
+              if (sourceRoot != null) {
                 mapping.source = util.relative(sourceRoot, mapping.source);
               }
               mapping.originalLine = original.line;
               mapping.originalColumn = original.column;
-              if (original.name !== null && mapping.name !== null) {
+              if (original.name != null) {
                 mapping.name = original.name;
               }
             }
           }
           var source = mapping.source;
-          if (source && !newSources.has(source)) {
+          if (source != null && !newSources.has(source)) {
             newSources.add(source);
           }
           var name = mapping.name;
-          if (name && !newNames.has(name)) {
+          if (name != null && !newNames.has(name)) {
             newNames.add(name);
           }
         }, this);
@@ -3777,8 +3803,11 @@
         this._names = newNames;
         aSourceMapConsumer.sources.forEach(function (sourceFile) {
           var content = aSourceMapConsumer.sourceContentFor(sourceFile);
-          if (content) {
-            if (sourceRoot) {
+          if (content != null) {
+            if (aSourceMapPath != null) {
+              sourceFile = util.join(aSourceMapPath, sourceFile);
+            }
+            if (sourceRoot != null) {
               sourceFile = util.relative(sourceRoot, sourceFile);
             }
             this.setSourceContent(sourceFile, content);
@@ -3808,9 +3837,9 @@
         var previousSource = 0;
         var result = '';
         var mapping;
-        this._mappings.sort(util.compareByGeneratedPositions);
-        for (var i = 0, len = this._mappings.length; i < len; i++) {
-          mapping = this._mappings[i];
+        var mappings = this._mappings.toArray();
+        for (var i = 0, len = mappings.length; i < len; i++) {
+          mapping = mappings[i];
           if (mapping.generatedLine !== previousGeneratedLine) {
             previousGeneratedColumn = 0;
             while (mapping.generatedLine !== previousGeneratedLine) {
@@ -3819,7 +3848,7 @@
             }
           } else {
             if (i > 0) {
-              if (!util.compareByGeneratedPositions(mapping, this._mappings[i - 1])) {
+              if (!util.compareByGeneratedPositions(mapping, mappings[i - 1])) {
                 continue;
               }
               result += ',';
@@ -3827,14 +3856,14 @@
           }
           result += base64VLQ.encode(mapping.generatedColumn - previousGeneratedColumn);
           previousGeneratedColumn = mapping.generatedColumn;
-          if (mapping.source) {
+          if (mapping.source != null) {
             result += base64VLQ.encode(this._sources.indexOf(mapping.source) - previousSource);
             previousSource = this._sources.indexOf(mapping.source);
             result += base64VLQ.encode(mapping.originalLine - 1 - previousOriginalLine);
             previousOriginalLine = mapping.originalLine - 1;
             result += base64VLQ.encode(mapping.originalColumn - previousOriginalColumn);
             previousOriginalColumn = mapping.originalColumn;
-            if (mapping.name) {
+            if (mapping.name != null) {
               result += base64VLQ.encode(this._names.indexOf(mapping.name) - previousName);
               previousName = this._names.indexOf(mapping.name);
             }
@@ -3847,7 +3876,7 @@
           if (!this._sourcesContents) {
             return null;
           }
-          if (aSourceRoot) {
+          if (aSourceRoot != null) {
             source = util.relative(aSourceRoot, source);
           }
           var key = util.toSetString(source);
@@ -3857,12 +3886,14 @@
       SourceMapGenerator.prototype.toJSON = function SourceMapGenerator_toJSON() {
         var map = {
             version: this._version,
-            file: this._file,
             sources: this._sources.toArray(),
             names: this._names.toArray(),
             mappings: this._serializeMappings()
           };
-        if (this._sourceRoot) {
+        if (this._file != null) {
+          map.file = this._file;
+        }
+        if (this._sourceRoot != null) {
           map.sourceRoot = this._sourceRoot;
         }
         if (this._sourcesContents) {
@@ -3874,6 +3905,50 @@
         return JSON.stringify(this);
       };
       exports.SourceMapGenerator = SourceMapGenerator;
+    });
+  });
+  require.define('/node_modules/source-map/lib/source-map/mapping-list.js', function (module, exports, __dirname, __filename) {
+    if (typeof define !== 'function') {
+      var define = require('/node_modules/source-map/node_modules/amdefine/amdefine.js', module)(module, require);
+    }
+    define(function (require, exports, module) {
+      var util = require('/node_modules/source-map/lib/source-map/util.js', module);
+      function generatedPositionAfter(mappingA, mappingB) {
+        var lineA = mappingA.generatedLine;
+        var lineB = mappingB.generatedLine;
+        var columnA = mappingA.generatedColumn;
+        var columnB = mappingB.generatedColumn;
+        return lineB > lineA || lineB == lineA && columnB >= columnA || util.compareByGeneratedPositions(mappingA, mappingB) <= 0;
+      }
+      function MappingList() {
+        this._array = [];
+        this._sorted = true;
+        this._last = {
+          generatedLine: -1,
+          generatedColumn: 0
+        };
+      }
+      MappingList.prototype.unsortedForEach = function MappingList_forEach(aCallback, aThisArg) {
+        this._array.forEach(aCallback, aThisArg);
+      };
+      MappingList.prototype.add = function MappingList_add(aMapping) {
+        var mapping;
+        if (generatedPositionAfter(this._last, aMapping)) {
+          this._last = aMapping;
+          this._array.push(aMapping);
+        } else {
+          this._sorted = false;
+          this._array.push(aMapping);
+        }
+      };
+      MappingList.prototype.toArray = function MappingList_toArray() {
+        if (!this._sorted) {
+          this._array.sort(util.compareByGeneratedPositions);
+          this._sorted = true;
+        }
+        return this._array;
+      };
+      exports.MappingList = MappingList;
     });
   });
   require.define('/node_modules/source-map/lib/source-map/array-set.js', function (module, exports, __dirname, __filename) {
@@ -3956,7 +4031,7 @@
         } while (vlq > 0);
         return encoded;
       };
-      exports.decode = function base64VLQ_decode(aStr) {
+      exports.decode = function base64VLQ_decode(aStr, aOutParam) {
         var i = 0;
         var strLen = aStr.length;
         var result = 0;
@@ -3972,10 +4047,8 @@
           result = result + (digit << shift);
           shift += VLQ_BASE_SHIFT;
         } while (continuation);
-        return {
-          value: fromVLQSigned(result),
-          rest: aStr.slice(i)
-        };
+        aOutParam.value = fromVLQSigned(result);
+        aOutParam.rest = aStr.slice(i);
       };
     });
   });
@@ -4028,6 +4101,7 @@
         if (version != this._version) {
           throw new Error('Unsupported version: ' + version);
         }
+        sources = sources.map(util.normalize);
         this._names = ArraySet.fromArray(names, true);
         this._sources = ArraySet.fromArray(sources, true);
         this.sourceRoot = sourceRoot;
@@ -4042,15 +4116,15 @@
         smc.sourceRoot = aSourceMap._sourceRoot;
         smc.sourcesContent = aSourceMap._generateSourcesContent(smc._sources.toArray(), smc.sourceRoot);
         smc.file = aSourceMap._file;
-        smc.__generatedMappings = aSourceMap._mappings.slice().sort(util.compareByGeneratedPositions);
-        smc.__originalMappings = aSourceMap._mappings.slice().sort(util.compareByOriginalPositions);
+        smc.__generatedMappings = aSourceMap._mappings.toArray().slice();
+        smc.__originalMappings = aSourceMap._mappings.toArray().slice().sort(util.compareByOriginalPositions);
         return smc;
       };
       SourceMapConsumer.prototype._version = 3;
       Object.defineProperty(SourceMapConsumer.prototype, 'sources', {
         get: function () {
           return this._sources.toArray().map(function (s) {
-            return this.sourceRoot ? util.join(this.sourceRoot, s) : s;
+            return this.sourceRoot != null ? util.join(this.sourceRoot, s) : s;
           }, this);
         }
       });
@@ -4076,6 +4150,10 @@
           return this.__originalMappings;
         }
       });
+      SourceMapConsumer.prototype._nextCharIsMappingSeparator = function SourceMapConsumer_nextCharIsMappingSeparator(aStr) {
+        var c = aStr.charAt(0);
+        return c === ';' || c === ',';
+      };
       SourceMapConsumer.prototype._parseMappings = function SourceMapConsumer_parseMappings(aStr, aSourceRoot) {
         var generatedLine = 1;
         var previousGeneratedColumn = 0;
@@ -4083,10 +4161,9 @@
         var previousOriginalColumn = 0;
         var previousSource = 0;
         var previousName = 0;
-        var mappingSeparator = /^[,;]/;
         var str = aStr;
+        var temp = {};
         var mapping;
-        var temp;
         while (str.length > 0) {
           if (str.charAt(0) === ';') {
             generatedLine++;
@@ -4097,32 +4174,32 @@
           } else {
             mapping = {};
             mapping.generatedLine = generatedLine;
-            temp = base64VLQ.decode(str);
+            base64VLQ.decode(str, temp);
             mapping.generatedColumn = previousGeneratedColumn + temp.value;
             previousGeneratedColumn = mapping.generatedColumn;
             str = temp.rest;
-            if (str.length > 0 && !mappingSeparator.test(str.charAt(0))) {
-              temp = base64VLQ.decode(str);
+            if (str.length > 0 && !this._nextCharIsMappingSeparator(str)) {
+              base64VLQ.decode(str, temp);
               mapping.source = this._sources.at(previousSource + temp.value);
               previousSource += temp.value;
               str = temp.rest;
-              if (str.length === 0 || mappingSeparator.test(str.charAt(0))) {
+              if (str.length === 0 || this._nextCharIsMappingSeparator(str)) {
                 throw new Error('Found a source, but no line and column');
               }
-              temp = base64VLQ.decode(str);
+              base64VLQ.decode(str, temp);
               mapping.originalLine = previousOriginalLine + temp.value;
               previousOriginalLine = mapping.originalLine;
               mapping.originalLine += 1;
               str = temp.rest;
-              if (str.length === 0 || mappingSeparator.test(str.charAt(0))) {
+              if (str.length === 0 || this._nextCharIsMappingSeparator(str)) {
                 throw new Error('Found a source and line, but no column');
               }
-              temp = base64VLQ.decode(str);
+              base64VLQ.decode(str, temp);
               mapping.originalColumn = previousOriginalColumn + temp.value;
               previousOriginalColumn = mapping.originalColumn;
               str = temp.rest;
-              if (str.length > 0 && !mappingSeparator.test(str.charAt(0))) {
-                temp = base64VLQ.decode(str);
+              if (str.length > 0 && !this._nextCharIsMappingSeparator(str)) {
+                base64VLQ.decode(str, temp);
                 mapping.name = this._names.at(previousName + temp.value);
                 previousName += temp.value;
                 str = temp.rest;
@@ -4146,23 +4223,39 @@
         }
         return binarySearch.search(aNeedle, aMappings, aComparator);
       };
+      SourceMapConsumer.prototype.computeColumnSpans = function SourceMapConsumer_computeColumnSpans() {
+        for (var index = 0; index < this._generatedMappings.length; ++index) {
+          var mapping = this._generatedMappings[index];
+          if (index + 1 < this._generatedMappings.length) {
+            var nextMapping = this._generatedMappings[index + 1];
+            if (mapping.generatedLine === nextMapping.generatedLine) {
+              mapping.lastGeneratedColumn = nextMapping.generatedColumn - 1;
+              continue;
+            }
+          }
+          mapping.lastGeneratedColumn = Infinity;
+        }
+      };
       SourceMapConsumer.prototype.originalPositionFor = function SourceMapConsumer_originalPositionFor(aArgs) {
         var needle = {
             generatedLine: util.getArg(aArgs, 'line'),
             generatedColumn: util.getArg(aArgs, 'column')
           };
-        var mapping = this._findMapping(needle, this._generatedMappings, 'generatedLine', 'generatedColumn', util.compareByGeneratedPositions);
-        if (mapping && mapping.generatedLine === needle.generatedLine) {
-          var source = util.getArg(mapping, 'source', null);
-          if (source && this.sourceRoot) {
-            source = util.join(this.sourceRoot, source);
+        var index = this._findMapping(needle, this._generatedMappings, 'generatedLine', 'generatedColumn', util.compareByGeneratedPositions);
+        if (index >= 0) {
+          var mapping = this._generatedMappings[index];
+          if (mapping.generatedLine === needle.generatedLine) {
+            var source = util.getArg(mapping, 'source', null);
+            if (source != null && this.sourceRoot != null) {
+              source = util.join(this.sourceRoot, source);
+            }
+            return {
+              source: source,
+              line: util.getArg(mapping, 'originalLine', null),
+              column: util.getArg(mapping, 'originalColumn', null),
+              name: util.getArg(mapping, 'name', null)
+            };
           }
-          return {
-            source: source,
-            line: util.getArg(mapping, 'originalLine', null),
-            column: util.getArg(mapping, 'originalColumn', null),
-            name: util.getArg(mapping, 'name', null)
-          };
         }
         return {
           source: null,
@@ -4175,14 +4268,14 @@
         if (!this.sourcesContent) {
           return null;
         }
-        if (this.sourceRoot) {
+        if (this.sourceRoot != null) {
           aSource = util.relative(this.sourceRoot, aSource);
         }
         if (this._sources.has(aSource)) {
           return this.sourcesContent[this._sources.indexOf(aSource)];
         }
         var url;
-        if (this.sourceRoot && (url = util.urlParse(this.sourceRoot))) {
+        if (this.sourceRoot != null && (url = util.urlParse(this.sourceRoot))) {
           var fileUriAbsPath = aSource.replace(/^file:\/\//, '');
           if (url.scheme == 'file' && this._sources.has(fileUriAbsPath)) {
             return this.sourcesContent[this._sources.indexOf(fileUriAbsPath)];
@@ -4199,20 +4292,47 @@
             originalLine: util.getArg(aArgs, 'line'),
             originalColumn: util.getArg(aArgs, 'column')
           };
-        if (this.sourceRoot) {
+        if (this.sourceRoot != null) {
           needle.source = util.relative(this.sourceRoot, needle.source);
         }
-        var mapping = this._findMapping(needle, this._originalMappings, 'originalLine', 'originalColumn', util.compareByOriginalPositions);
-        if (mapping) {
+        var index = this._findMapping(needle, this._originalMappings, 'originalLine', 'originalColumn', util.compareByOriginalPositions);
+        if (index >= 0) {
+          var mapping = this._originalMappings[index];
           return {
             line: util.getArg(mapping, 'generatedLine', null),
-            column: util.getArg(mapping, 'generatedColumn', null)
+            column: util.getArg(mapping, 'generatedColumn', null),
+            lastColumn: util.getArg(mapping, 'lastGeneratedColumn', null)
           };
         }
         return {
           line: null,
-          column: null
+          column: null,
+          lastColumn: null
         };
+      };
+      SourceMapConsumer.prototype.allGeneratedPositionsFor = function SourceMapConsumer_allGeneratedPositionsFor(aArgs) {
+        var needle = {
+            source: util.getArg(aArgs, 'source'),
+            originalLine: util.getArg(aArgs, 'line'),
+            originalColumn: Infinity
+          };
+        if (this.sourceRoot != null) {
+          needle.source = util.relative(this.sourceRoot, needle.source);
+        }
+        var mappings = [];
+        var index = this._findMapping(needle, this._originalMappings, 'originalLine', 'originalColumn', util.compareByOriginalPositions);
+        if (index >= 0) {
+          var mapping = this._originalMappings[index];
+          while (mapping && mapping.originalLine === needle.originalLine) {
+            mappings.push({
+              line: util.getArg(mapping, 'generatedLine', null),
+              column: util.getArg(mapping, 'generatedColumn', null),
+              lastColumn: util.getArg(mapping, 'lastGeneratedColumn', null)
+            });
+            mapping = this._originalMappings[--index];
+          }
+        }
+        return mappings.reverse();
       };
       SourceMapConsumer.GENERATED_ORDER = 1;
       SourceMapConsumer.ORIGINAL_ORDER = 2;
@@ -4233,7 +4353,7 @@
         var sourceRoot = this.sourceRoot;
         mappings.map(function (mapping) {
           var source = mapping.source;
-          if (source && sourceRoot) {
+          if (source != null && sourceRoot != null) {
             source = util.join(sourceRoot, source);
           }
           return {
@@ -4258,21 +4378,24 @@
         var mid = Math.floor((aHigh - aLow) / 2) + aLow;
         var cmp = aCompare(aNeedle, aHaystack[mid], true);
         if (cmp === 0) {
-          return aHaystack[mid];
+          return mid;
         } else if (cmp > 0) {
           if (aHigh - mid > 1) {
             return recursiveSearch(mid, aHigh, aNeedle, aHaystack, aCompare);
           }
-          return aHaystack[mid];
+          return mid;
         } else {
           if (mid - aLow > 1) {
             return recursiveSearch(aLow, mid, aNeedle, aHaystack, aCompare);
           }
-          return aLow < 0 ? null : aHaystack[aLow];
+          return aLow < 0 ? -1 : aLow;
         }
       }
       exports.search = function search(aNeedle, aHaystack, aCompare) {
-        return aHaystack.length > 0 ? recursiveSearch(-1, aHaystack.length, aNeedle, aHaystack, aCompare) : null;
+        if (aHaystack.length === 0) {
+          return -1;
+        }
+        return recursiveSearch(-1, aHaystack.length, aNeedle, aHaystack, aCompare);
       };
     });
   });
@@ -4607,6 +4730,11 @@
           'body'
         ],
         ForInStatement: [
+          'left',
+          'right',
+          'body'
+        ],
+        ForOfStatement: [
           'left',
           'right',
           'body'
@@ -5021,7 +5149,7 @@
         });
         return tree;
       }
-      exports.version = '1.3.3-dev';
+      exports.version = '1.5.1-dev';
       exports.Syntax = Syntax;
       exports.traverse = traverse;
       exports.replace = replace;
@@ -5741,6093 +5869,8 @@
       }(typeof exports !== 'undefined' && exports !== null ? exports : this.cscodegen = {}));
     }.call(this));
   });
-  require.define('/src/ember-runtime.js', function (module, exports, __dirname, __filename) {
-    (function () {
-      if ('undefined' === typeof Ember) {
-        Ember = {};
-        if ('undefined' !== typeof window) {
-          window.Em = window.Ember = Em = Ember;
-        }
-      }
-      Ember.ENV = 'undefined' === typeof ENV ? {} : ENV;
-      if (!('MANDATORY_SETTER' in Ember.ENV)) {
-        Ember.ENV.MANDATORY_SETTER = true;
-      }
-      Ember.assert = function (desc, test) {
-        if (!test)
-          throw new Error('assertion failed: ' + desc);
-      };
-      Ember.warn = function (message, test) {
-        if (!test) {
-          Ember.Logger.warn('WARNING: ' + message);
-          if ('trace' in Ember.Logger)
-            Ember.Logger.trace();
-        }
-      };
-      Ember.debug = function (message) {
-        Ember.Logger.debug('DEBUG: ' + message);
-      };
-      Ember.deprecate = function (message, test) {
-        if (Ember && Ember.TESTING_DEPRECATION) {
-          return;
-        }
-        if (arguments.length === 1) {
-          test = false;
-        }
-        if (test) {
-          return;
-        }
-        if (Ember && Ember.ENV.RAISE_ON_DEPRECATION) {
-          throw new Error(message);
-        }
-        var error;
-        try {
-          __fail__.fail();
-        } catch (e) {
-          error = e;
-        }
-        if (Ember.LOG_STACKTRACE_ON_DEPRECATION && error.stack) {
-          var stack, stackStr = '';
-          if (error['arguments']) {
-            stack = error.stack.replace(/^\s+at\s+/gm, '').replace(/^([^\(]+?)([\n$])/gm, '{anonymous}($1)$2').replace(/^Object.<anonymous>\s*\(([^\)]+)\)/gm, '{anonymous}($1)').split('\n');
-            stack.shift();
-          } else {
-            stack = error.stack.replace(/(?:\n@:0)?\s+$/m, '').replace(/^\(/gm, '{anonymous}(').split('\n');
-          }
-          stackStr = '\n    ' + stack.slice(2).join('\n    ');
-          message = message + stackStr;
-        }
-        Ember.Logger.warn('DEPRECATION: ' + message);
-      };
-      Ember.deprecateFunc = function (message, func) {
-        return function () {
-          Ember.deprecate(message);
-          return func.apply(this, arguments);
-        };
-      };
-    }());
-    (function () {
-      var define, requireModule;
-      (function () {
-        var registry = {}, seen = {};
-        define = function (name, deps, callback) {
-          registry[name] = {
-            deps: deps,
-            callback: callback
-          };
-        };
-        requireModule = function (name) {
-          if (seen[name]) {
-            return seen[name];
-          }
-          seen[name] = {};
-          var mod = registry[name], deps = mod.deps, callback = mod.callback, reified = [], exports;
-          for (var i = 0, l = deps.length; i < l; i++) {
-            if (deps[i] === 'exports') {
-              reified.push(exports = {});
-            } else {
-              reified.push(requireModule(deps[i]));
-            }
-          }
-          var value = callback.apply(this, reified);
-          return seen[name] = exports || value;
-        };
-      }());
-      (function () {
-        if ('undefined' === typeof Ember) {
-          Ember = {};
-        }
-        var imports = Ember.imports = Ember.imports || this;
-        var exports = Ember.exports = Ember.exports || this;
-        var lookup = Ember.lookup = Ember.lookup || this;
-        exports.Em = exports.Ember = Em = Ember;
-        Ember.isNamespace = true;
-        Ember.toString = function () {
-          return 'Ember';
-        };
-        Ember.VERSION = '1.0.0-rc.2';
-        Ember.ENV = Ember.ENV || ('undefined' === typeof ENV ? {} : ENV);
-        Ember.config = Ember.config || {};
-        Ember.EXTEND_PROTOTYPES = Ember.ENV.EXTEND_PROTOTYPES;
-        if (typeof Ember.EXTEND_PROTOTYPES === 'undefined') {
-          Ember.EXTEND_PROTOTYPES = true;
-        }
-        Ember.LOG_STACKTRACE_ON_DEPRECATION = Ember.ENV.LOG_STACKTRACE_ON_DEPRECATION !== false;
-        Ember.SHIM_ES5 = Ember.ENV.SHIM_ES5 === false ? false : Ember.EXTEND_PROTOTYPES;
-        Ember.LOG_VERSION = Ember.ENV.LOG_VERSION === false ? false : true;
-        Ember.K = function () {
-          return this;
-        };
-        if ('undefined' === typeof Ember.assert) {
-          Ember.assert = Ember.K;
-        }
-        if ('undefined' === typeof Ember.warn) {
-          Ember.warn = Ember.K;
-        }
-        if ('undefined' === typeof Ember.debug) {
-          Ember.debug = Ember.K;
-        }
-        if ('undefined' === typeof Ember.deprecate) {
-          Ember.deprecate = Ember.K;
-        }
-        if ('undefined' === typeof Ember.deprecateFunc) {
-          Ember.deprecateFunc = function (_, func) {
-            return func;
-          };
-        }
-        Ember.uuid = 0;
-        function consoleMethod(name) {
-          if (imports.console && imports.console[name]) {
-            if (imports.console[name].apply) {
-              return function () {
-                imports.console[name].apply(imports.console, arguments);
-              };
-            } else {
-              return function () {
-                var message = Array.prototype.join.call(arguments, ', ');
-                imports.console[name](message);
-              };
-            }
-          }
-        }
-        Ember.Logger = {
-          log: consoleMethod('log') || Ember.K,
-          warn: consoleMethod('warn') || Ember.K,
-          error: consoleMethod('error') || Ember.K,
-          info: consoleMethod('info') || Ember.K,
-          debug: consoleMethod('debug') || consoleMethod('info') || Ember.K
-        };
-        Ember.onerror = null;
-        Ember.handleErrors = function (func, context) {
-          if ('function' === typeof Ember.onerror) {
-            try {
-              return func.call(context || this);
-            } catch (error) {
-              Ember.onerror(error);
-            }
-          } else {
-            return func.call(context || this);
-          }
-        };
-        Ember.merge = function (original, updates) {
-          for (var prop in updates) {
-            if (!updates.hasOwnProperty(prop)) {
-              continue;
-            }
-            original[prop] = updates[prop];
-          }
-          return original;
-        };
-        Ember.isNone = function (obj) {
-          return obj === null || obj === undefined;
-        };
-        Ember.none = Ember.deprecateFunc('Ember.none is deprecated. Please use Ember.isNone instead.', Ember.isNone);
-        Ember.isEmpty = function (obj) {
-          return obj === null || obj === undefined || obj.length === 0 && typeof obj !== 'function' || typeof obj === 'object' && Ember.get(obj, 'length') === 0;
-        };
-        Ember.empty = Ember.deprecateFunc('Ember.empty is deprecated. Please use Ember.isEmpty instead.', Ember.isEmpty);
-      }());
-      (function () {
-        var platform = Ember.platform = {};
-        Ember.create = Object.create;
-        if (!Ember.create || Ember.ENV.STUB_OBJECT_CREATE) {
-          var K = function () {
-          };
-          Ember.create = function (obj, props) {
-            K.prototype = obj;
-            obj = new K;
-            if (props) {
-              K.prototype = obj;
-              for (var prop in props) {
-                K.prototype[prop] = props[prop].value;
-              }
-              obj = new K;
-            }
-            K.prototype = null;
-            return obj;
-          };
-          Ember.create.isSimulated = true;
-        }
-        var defineProperty = Object.defineProperty;
-        var canRedefineProperties, canDefinePropertyOnDOM;
-        if (defineProperty) {
-          try {
-            defineProperty({}, 'a', {
-              get: function () {
-              }
-            });
-          } catch (e) {
-            defineProperty = null;
-          }
-        }
-        if (defineProperty) {
-          canRedefineProperties = function () {
-            var obj = {};
-            defineProperty(obj, 'a', {
-              configurable: true,
-              enumerable: true,
-              get: function () {
-              },
-              set: function () {
-              }
-            });
-            defineProperty(obj, 'a', {
-              configurable: true,
-              enumerable: true,
-              writable: true,
-              value: true
-            });
-            return obj.a === true;
-          }();
-          canDefinePropertyOnDOM = function () {
-            try {
-              defineProperty(document.createElement('div'), 'definePropertyOnDOM', {});
-              return true;
-            } catch (e) {
-            }
-            return false;
-          }();
-          if (!canRedefineProperties) {
-            defineProperty = null;
-          } else if (!canDefinePropertyOnDOM) {
-            defineProperty = function (obj, keyName, desc) {
-              var isNode;
-              if (typeof Node === 'object') {
-                isNode = obj instanceof Node;
-              } else {
-                isNode = typeof obj === 'object' && typeof obj.nodeType === 'number' && typeof obj.nodeName === 'string';
-              }
-              if (isNode) {
-                return obj[keyName] = desc.value;
-              } else {
-                return Object.defineProperty(obj, keyName, desc);
-              }
-            };
-          }
-        }
-        platform.defineProperty = defineProperty;
-        platform.hasPropertyAccessors = true;
-        if (!platform.defineProperty) {
-          platform.hasPropertyAccessors = false;
-          platform.defineProperty = function (obj, keyName, desc) {
-            if (!desc.get) {
-              obj[keyName] = desc.value;
-            }
-          };
-          platform.defineProperty.isSimulated = true;
-        }
-        if (Ember.ENV.MANDATORY_SETTER && !platform.hasPropertyAccessors) {
-          Ember.ENV.MANDATORY_SETTER = false;
-        }
-      }());
-      (function () {
-        var o_defineProperty = Ember.platform.defineProperty, o_create = Ember.create, GUID_KEY = '__ember' + +new Date, uuid = 0, numberCache = [], stringCache = {};
-        var MANDATORY_SETTER = Ember.ENV.MANDATORY_SETTER;
-        Ember.GUID_KEY = GUID_KEY;
-        var GUID_DESC = {
-            writable: false,
-            configurable: false,
-            enumerable: false,
-            value: null
-          };
-        Ember.generateGuid = function generateGuid(obj, prefix) {
-          if (!prefix)
-            prefix = 'ember';
-          var ret = prefix + uuid++;
-          if (obj) {
-            GUID_DESC.value = ret;
-            o_defineProperty(obj, GUID_KEY, GUID_DESC);
-          }
-          return ret;
-        };
-        Ember.guidFor = function guidFor(obj) {
-          if (obj === undefined)
-            return '(undefined)';
-          if (obj === null)
-            return '(null)';
-          var cache, ret;
-          var type = typeof obj;
-          switch (type) {
-          case 'number':
-            ret = numberCache[obj];
-            if (!ret)
-              ret = numberCache[obj] = 'nu' + obj;
-            return ret;
-          case 'string':
-            ret = stringCache[obj];
-            if (!ret)
-              ret = stringCache[obj] = 'st' + uuid++;
-            return ret;
-          case 'boolean':
-            return obj ? '(true)' : '(false)';
-          default:
-            if (obj[GUID_KEY])
-              return obj[GUID_KEY];
-            if (obj === Object)
-              return '(Object)';
-            if (obj === Array)
-              return '(Array)';
-            ret = 'ember' + uuid++;
-            GUID_DESC.value = ret;
-            o_defineProperty(obj, GUID_KEY, GUID_DESC);
-            return ret;
-          }
-        };
-        var META_DESC = {
-            writable: true,
-            configurable: false,
-            enumerable: false,
-            value: null
-          };
-        var META_KEY = Ember.GUID_KEY + '_meta';
-        Ember.META_KEY = META_KEY;
-        var EMPTY_META = {
-            descs: {},
-            watching: {}
-          };
-        if (MANDATORY_SETTER) {
-          EMPTY_META.values = {};
-        }
-        Ember.EMPTY_META = EMPTY_META;
-        if (Object.freeze)
-          Object.freeze(EMPTY_META);
-        var isDefinePropertySimulated = Ember.platform.defineProperty.isSimulated;
-        function Meta(obj) {
-          this.descs = {};
-          this.watching = {};
-          this.cache = {};
-          this.source = obj;
-        }
-        if (isDefinePropertySimulated) {
-          Meta.prototype.__preventPlainObject__ = true;
-          Meta.prototype.toJSON = function () {
-          };
-        }
-        Ember.meta = function meta(obj, writable) {
-          var ret = obj[META_KEY];
-          if (writable === false)
-            return ret || EMPTY_META;
-          if (!ret) {
-            if (!isDefinePropertySimulated)
-              o_defineProperty(obj, META_KEY, META_DESC);
-            ret = new Meta(obj);
-            if (MANDATORY_SETTER) {
-              ret.values = {};
-            }
-            obj[META_KEY] = ret;
-            ret.descs.constructor = null;
-          } else if (ret.source !== obj) {
-            if (!isDefinePropertySimulated)
-              o_defineProperty(obj, META_KEY, META_DESC);
-            ret = o_create(ret);
-            ret.descs = o_create(ret.descs);
-            ret.watching = o_create(ret.watching);
-            ret.cache = {};
-            ret.source = obj;
-            if (MANDATORY_SETTER) {
-              ret.values = o_create(ret.values);
-            }
-            obj[META_KEY] = ret;
-          }
-          return ret;
-        };
-        Ember.getMeta = function getMeta(obj, property) {
-          var meta = Ember.meta(obj, false);
-          return meta[property];
-        };
-        Ember.setMeta = function setMeta(obj, property, value) {
-          var meta = Ember.meta(obj, true);
-          meta[property] = value;
-          return value;
-        };
-        Ember.metaPath = function metaPath(obj, path, writable) {
-          var meta = Ember.meta(obj, writable), keyName, value;
-          for (var i = 0, l = path.length; i < l; i++) {
-            keyName = path[i];
-            value = meta[keyName];
-            if (!value) {
-              if (!writable) {
-                return undefined;
-              }
-              value = meta[keyName] = { __ember_source__: obj };
-            } else if (value.__ember_source__ !== obj) {
-              if (!writable) {
-                return undefined;
-              }
-              value = meta[keyName] = o_create(value);
-              value.__ember_source__ = obj;
-            }
-            meta = value;
-          }
-          return value;
-        };
-        Ember.wrap = function (func, superFunc) {
-          function K() {
-          }
-          function superWrapper() {
-            var ret, sup = this._super;
-            this._super = superFunc || K;
-            ret = func.apply(this, arguments);
-            this._super = sup;
-            return ret;
-          }
-          superWrapper.wrappedFunction = func;
-          superWrapper.__ember_observes__ = func.__ember_observes__;
-          superWrapper.__ember_observesBefore__ = func.__ember_observesBefore__;
-          return superWrapper;
-        };
-        Ember.isArray = function (obj) {
-          if (!obj || obj.setInterval) {
-            return false;
-          }
-          if (Array.isArray && Array.isArray(obj)) {
-            return true;
-          }
-          if (Ember.Array && Ember.Array.detect(obj)) {
-            return true;
-          }
-          if (obj.length !== undefined && 'object' === typeof obj) {
-            return true;
-          }
-          return false;
-        };
-        Ember.makeArray = function (obj) {
-          if (obj === null || obj === undefined) {
-            return [];
-          }
-          return Ember.isArray(obj) ? obj : [obj];
-        };
-        function canInvoke(obj, methodName) {
-          return !!(obj && typeof obj[methodName] === 'function');
-        }
-        Ember.canInvoke = canInvoke;
-        Ember.tryInvoke = function (obj, methodName, args) {
-          if (canInvoke(obj, methodName)) {
-            return obj[methodName].apply(obj, args || []);
-          }
-        };
-        var needsFinallyFix = function () {
-            var count = 0;
-            try {
-              try {
-              } finally {
-                count++;
-                throw new Error('needsFinallyFixTest');
-              }
-            } catch (e) {
-            }
-            return count !== 1;
-          }();
-        if (needsFinallyFix) {
-          Ember.tryFinally = function (tryable, finalizer, binding) {
-            var result, finalResult, finalError;
-            binding = binding || this;
-            try {
-              result = tryable.call(binding);
-            } finally {
-              try {
-                finalResult = finalizer.call(binding);
-              } catch (e) {
-                finalError = e;
-              }
-            }
-            if (finalError) {
-              throw finalError;
-            }
-            return finalResult === undefined ? result : finalResult;
-          };
-        } else {
-          Ember.tryFinally = function (tryable, finalizer, binding) {
-            var result, finalResult;
-            binding = binding || this;
-            try {
-              result = tryable.call(binding);
-            } finally {
-              finalResult = finalizer.call(binding);
-            }
-            return finalResult === undefined ? result : finalResult;
-          };
-        }
-        if (needsFinallyFix) {
-          Ember.tryCatchFinally = function (tryable, catchable, finalizer, binding) {
-            var result, finalResult, finalError, finalReturn;
-            binding = binding || this;
-            try {
-              result = tryable.call(binding);
-            } catch (error) {
-              result = catchable.call(binding, error);
-            } finally {
-              try {
-                finalResult = finalizer.call(binding);
-              } catch (e) {
-                finalError = e;
-              }
-            }
-            if (finalError) {
-              throw finalError;
-            }
-            return finalResult === undefined ? result : finalResult;
-          };
-        } else {
-          Ember.tryCatchFinally = function (tryable, catchable, finalizer, binding) {
-            var result, finalResult;
-            binding = binding || this;
-            try {
-              result = tryable.call(binding);
-            } catch (error) {
-              result = catchable.call(binding, error);
-            } finally {
-              finalResult = finalizer.call(binding);
-            }
-            return finalResult === undefined ? result : finalResult;
-          };
-        }
-      }());
-      (function () {
-        Ember.Instrumentation = {};
-        var subscribers = [], cache = {};
-        var populateListeners = function (name) {
-          var listeners = [], subscriber;
-          for (var i = 0, l = subscribers.length; i < l; i++) {
-            subscriber = subscribers[i];
-            if (subscriber.regex.test(name)) {
-              listeners.push(subscriber.object);
-            }
-          }
-          cache[name] = listeners;
-          return listeners;
-        };
-        var time = function () {
-            var perf = 'undefined' !== typeof window ? window.performance || {} : {};
-            var fn = perf.now || perf.mozNow || perf.webkitNow || perf.msNow || perf.oNow;
-            return fn ? fn.bind(perf) : function () {
-              return +new Date;
-            };
-          }();
-        Ember.Instrumentation.instrument = function (name, payload, callback, binding) {
-          var listeners = cache[name], timeName, ret;
-          if (Ember.STRUCTURED_PROFILE) {
-            timeName = name + ': ' + payload.object;
-            console.time(timeName);
-          }
-          if (!listeners) {
-            listeners = populateListeners(name);
-          }
-          if (listeners.length === 0) {
-            ret = callback.call(binding);
-            if (Ember.STRUCTURED_PROFILE) {
-              console.timeEnd(timeName);
-            }
-            return ret;
-          }
-          var beforeValues = [], listener, i, l;
-          function tryable() {
-            for (i = 0, l = listeners.length; i < l; i++) {
-              listener = listeners[i];
-              beforeValues[i] = listener.before(name, time(), payload);
-            }
-            return callback.call(binding);
-          }
-          function catchable(e) {
-            payload = payload || {};
-            payload.exception = e;
-          }
-          function finalizer() {
-            for (i = 0, l = listeners.length; i < l; i++) {
-              listener = listeners[i];
-              listener.after(name, time(), payload, beforeValues[i]);
-            }
-            if (Ember.STRUCTURED_PROFILE) {
-              console.timeEnd(timeName);
-            }
-          }
-          return Ember.tryCatchFinally(tryable, catchable, finalizer);
-        };
-        Ember.Instrumentation.subscribe = function (pattern, object) {
-          var paths = pattern.split('.'), path, regex = [];
-          for (var i = 0, l = paths.length; i < l; i++) {
-            path = paths[i];
-            if (path === '*') {
-              regex.push('[^\\.]*');
-            } else {
-              regex.push(path);
-            }
-          }
-          regex = regex.join('\\.');
-          regex = regex + '(\\..*)?';
-          var subscriber = {
-              pattern: pattern,
-              regex: new RegExp('^' + regex + '$'),
-              object: object
-            };
-          subscribers.push(subscriber);
-          cache = {};
-          return subscriber;
-        };
-        Ember.Instrumentation.unsubscribe = function (subscriber) {
-          var index;
-          for (var i = 0, l = subscribers.length; i < l; i++) {
-            if (subscribers[i] === subscriber) {
-              index = i;
-            }
-          }
-          subscribers.splice(index, 1);
-          cache = {};
-        };
-        Ember.Instrumentation.reset = function () {
-          subscribers = [];
-          cache = {};
-        };
-        Ember.instrument = Ember.Instrumentation.instrument;
-        Ember.subscribe = Ember.Instrumentation.subscribe;
-      }());
-      (function () {
-        var utils = Ember.EnumerableUtils = {
-            map: function (obj, callback, thisArg) {
-              return obj.map ? obj.map.call(obj, callback, thisArg) : Array.prototype.map.call(obj, callback, thisArg);
-            },
-            forEach: function (obj, callback, thisArg) {
-              return obj.forEach ? obj.forEach.call(obj, callback, thisArg) : Array.prototype.forEach.call(obj, callback, thisArg);
-            },
-            indexOf: function (obj, element, index) {
-              return obj.indexOf ? obj.indexOf.call(obj, element, index) : Array.prototype.indexOf.call(obj, element, index);
-            },
-            indexesOf: function (obj, elements) {
-              return elements === undefined ? [] : utils.map(elements, function (item) {
-                return utils.indexOf(obj, item);
-              });
-            },
-            addObject: function (array, item) {
-              var index = utils.indexOf(array, item);
-              if (index === -1) {
-                array.push(item);
-              }
-            },
-            removeObject: function (array, item) {
-              var index = utils.indexOf(array, item);
-              if (index !== -1) {
-                array.splice(index, 1);
-              }
-            },
-            replace: function (array, idx, amt, objects) {
-              if (array.replace) {
-                return array.replace(idx, amt, objects);
-              } else {
-                var args = Array.prototype.concat.apply([
-                    idx,
-                    amt
-                  ], objects);
-                return array.splice.apply(array, args);
-              }
-            },
-            intersection: function (array1, array2) {
-              var intersection = [];
-              array1.forEach(function (element) {
-                if (array2.indexOf(element) >= 0) {
-                  intersection.push(element);
-                }
-              });
-              return intersection;
-            }
-          };
-      }());
-      (function () {
-        var isNativeFunc = function (func) {
-          return func && Function.prototype.toString.call(func).indexOf('[native code]') > -1;
-        };
-        var arrayMap = isNativeFunc(Array.prototype.map) ? Array.prototype.map : function (fun) {
-            if (this === void 0 || this === null) {
-              throw new TypeError;
-            }
-            var t = Object(this);
-            var len = t.length >>> 0;
-            if (typeof fun !== 'function') {
-              throw new TypeError;
-            }
-            var res = new Array(len);
-            var thisp = arguments[1];
-            for (var i = 0; i < len; i++) {
-              if (i in t) {
-                res[i] = fun.call(thisp, t[i], i, t);
-              }
-            }
-            return res;
-          };
-        var arrayForEach = isNativeFunc(Array.prototype.forEach) ? Array.prototype.forEach : function (fun) {
-            if (this === void 0 || this === null) {
-              throw new TypeError;
-            }
-            var t = Object(this);
-            var len = t.length >>> 0;
-            if (typeof fun !== 'function') {
-              throw new TypeError;
-            }
-            var thisp = arguments[1];
-            for (var i = 0; i < len; i++) {
-              if (i in t) {
-                fun.call(thisp, t[i], i, t);
-              }
-            }
-          };
-        var arrayIndexOf = isNativeFunc(Array.prototype.indexOf) ? Array.prototype.indexOf : function (obj, fromIndex) {
-            if (fromIndex === null || fromIndex === undefined) {
-              fromIndex = 0;
-            } else if (fromIndex < 0) {
-              fromIndex = Math.max(0, this.length + fromIndex);
-            }
-            for (var i = fromIndex, j = this.length; i < j; i++) {
-              if (this[i] === obj) {
-                return i;
-              }
-            }
-            return -1;
-          };
-        Ember.ArrayPolyfills = {
-          map: arrayMap,
-          forEach: arrayForEach,
-          indexOf: arrayIndexOf
-        };
-        if (Ember.SHIM_ES5) {
-          if (!Array.prototype.map) {
-            Array.prototype.map = arrayMap;
-          }
-          if (!Array.prototype.forEach) {
-            Array.prototype.forEach = arrayForEach;
-          }
-          if (!Array.prototype.indexOf) {
-            Array.prototype.indexOf = arrayIndexOf;
-          }
-        }
-      }());
-      (function () {
-        var guidFor = Ember.guidFor, indexOf = Ember.ArrayPolyfills.indexOf;
-        var copy = function (obj) {
-          var output = {};
-          for (var prop in obj) {
-            if (obj.hasOwnProperty(prop)) {
-              output[prop] = obj[prop];
-            }
-          }
-          return output;
-        };
-        var copyMap = function (original, newObject) {
-          var keys = original.keys.copy(), values = copy(original.values);
-          newObject.keys = keys;
-          newObject.values = values;
-          return newObject;
-        };
-        var OrderedSet = Ember.OrderedSet = function () {
-            this.clear();
-          };
-        OrderedSet.create = function () {
-          return new OrderedSet;
-        };
-        OrderedSet.prototype = {
-          clear: function () {
-            this.presenceSet = {};
-            this.list = [];
-          },
-          add: function (obj) {
-            var guid = guidFor(obj), presenceSet = this.presenceSet, list = this.list;
-            if (guid in presenceSet) {
-              return;
-            }
-            presenceSet[guid] = true;
-            list.push(obj);
-          },
-          remove: function (obj) {
-            var guid = guidFor(obj), presenceSet = this.presenceSet, list = this.list;
-            delete presenceSet[guid];
-            var index = indexOf.call(list, obj);
-            if (index > -1) {
-              list.splice(index, 1);
-            }
-          },
-          isEmpty: function () {
-            return this.list.length === 0;
-          },
-          has: function (obj) {
-            var guid = guidFor(obj), presenceSet = this.presenceSet;
-            return guid in presenceSet;
-          },
-          forEach: function (fn, self) {
-            var list = this.list.slice();
-            for (var i = 0, j = list.length; i < j; i++) {
-              fn.call(self, list[i]);
-            }
-          },
-          toArray: function () {
-            return this.list.slice();
-          },
-          copy: function () {
-            var set = new OrderedSet;
-            set.presenceSet = copy(this.presenceSet);
-            set.list = this.list.slice();
-            return set;
-          }
-        };
-        var Map = Ember.Map = function () {
-            this.keys = Ember.OrderedSet.create();
-            this.values = {};
-          };
-        Map.create = function () {
-          return new Map;
-        };
-        Map.prototype = {
-          get: function (key) {
-            var values = this.values, guid = guidFor(key);
-            return values[guid];
-          },
-          set: function (key, value) {
-            var keys = this.keys, values = this.values, guid = guidFor(key);
-            keys.add(key);
-            values[guid] = value;
-          },
-          remove: function (key) {
-            var keys = this.keys, values = this.values, guid = guidFor(key), value;
-            if (values.hasOwnProperty(guid)) {
-              keys.remove(key);
-              value = values[guid];
-              delete values[guid];
-              return true;
-            } else {
-              return false;
-            }
-          },
-          has: function (key) {
-            var values = this.values, guid = guidFor(key);
-            return values.hasOwnProperty(guid);
-          },
-          forEach: function (callback, self) {
-            var keys = this.keys, values = this.values;
-            keys.forEach(function (key) {
-              var guid = guidFor(key);
-              callback.call(self, key, values[guid]);
-            });
-          },
-          copy: function () {
-            return copyMap(this, new Map);
-          }
-        };
-        var MapWithDefault = Ember.MapWithDefault = function (options) {
-            Map.call(this);
-            this.defaultValue = options.defaultValue;
-          };
-        MapWithDefault.create = function (options) {
-          if (options) {
-            return new MapWithDefault(options);
-          } else {
-            return new Map;
-          }
-        };
-        MapWithDefault.prototype = Ember.create(Map.prototype);
-        MapWithDefault.prototype.get = function (key) {
-          var hasValue = this.has(key);
-          if (hasValue) {
-            return Map.prototype.get.call(this, key);
-          } else {
-            var defaultValue = this.defaultValue(key);
-            this.set(key, defaultValue);
-            return defaultValue;
-          }
-        };
-        MapWithDefault.prototype.copy = function () {
-          return copyMap(this, new MapWithDefault({ defaultValue: this.defaultValue }));
-        };
-      }());
-      (function () {
-        var META_KEY = Ember.META_KEY, get;
-        var MANDATORY_SETTER = Ember.ENV.MANDATORY_SETTER;
-        var IS_GLOBAL_PATH = /^([A-Z$]|([0-9][A-Z$])).*[\.\*]/;
-        var HAS_THIS = /^this[\.\*]/;
-        var FIRST_KEY = /^([^\.\*]+)/;
-        get = function get(obj, keyName) {
-          if (keyName === '') {
-            return obj;
-          }
-          if (!keyName && 'string' === typeof obj) {
-            keyName = obj;
-            obj = null;
-          }
-          if (!obj || keyName.indexOf('.') !== -1) {
-            Ember.assert("Cannot call get with '" + keyName + "' on an undefined object.", obj !== undefined);
-            return getPath(obj, keyName);
-          }
-          Ember.assert('You need to provide an object and key to `get`.', !!obj && keyName);
-          var meta = obj[META_KEY], desc = meta && meta.descs[keyName], ret;
-          if (desc) {
-            return desc.get(obj, keyName);
-          } else {
-            if (MANDATORY_SETTER && meta && meta.watching[keyName] > 0) {
-              ret = meta.values[keyName];
-            } else {
-              ret = obj[keyName];
-            }
-            if (ret === undefined && 'object' === typeof obj && !(keyName in obj) && 'function' === typeof obj.unknownProperty) {
-              return obj.unknownProperty(keyName);
-            }
-            return ret;
-          }
-        };
-        if (Ember.config.overrideAccessors) {
-          Ember.get = get;
-          Ember.config.overrideAccessors();
-          get = Ember.get;
-        }
-        function firstKey(path) {
-          return path.match(FIRST_KEY)[0];
-        }
-        function normalizeTuple(target, path) {
-          var hasThis = HAS_THIS.test(path), isGlobal = !hasThis && IS_GLOBAL_PATH.test(path), key;
-          if (!target || isGlobal)
-            target = Ember.lookup;
-          if (hasThis)
-            path = path.slice(5);
-          if (target === Ember.lookup) {
-            key = firstKey(path);
-            target = get(target, key);
-            path = path.slice(key.length + 1);
-          }
-          if (!path || path.length === 0)
-            throw new Error('Invalid Path');
-          return [
-            target,
-            path
-          ];
-        }
-        var getPath = Ember._getPath = function (root, path) {
-            var hasThis, parts, tuple, idx, len;
-            if (root === null && path.indexOf('.') === -1) {
-              return get(Ember.lookup, path);
-            }
-            hasThis = HAS_THIS.test(path);
-            if (!root || hasThis) {
-              tuple = normalizeTuple(root, path);
-              root = tuple[0];
-              path = tuple[1];
-              tuple.length = 0;
-            }
-            parts = path.split('.');
-            len = parts.length;
-            for (idx = 0; root && idx < len; idx++) {
-              root = get(root, parts[idx], true);
-              if (root && root.isDestroyed) {
-                return undefined;
-              }
-            }
-            return root;
-          };
-        Ember.normalizeTuple = function (target, path) {
-          return normalizeTuple(target, path);
-        };
-        Ember.getWithDefault = function (root, key, defaultValue) {
-          var value = get(root, key);
-          if (value === undefined) {
-            return defaultValue;
-          }
-          return value;
-        };
-        Ember.get = get;
-        Ember.getPath = Ember.deprecateFunc('getPath is deprecated since get now supports paths', Ember.get);
-      }());
-      (function () {
-        var o_create = Ember.create, metaFor = Ember.meta, META_KEY = Ember.META_KEY;
-        function indexOf(array, target, method) {
-          var index = -1;
-          for (var i = 0, l = array.length; i < l; i++) {
-            if (target === array[i][0] && method === array[i][1]) {
-              index = i;
-              break;
-            }
-          }
-          return index;
-        }
-        function actionsFor(obj, eventName) {
-          var meta = metaFor(obj, true), actions;
-          if (!meta.listeners) {
-            meta.listeners = {};
-          }
-          if (!meta.hasOwnProperty('listeners')) {
-            meta.listeners = o_create(meta.listeners);
-          }
-          actions = meta.listeners[eventName];
-          if (actions && !meta.listeners.hasOwnProperty(eventName)) {
-            actions = meta.listeners[eventName] = meta.listeners[eventName].slice();
-          } else if (!actions) {
-            actions = meta.listeners[eventName] = [];
-          }
-          return actions;
-        }
-        function actionsUnion(obj, eventName, otherActions) {
-          var meta = obj[META_KEY], actions = meta && meta.listeners && meta.listeners[eventName];
-          if (!actions) {
-            return;
-          }
-          for (var i = actions.length - 1; i >= 0; i--) {
-            var target = actions[i][0], method = actions[i][1], once = actions[i][2], suspended = actions[i][3], actionIndex = indexOf(otherActions, target, method);
-            if (actionIndex === -1) {
-              otherActions.push([
-                target,
-                method,
-                once,
-                suspended
-              ]);
-            }
-          }
-        }
-        function actionsDiff(obj, eventName, otherActions) {
-          var meta = obj[META_KEY], actions = meta && meta.listeners && meta.listeners[eventName], diffActions = [];
-          if (!actions) {
-            return;
-          }
-          for (var i = actions.length - 1; i >= 0; i--) {
-            var target = actions[i][0], method = actions[i][1], once = actions[i][2], suspended = actions[i][3], actionIndex = indexOf(otherActions, target, method);
-            if (actionIndex !== -1) {
-              continue;
-            }
-            otherActions.push([
-              target,
-              method,
-              once,
-              suspended
-            ]);
-            diffActions.push([
-              target,
-              method,
-              once,
-              suspended
-            ]);
-          }
-          return diffActions;
-        }
-        function addListener(obj, eventName, target, method, once) {
-          Ember.assert('You must pass at least an object and event name to Ember.addListener', !!obj && !!eventName);
-          if (!method && 'function' === typeof target) {
-            method = target;
-            target = null;
-          }
-          var actions = actionsFor(obj, eventName), actionIndex = indexOf(actions, target, method);
-          if (actionIndex !== -1) {
-            return;
-          }
-          actions.push([
-            target,
-            method,
-            once,
-            undefined
-          ]);
-          if ('function' === typeof obj.didAddListener) {
-            obj.didAddListener(eventName, target, method);
-          }
-        }
-        function removeListener(obj, eventName, target, method) {
-          Ember.assert('You must pass at least an object and event name to Ember.removeListener', !!obj && !!eventName);
-          if (!method && 'function' === typeof target) {
-            method = target;
-            target = null;
-          }
-          function _removeListener(target, method, once) {
-            var actions = actionsFor(obj, eventName), actionIndex = indexOf(actions, target, method);
-            if (actionIndex === -1) {
-              return;
-            }
-            actions.splice(actionIndex, 1);
-            if ('function' === typeof obj.didRemoveListener) {
-              obj.didRemoveListener(eventName, target, method);
-            }
-          }
-          if (method) {
-            _removeListener(target, method);
-          } else {
-            var meta = obj[META_KEY], actions = meta && meta.listeners && meta.listeners[eventName];
-            if (!actions) {
-              return;
-            }
-            for (var i = actions.length - 1; i >= 0; i--) {
-              _removeListener(actions[i][0], actions[i][1]);
-            }
-          }
-        }
-        function suspendListener(obj, eventName, target, method, callback) {
-          if (!method && 'function' === typeof target) {
-            method = target;
-            target = null;
-          }
-          var actions = actionsFor(obj, eventName), actionIndex = indexOf(actions, target, method), action;
-          if (actionIndex !== -1) {
-            action = actions[actionIndex].slice();
-            action[3] = true;
-            actions[actionIndex] = action;
-          }
-          function tryable() {
-            return callback.call(target);
-          }
-          function finalizer() {
-            if (action) {
-              action[3] = undefined;
-            }
-          }
-          return Ember.tryFinally(tryable, finalizer);
-        }
-        function suspendListeners(obj, eventNames, target, method, callback) {
-          if (!method && 'function' === typeof target) {
-            method = target;
-            target = null;
-          }
-          var suspendedActions = [], eventName, actions, action, i, l;
-          for (i = 0, l = eventNames.length; i < l; i++) {
-            eventName = eventNames[i];
-            actions = actionsFor(obj, eventName);
-            var actionIndex = indexOf(actions, target, method);
-            if (actionIndex !== -1) {
-              action = actions[actionIndex].slice();
-              action[3] = true;
-              actions[actionIndex] = action;
-              suspendedActions.push(action);
-            }
-          }
-          function tryable() {
-            return callback.call(target);
-          }
-          function finalizer() {
-            for (i = 0, l = suspendedActions.length; i < l; i++) {
-              suspendedActions[i][3] = undefined;
-            }
-          }
-          return Ember.tryFinally(tryable, finalizer);
-        }
-        function watchedEvents(obj) {
-          var listeners = obj[META_KEY].listeners, ret = [];
-          if (listeners) {
-            for (var eventName in listeners) {
-              if (listeners[eventName]) {
-                ret.push(eventName);
-              }
-            }
-          }
-          return ret;
-        }
-        function sendEvent(obj, eventName, params, actions) {
-          if (obj !== Ember && 'function' === typeof obj.sendEvent) {
-            obj.sendEvent(eventName, params);
-          }
-          if (!actions) {
-            var meta = obj[META_KEY];
-            actions = meta && meta.listeners && meta.listeners[eventName];
-          }
-          if (!actions) {
-            return;
-          }
-          for (var i = actions.length - 1; i >= 0; i--) {
-            if (!actions[i] || actions[i][3] === true) {
-              continue;
-            }
-            var target = actions[i][0], method = actions[i][1], once = actions[i][2];
-            if (once) {
-              removeListener(obj, eventName, target, method);
-            }
-            if (!target) {
-              target = obj;
-            }
-            if ('string' === typeof method) {
-              method = target[method];
-            }
-            if (params) {
-              method.apply(target, params);
-            } else {
-              method.call(target);
-            }
-          }
-          return true;
-        }
-        function hasListeners(obj, eventName) {
-          var meta = obj[META_KEY], actions = meta && meta.listeners && meta.listeners[eventName];
-          return !!(actions && actions.length);
-        }
-        function listenersFor(obj, eventName) {
-          var ret = [];
-          var meta = obj[META_KEY], actions = meta && meta.listeners && meta.listeners[eventName];
-          if (!actions) {
-            return ret;
-          }
-          for (var i = 0, l = actions.length; i < l; i++) {
-            var target = actions[i][0], method = actions[i][1];
-            ret.push([
-              target,
-              method
-            ]);
-          }
-          return ret;
-        }
-        Ember.addListener = addListener;
-        Ember.removeListener = removeListener;
-        Ember._suspendListener = suspendListener;
-        Ember._suspendListeners = suspendListeners;
-        Ember.sendEvent = sendEvent;
-        Ember.hasListeners = hasListeners;
-        Ember.watchedEvents = watchedEvents;
-        Ember.listenersFor = listenersFor;
-        Ember.listenersDiff = actionsDiff;
-        Ember.listenersUnion = actionsUnion;
-      }());
-      (function () {
-        var guidFor = Ember.guidFor, sendEvent = Ember.sendEvent;
-        var ObserverSet = Ember._ObserverSet = function () {
-            this.clear();
-          };
-        ObserverSet.prototype.add = function (sender, keyName, eventName) {
-          var observerSet = this.observerSet, observers = this.observers, senderGuid = guidFor(sender), keySet = observerSet[senderGuid], index;
-          if (!keySet) {
-            observerSet[senderGuid] = keySet = {};
-          }
-          index = keySet[keyName];
-          if (index === undefined) {
-            index = observers.push({
-              sender: sender,
-              keyName: keyName,
-              eventName: eventName,
-              listeners: []
-            }) - 1;
-            keySet[keyName] = index;
-          }
-          return observers[index].listeners;
-        };
-        ObserverSet.prototype.flush = function () {
-          var observers = this.observers, i, len, observer, sender;
-          this.clear();
-          for (i = 0, len = observers.length; i < len; ++i) {
-            observer = observers[i];
-            sender = observer.sender;
-            if (sender.isDestroying || sender.isDestroyed) {
-              continue;
-            }
-            sendEvent(sender, observer.eventName, [
-              sender,
-              observer.keyName
-            ], observer.listeners);
-          }
-        };
-        ObserverSet.prototype.clear = function () {
-          this.observerSet = {};
-          this.observers = [];
-        };
-      }());
-      (function () {
-        var metaFor = Ember.meta, guidFor = Ember.guidFor, tryFinally = Ember.tryFinally, sendEvent = Ember.sendEvent, listenersUnion = Ember.listenersUnion, listenersDiff = Ember.listenersDiff, ObserverSet = Ember._ObserverSet, beforeObserverSet = new ObserverSet, observerSet = new ObserverSet, deferred = 0;
-        var propertyWillChange = Ember.propertyWillChange = function (obj, keyName) {
-            var m = metaFor(obj, false), watching = m.watching[keyName] > 0 || keyName === 'length', proto = m.proto, desc = m.descs[keyName];
-            if (!watching) {
-              return;
-            }
-            if (proto === obj) {
-              return;
-            }
-            if (desc && desc.willChange) {
-              desc.willChange(obj, keyName);
-            }
-            dependentKeysWillChange(obj, keyName, m);
-            chainsWillChange(obj, keyName, m);
-            notifyBeforeObservers(obj, keyName);
-          };
-        var propertyDidChange = Ember.propertyDidChange = function (obj, keyName) {
-            var m = metaFor(obj, false), watching = m.watching[keyName] > 0 || keyName === 'length', proto = m.proto, desc = m.descs[keyName];
-            if (proto === obj) {
-              return;
-            }
-            if (desc && desc.didChange) {
-              desc.didChange(obj, keyName);
-            }
-            if (!watching && keyName !== 'length') {
-              return;
-            }
-            dependentKeysDidChange(obj, keyName, m);
-            chainsDidChange(obj, keyName, m);
-            notifyObservers(obj, keyName);
-          };
-        var WILL_SEEN, DID_SEEN;
-        function dependentKeysWillChange(obj, depKey, meta) {
-          if (obj.isDestroying) {
-            return;
-          }
-          var seen = WILL_SEEN, top = !seen;
-          if (top) {
-            seen = WILL_SEEN = {};
-          }
-          iterDeps(propertyWillChange, obj, depKey, seen, meta);
-          if (top) {
-            WILL_SEEN = null;
-          }
-        }
-        function dependentKeysDidChange(obj, depKey, meta) {
-          if (obj.isDestroying) {
-            return;
-          }
-          var seen = DID_SEEN, top = !seen;
-          if (top) {
-            seen = DID_SEEN = {};
-          }
-          iterDeps(propertyDidChange, obj, depKey, seen, meta);
-          if (top) {
-            DID_SEEN = null;
-          }
-        }
-        function iterDeps(method, obj, depKey, seen, meta) {
-          var guid = guidFor(obj);
-          if (!seen[guid])
-            seen[guid] = {};
-          if (seen[guid][depKey])
-            return;
-          seen[guid][depKey] = true;
-          var deps = meta.deps;
-          deps = deps && deps[depKey];
-          if (deps) {
-            for (var key in deps) {
-              var desc = meta.descs[key];
-              if (desc && desc._suspended === obj)
-                continue;
-              method(obj, key);
-            }
-          }
-        }
-        var chainsWillChange = function (obj, keyName, m, arg) {
-          if (!m.hasOwnProperty('chainWatchers')) {
-            return;
-          }
-          var nodes = m.chainWatchers;
-          nodes = nodes[keyName];
-          if (!nodes) {
-            return;
-          }
-          for (var i = 0, l = nodes.length; i < l; i++) {
-            nodes[i].willChange(arg);
-          }
-        };
-        var chainsDidChange = function (obj, keyName, m, arg) {
-          if (!m.hasOwnProperty('chainWatchers')) {
-            return;
-          }
-          var nodes = m.chainWatchers;
-          nodes = nodes[keyName];
-          if (!nodes) {
-            return;
-          }
-          for (var i = nodes.length - 1; i >= 0; i--) {
-            nodes[i].didChange(arg);
-          }
-        };
-        Ember.overrideChains = function (obj, keyName, m) {
-          chainsDidChange(obj, keyName, m, true);
-        };
-        var beginPropertyChanges = Ember.beginPropertyChanges = function () {
-            deferred++;
-          };
-        var endPropertyChanges = Ember.endPropertyChanges = function () {
-            deferred--;
-            if (deferred <= 0) {
-              beforeObserverSet.clear();
-              observerSet.flush();
-            }
-          };
-        var changeProperties = Ember.changeProperties = function (cb, binding) {
-            beginPropertyChanges();
-            tryFinally(cb, endPropertyChanges, binding);
-          };
-        var notifyBeforeObservers = function (obj, keyName) {
-          if (obj.isDestroying) {
-            return;
-          }
-          var eventName = keyName + ':before', listeners, diff;
-          if (deferred) {
-            listeners = beforeObserverSet.add(obj, keyName, eventName);
-            diff = listenersDiff(obj, eventName, listeners);
-            sendEvent(obj, eventName, [
-              obj,
-              keyName
-            ], diff);
-          } else {
-            sendEvent(obj, eventName, [
-              obj,
-              keyName
-            ]);
-          }
-        };
-        var notifyObservers = function (obj, keyName) {
-          if (obj.isDestroying) {
-            return;
-          }
-          var eventName = keyName + ':change', listeners;
-          if (deferred) {
-            listeners = observerSet.add(obj, keyName, eventName);
-            listenersUnion(obj, eventName, listeners);
-          } else {
-            sendEvent(obj, eventName, [
-              obj,
-              keyName
-            ]);
-          }
-        };
-      }());
-      (function () {
-        var META_KEY = Ember.META_KEY, MANDATORY_SETTER = Ember.ENV.MANDATORY_SETTER, IS_GLOBAL = /^([A-Z$]|([0-9][A-Z$]))/, propertyWillChange = Ember.propertyWillChange, propertyDidChange = Ember.propertyDidChange, getPath = Ember._getPath;
-        var set = function set(obj, keyName, value, tolerant) {
-          if (typeof obj === 'string') {
-            Ember.assert("Path '" + obj + "' must be global if no obj is given.", IS_GLOBAL.test(obj));
-            value = keyName;
-            keyName = obj;
-            obj = null;
-          }
-          if (!obj || keyName.indexOf('.') !== -1) {
-            return setPath(obj, keyName, value, tolerant);
-          }
-          Ember.assert('You need to provide an object and key to `set`.', !!obj && keyName !== undefined);
-          Ember.assert('calling set on destroyed object', !obj.isDestroyed);
-          var meta = obj[META_KEY], desc = meta && meta.descs[keyName], isUnknown, currentValue;
-          if (desc) {
-            desc.set(obj, keyName, value);
-          } else {
-            isUnknown = 'object' === typeof obj && !(keyName in obj);
-            if (isUnknown && 'function' === typeof obj.setUnknownProperty) {
-              obj.setUnknownProperty(keyName, value);
-            } else if (meta && meta.watching[keyName] > 0) {
-              if (MANDATORY_SETTER) {
-                currentValue = meta.values[keyName];
-              } else {
-                currentValue = obj[keyName];
-              }
-              if (value !== currentValue) {
-                Ember.propertyWillChange(obj, keyName);
-                if (MANDATORY_SETTER) {
-                  if (currentValue === undefined && !(keyName in obj)) {
-                    Ember.defineProperty(obj, keyName, null, value);
-                  } else {
-                    meta.values[keyName] = value;
-                  }
-                } else {
-                  obj[keyName] = value;
-                }
-                Ember.propertyDidChange(obj, keyName);
-              }
-            } else {
-              obj[keyName] = value;
-            }
-          }
-          return value;
-        };
-        if (Ember.config.overrideAccessors) {
-          Ember.set = set;
-          Ember.config.overrideAccessors();
-          set = Ember.set;
-        }
-        function setPath(root, path, value, tolerant) {
-          var keyName;
-          keyName = path.slice(path.lastIndexOf('.') + 1);
-          path = path.slice(0, path.length - (keyName.length + 1));
-          if (path !== 'this') {
-            root = getPath(root, path);
-          }
-          if (!keyName || keyName.length === 0) {
-            throw new Error('You passed an empty path');
-          }
-          if (!root) {
-            if (tolerant) {
-              return;
-            } else {
-              throw new Error('Object in path ' + path + ' could not be found or was destroyed.');
-            }
-          }
-          return set(root, keyName, value);
-        }
-        Ember.set = set;
-        Ember.setPath = Ember.deprecateFunc('setPath is deprecated since set now supports paths', Ember.set);
-        Ember.trySet = function (root, path, value) {
-          return set(root, path, value, true);
-        };
-        Ember.trySetPath = Ember.deprecateFunc('trySetPath has been renamed to trySet', Ember.trySet);
-      }());
-      (function () {
-        var META_KEY = Ember.META_KEY, metaFor = Ember.meta, objectDefineProperty = Ember.platform.defineProperty;
-        var MANDATORY_SETTER = Ember.ENV.MANDATORY_SETTER;
-        var Descriptor = Ember.Descriptor = function () {
-          };
-        var MANDATORY_SETTER_FUNCTION = Ember.MANDATORY_SETTER_FUNCTION = function (value) {
-            Ember.assert('You must use Ember.set() to access this property (of ' + this + ')', false);
-          };
-        var DEFAULT_GETTER_FUNCTION = Ember.DEFAULT_GETTER_FUNCTION = function (name) {
-            return function () {
-              var meta = this[META_KEY];
-              return meta && meta.values[name];
-            };
-          };
-        Ember.defineProperty = function (obj, keyName, desc, data, meta) {
-          var descs, existingDesc, watching, value;
-          if (!meta)
-            meta = metaFor(obj);
-          descs = meta.descs;
-          existingDesc = meta.descs[keyName];
-          watching = meta.watching[keyName] > 0;
-          if (existingDesc instanceof Ember.Descriptor) {
-            existingDesc.teardown(obj, keyName);
-          }
-          if (desc instanceof Ember.Descriptor) {
-            value = desc;
-            descs[keyName] = desc;
-            if (MANDATORY_SETTER && watching) {
-              objectDefineProperty(obj, keyName, {
-                configurable: true,
-                enumerable: true,
-                writable: true,
-                value: undefined
-              });
-            } else {
-              obj[keyName] = undefined;
-            }
-            desc.setup(obj, keyName);
-          } else {
-            descs[keyName] = undefined;
-            if (desc == null) {
-              value = data;
-              if (MANDATORY_SETTER && watching) {
-                meta.values[keyName] = data;
-                objectDefineProperty(obj, keyName, {
-                  configurable: true,
-                  enumerable: true,
-                  set: MANDATORY_SETTER_FUNCTION,
-                  get: DEFAULT_GETTER_FUNCTION(keyName)
-                });
-              } else {
-                obj[keyName] = data;
-              }
-            } else {
-              value = desc;
-              objectDefineProperty(obj, keyName, desc);
-            }
-          }
-          if (watching) {
-            Ember.overrideChains(obj, keyName, meta);
-          }
-          if (obj.didDefineProperty) {
-            obj.didDefineProperty(obj, keyName, value);
-          }
-          return this;
-        };
-      }());
-      (function () {
-        var changeProperties = Ember.changeProperties, set = Ember.set;
-        Ember.setProperties = function (self, hash) {
-          changeProperties(function () {
-            for (var prop in hash) {
-              if (hash.hasOwnProperty(prop)) {
-                set(self, prop, hash[prop]);
-              }
-            }
-          });
-          return self;
-        };
-      }());
-      (function () {
-        var metaFor = Ember.meta, isArray = Ember.isArray, MANDATORY_SETTER = Ember.ENV.MANDATORY_SETTER, o_defineProperty = Ember.platform.defineProperty;
-        Ember.watchKey = function (obj, keyName) {
-          if (keyName === 'length' && isArray(obj)) {
-            return this;
-          }
-          var m = metaFor(obj), watching = m.watching, desc;
-          if (!watching[keyName]) {
-            watching[keyName] = 1;
-            desc = m.descs[keyName];
-            if (desc && desc.willWatch) {
-              desc.willWatch(obj, keyName);
-            }
-            if ('function' === typeof obj.willWatchProperty) {
-              obj.willWatchProperty(keyName);
-            }
-            if (MANDATORY_SETTER && keyName in obj) {
-              m.values[keyName] = obj[keyName];
-              o_defineProperty(obj, keyName, {
-                configurable: true,
-                enumerable: true,
-                set: Ember.MANDATORY_SETTER_FUNCTION,
-                get: Ember.DEFAULT_GETTER_FUNCTION(keyName)
-              });
-            }
-          } else {
-            watching[keyName] = (watching[keyName] || 0) + 1;
-          }
-        };
-        Ember.unwatchKey = function (obj, keyName) {
-          var m = metaFor(obj), watching = m.watching, desc;
-          if (watching[keyName] === 1) {
-            watching[keyName] = 0;
-            desc = m.descs[keyName];
-            if (desc && desc.didUnwatch) {
-              desc.didUnwatch(obj, keyName);
-            }
-            if ('function' === typeof obj.didUnwatchProperty) {
-              obj.didUnwatchProperty(keyName);
-            }
-            if (MANDATORY_SETTER && keyName in obj) {
-              o_defineProperty(obj, keyName, {
-                configurable: true,
-                enumerable: true,
-                writable: true,
-                value: m.values[keyName]
-              });
-              delete m.values[keyName];
-            }
-          } else if (watching[keyName] > 1) {
-            watching[keyName]--;
-          }
-          return this;
-        };
-      }());
-      (function () {
-        var metaFor = Ember.meta, get = Ember.get, normalizeTuple = Ember.normalizeTuple, forEach = Ember.ArrayPolyfills.forEach, warn = Ember.warn, watchKey = Ember.watchKey, unwatchKey = Ember.unwatchKey, propertyWillChange = Ember.propertyWillChange, propertyDidChange = Ember.propertyDidChange, FIRST_KEY = /^([^\.\*]+)/;
-        function firstKey(path) {
-          return path.match(FIRST_KEY)[0];
-        }
-        var pendingQueue = [];
-        Ember.flushPendingChains = function () {
-          if (pendingQueue.length === 0) {
-            return;
-          }
-          var queue = pendingQueue;
-          pendingQueue = [];
-          forEach.call(queue, function (q) {
-            q[0].add(q[1]);
-          });
-          warn('Watching an undefined global, Ember expects watched globals to be setup by the time the run loop is flushed, check for typos', pendingQueue.length === 0);
-        };
-        function addChainWatcher(obj, keyName, node) {
-          if (!obj || 'object' !== typeof obj) {
-            return;
-          }
-          var m = metaFor(obj), nodes = m.chainWatchers;
-          if (!m.hasOwnProperty('chainWatchers')) {
-            nodes = m.chainWatchers = {};
-          }
-          if (!nodes[keyName]) {
-            nodes[keyName] = [];
-          }
-          nodes[keyName].push(node);
-          watchKey(obj, keyName);
-        }
-        var removeChainWatcher = Ember.removeChainWatcher = function (obj, keyName, node) {
-            if (!obj || 'object' !== typeof obj) {
-              return;
-            }
-            var m = metaFor(obj, false);
-            if (!m.hasOwnProperty('chainWatchers')) {
-              return;
-            }
-            var nodes = m.chainWatchers;
-            if (nodes[keyName]) {
-              nodes = nodes[keyName];
-              for (var i = 0, l = nodes.length; i < l; i++) {
-                if (nodes[i] === node) {
-                  nodes.splice(i, 1);
-                }
-              }
-            }
-            unwatchKey(obj, keyName);
-          };
-        function isProto(pvalue) {
-          return metaFor(pvalue, false).proto === pvalue;
-        }
-        var ChainNode = Ember._ChainNode = function (parent, key, value) {
-            var obj;
-            this._parent = parent;
-            this._key = key;
-            this._watching = value === undefined;
-            this._value = value;
-            this._paths = {};
-            if (this._watching) {
-              this._object = parent.value();
-              if (this._object) {
-                addChainWatcher(this._object, this._key, this);
-              }
-            }
-            if (this._parent && this._parent._key === '@each') {
-              this.value();
-            }
-          };
-        var ChainNodePrototype = ChainNode.prototype;
-        ChainNodePrototype.value = function () {
-          if (this._value === undefined && this._watching) {
-            var obj = this._parent.value();
-            this._value = obj && !isProto(obj) ? get(obj, this._key) : undefined;
-          }
-          return this._value;
-        };
-        ChainNodePrototype.destroy = function () {
-          if (this._watching) {
-            var obj = this._object;
-            if (obj) {
-              removeChainWatcher(obj, this._key, this);
-            }
-            this._watching = false;
-          }
-        };
-        ChainNodePrototype.copy = function (obj) {
-          var ret = new ChainNode(null, null, obj), paths = this._paths, path;
-          for (path in paths) {
-            if (paths[path] <= 0) {
-              continue;
-            }
-            ret.add(path);
-          }
-          return ret;
-        };
-        ChainNodePrototype.add = function (path) {
-          var obj, tuple, key, src, paths;
-          paths = this._paths;
-          paths[path] = (paths[path] || 0) + 1;
-          obj = this.value();
-          tuple = normalizeTuple(obj, path);
-          if (tuple[0] && tuple[0] === obj) {
-            path = tuple[1];
-            key = firstKey(path);
-            path = path.slice(key.length + 1);
-          } else if (!tuple[0]) {
-            pendingQueue.push([
-              this,
-              path
-            ]);
-            tuple.length = 0;
-            return;
-          } else {
-            src = tuple[0];
-            key = path.slice(0, 0 - (tuple[1].length + 1));
-            path = tuple[1];
-          }
-          tuple.length = 0;
-          this.chain(key, path, src);
-        };
-        ChainNodePrototype.remove = function (path) {
-          var obj, tuple, key, src, paths;
-          paths = this._paths;
-          if (paths[path] > 0) {
-            paths[path]--;
-          }
-          obj = this.value();
-          tuple = normalizeTuple(obj, path);
-          if (tuple[0] === obj) {
-            path = tuple[1];
-            key = firstKey(path);
-            path = path.slice(key.length + 1);
-          } else {
-            src = tuple[0];
-            key = path.slice(0, 0 - (tuple[1].length + 1));
-            path = tuple[1];
-          }
-          tuple.length = 0;
-          this.unchain(key, path);
-        };
-        ChainNodePrototype.count = 0;
-        ChainNodePrototype.chain = function (key, path, src) {
-          var chains = this._chains, node;
-          if (!chains) {
-            chains = this._chains = {};
-          }
-          node = chains[key];
-          if (!node) {
-            node = chains[key] = new ChainNode(this, key, src);
-          }
-          node.count++;
-          if (path && path.length > 0) {
-            key = firstKey(path);
-            path = path.slice(key.length + 1);
-            node.chain(key, path);
-          }
-        };
-        ChainNodePrototype.unchain = function (key, path) {
-          var chains = this._chains, node = chains[key];
-          if (path && path.length > 1) {
-            key = firstKey(path);
-            path = path.slice(key.length + 1);
-            node.unchain(key, path);
-          }
-          node.count--;
-          if (node.count <= 0) {
-            delete chains[node._key];
-            node.destroy();
-          }
-        };
-        ChainNodePrototype.willChange = function () {
-          var chains = this._chains;
-          if (chains) {
-            for (var key in chains) {
-              if (!chains.hasOwnProperty(key)) {
-                continue;
-              }
-              chains[key].willChange();
-            }
-          }
-          if (this._parent) {
-            this._parent.chainWillChange(this, this._key, 1);
-          }
-        };
-        ChainNodePrototype.chainWillChange = function (chain, path, depth) {
-          if (this._key) {
-            path = this._key + '.' + path;
-          }
-          if (this._parent) {
-            this._parent.chainWillChange(this, path, depth + 1);
-          } else {
-            if (depth > 1) {
-              propertyWillChange(this.value(), path);
-            }
-            path = 'this.' + path;
-            if (this._paths[path] > 0) {
-              propertyWillChange(this.value(), path);
-            }
-          }
-        };
-        ChainNodePrototype.chainDidChange = function (chain, path, depth) {
-          if (this._key) {
-            path = this._key + '.' + path;
-          }
-          if (this._parent) {
-            this._parent.chainDidChange(this, path, depth + 1);
-          } else {
-            if (depth > 1) {
-              propertyDidChange(this.value(), path);
-            }
-            path = 'this.' + path;
-            if (this._paths[path] > 0) {
-              propertyDidChange(this.value(), path);
-            }
-          }
-        };
-        ChainNodePrototype.didChange = function (suppressEvent) {
-          if (this._watching) {
-            var obj = this._parent.value();
-            if (obj !== this._object) {
-              removeChainWatcher(this._object, this._key, this);
-              this._object = obj;
-              addChainWatcher(obj, this._key, this);
-            }
-            this._value = undefined;
-            if (this._parent && this._parent._key === '@each')
-              this.value();
-          }
-          var chains = this._chains;
-          if (chains) {
-            for (var key in chains) {
-              if (!chains.hasOwnProperty(key)) {
-                continue;
-              }
-              chains[key].didChange(suppressEvent);
-            }
-          }
-          if (suppressEvent) {
-            return;
-          }
-          if (this._parent) {
-            this._parent.chainDidChange(this, this._key, 1);
-          }
-        };
-        Ember.finishChains = function (obj) {
-          var m = metaFor(obj, false), chains = m.chains;
-          if (chains) {
-            if (chains.value() !== obj) {
-              m.chains = chains = chains.copy(obj);
-            }
-            chains.didChange(true);
-          }
-        };
-      }());
-      (function () {
-        var metaFor = Ember.meta, isArray = Ember.isArray, ChainNode = Ember._ChainNode;
-        function chainsFor(obj) {
-          var m = metaFor(obj), ret = m.chains;
-          if (!ret) {
-            ret = m.chains = new ChainNode(null, null, obj);
-          } else if (ret.value() !== obj) {
-            ret = m.chains = ret.copy(obj);
-          }
-          return ret;
-        }
-        Ember.watchPath = function (obj, keyPath) {
-          if (keyPath === 'length' && isArray(obj)) {
-            return;
-          }
-          var m = metaFor(obj), watching = m.watching;
-          if (!watching[keyPath]) {
-            watching[keyPath] = 1;
-            chainsFor(obj).add(keyPath);
-          } else {
-            watching[keyPath] = (watching[keyPath] || 0) + 1;
-          }
-        };
-        Ember.unwatchPath = function (obj, keyPath) {
-          var m = metaFor(obj), watching = m.watching, desc;
-          if (watching[keyPath] === 1) {
-            watching[keyPath] = 0;
-            chainsFor(obj).remove(keyPath);
-          } else if (watching[keyPath] > 1) {
-            watching[keyPath]--;
-          }
-          return this;
-        };
-      }());
-      (function () {
-        var metaFor = Ember.meta, GUID_KEY = Ember.GUID_KEY, META_KEY = Ember.META_KEY, removeChainWatcher = Ember.removeChainWatcher, watchKey = Ember.watchKey, unwatchKey = Ember.unwatchKey, watchPath = Ember.watchPath, unwatchPath = Ember.unwatchPath, isArray = Ember.isArray, generateGuid = Ember.generateGuid, IS_PATH = /[\.\*]/;
-        function isKeyName(path) {
-          return path === '*' || !IS_PATH.test(path);
-        }
-        Ember.watch = function (obj, keyPath) {
-          if (keyPath === 'length' && isArray(obj)) {
-            return;
-          }
-          if (isKeyName(keyPath)) {
-            watchKey(obj, keyPath);
-          } else {
-            watchPath(obj, keyPath);
-          }
-        };
-        Ember.isWatching = function isWatching(obj, key) {
-          var meta = obj[META_KEY];
-          return (meta && meta.watching[key]) > 0;
-        };
-        Ember.watch.flushPending = Ember.flushPendingChains;
-        Ember.unwatch = function (obj, keyPath) {
-          if (keyPath === 'length' && isArray(obj)) {
-            return this;
-          }
-          if (isKeyName(keyPath)) {
-            unwatchKey(obj, keyPath);
-          } else {
-            unwatchPath(obj, keyPath);
-          }
-        };
-        Ember.rewatch = function (obj) {
-          var m = metaFor(obj, false), chains = m.chains;
-          if (GUID_KEY in obj && !obj.hasOwnProperty(GUID_KEY)) {
-            generateGuid(obj, 'ember');
-          }
-          if (chains && chains.value() !== obj) {
-            m.chains = chains.copy(obj);
-          }
-          return this;
-        };
-        var NODE_STACK = [];
-        Ember.destroy = function (obj) {
-          var meta = obj[META_KEY], node, nodes, key, nodeObject;
-          if (meta) {
-            obj[META_KEY] = null;
-            node = meta.chains;
-            if (node) {
-              NODE_STACK.push(node);
-              while (NODE_STACK.length > 0) {
-                node = NODE_STACK.pop();
-                nodes = node._chains;
-                if (nodes) {
-                  for (key in nodes) {
-                    if (nodes.hasOwnProperty(key)) {
-                      NODE_STACK.push(nodes[key]);
-                    }
-                  }
-                }
-                if (node._watching) {
-                  nodeObject = node._object;
-                  if (nodeObject) {
-                    removeChainWatcher(nodeObject, node._key, node);
-                  }
-                }
-              }
-            }
-          }
-        };
-      }());
-      (function () {
-        Ember.warn("The CP_DEFAULT_CACHEABLE flag has been removed and computed properties are always cached by default. Use `volatile` if you don't want caching.", Ember.ENV.CP_DEFAULT_CACHEABLE !== false);
-        var get = Ember.get, set = Ember.set, metaFor = Ember.meta, a_slice = [].slice, o_create = Ember.create, META_KEY = Ember.META_KEY, watch = Ember.watch, unwatch = Ember.unwatch;
-        function keysForDep(obj, depsMeta, depKey) {
-          var keys = depsMeta[depKey];
-          if (!keys) {
-            keys = depsMeta[depKey] = {};
-          } else if (!depsMeta.hasOwnProperty(depKey)) {
-            keys = depsMeta[depKey] = o_create(keys);
-          }
-          return keys;
-        }
-        function metaForDeps(obj, meta) {
-          return keysForDep(obj, meta, 'deps');
-        }
-        function addDependentKeys(desc, obj, keyName, meta) {
-          var depKeys = desc._dependentKeys, depsMeta, idx, len, depKey, keys;
-          if (!depKeys)
-            return;
-          depsMeta = metaForDeps(obj, meta);
-          for (idx = 0, len = depKeys.length; idx < len; idx++) {
-            depKey = depKeys[idx];
-            keys = keysForDep(obj, depsMeta, depKey);
-            keys[keyName] = (keys[keyName] || 0) + 1;
-            watch(obj, depKey);
-          }
-        }
-        function removeDependentKeys(desc, obj, keyName, meta) {
-          var depKeys = desc._dependentKeys, depsMeta, idx, len, depKey, keys;
-          if (!depKeys)
-            return;
-          depsMeta = metaForDeps(obj, meta);
-          for (idx = 0, len = depKeys.length; idx < len; idx++) {
-            depKey = depKeys[idx];
-            keys = keysForDep(obj, depsMeta, depKey);
-            keys[keyName] = (keys[keyName] || 0) - 1;
-            unwatch(obj, depKey);
-          }
-        }
-        function ComputedProperty(func, opts) {
-          this.func = func;
-          this._cacheable = opts && opts.cacheable !== undefined ? opts.cacheable : true;
-          this._dependentKeys = opts && opts.dependentKeys;
-          this._readOnly = opts && (opts.readOnly !== undefined || !!opts.readOnly);
-        }
-        Ember.ComputedProperty = ComputedProperty;
-        ComputedProperty.prototype = new Ember.Descriptor;
-        var ComputedPropertyPrototype = ComputedProperty.prototype;
-        ComputedPropertyPrototype.cacheable = function (aFlag) {
-          this._cacheable = aFlag !== false;
-          return this;
-        };
-        ComputedPropertyPrototype.volatile = function () {
-          return this.cacheable(false);
-        };
-        ComputedPropertyPrototype.readOnly = function (readOnly) {
-          this._readOnly = readOnly === undefined || !!readOnly;
-          return this;
-        };
-        ComputedPropertyPrototype.property = function () {
-          var args = [];
-          for (var i = 0, l = arguments.length; i < l; i++) {
-            args.push(arguments[i]);
-          }
-          this._dependentKeys = args;
-          return this;
-        };
-        ComputedPropertyPrototype.meta = function (meta) {
-          if (arguments.length === 0) {
-            return this._meta || {};
-          } else {
-            this._meta = meta;
-            return this;
-          }
-        };
-        ComputedPropertyPrototype.willWatch = function (obj, keyName) {
-          var meta = obj[META_KEY];
-          Ember.assert('watch should have setup meta to be writable', meta.source === obj);
-          if (!(keyName in meta.cache)) {
-            addDependentKeys(this, obj, keyName, meta);
-          }
-        };
-        ComputedPropertyPrototype.didUnwatch = function (obj, keyName) {
-          var meta = obj[META_KEY];
-          Ember.assert('unwatch should have setup meta to be writable', meta.source === obj);
-          if (!(keyName in meta.cache)) {
-            removeDependentKeys(this, obj, keyName, meta);
-          }
-        };
-        ComputedPropertyPrototype.didChange = function (obj, keyName) {
-          if (this._cacheable && this._suspended !== obj) {
-            var meta = metaFor(obj);
-            if (keyName in meta.cache) {
-              delete meta.cache[keyName];
-              if (!meta.watching[keyName]) {
-                removeDependentKeys(this, obj, keyName, meta);
-              }
-            }
-          }
-        };
-        ComputedPropertyPrototype.get = function (obj, keyName) {
-          var ret, cache, meta;
-          if (this._cacheable) {
-            meta = metaFor(obj);
-            cache = meta.cache;
-            if (keyName in cache) {
-              return cache[keyName];
-            }
-            ret = cache[keyName] = this.func.call(obj, keyName);
-            if (!meta.watching[keyName]) {
-              addDependentKeys(this, obj, keyName, meta);
-            }
-          } else {
-            ret = this.func.call(obj, keyName);
-          }
-          return ret;
-        };
-        ComputedPropertyPrototype.set = function (obj, keyName, value) {
-          var cacheable = this._cacheable, func = this.func, meta = metaFor(obj, cacheable), watched = meta.watching[keyName], oldSuspended = this._suspended, hadCachedValue = false, cache = meta.cache, cachedValue, ret;
-          if (this._readOnly) {
-            throw new Error('Cannot Set: ' + keyName + ' on: ' + obj.toString());
-          }
-          this._suspended = obj;
-          try {
-            if (cacheable && cache.hasOwnProperty(keyName)) {
-              cachedValue = cache[keyName];
-              hadCachedValue = true;
-            }
-            if (func.wrappedFunction) {
-              func = func.wrappedFunction;
-            }
-            if (func.length === 3) {
-              ret = func.call(obj, keyName, value, cachedValue);
-            } else if (func.length === 2) {
-              ret = func.call(obj, keyName, value);
-            } else {
-              Ember.defineProperty(obj, keyName, null, cachedValue);
-              Ember.set(obj, keyName, value);
-              return;
-            }
-            if (hadCachedValue && cachedValue === ret) {
-              return;
-            }
-            if (watched) {
-              Ember.propertyWillChange(obj, keyName);
-            }
-            if (hadCachedValue) {
-              delete cache[keyName];
-            }
-            if (cacheable) {
-              if (!watched && !hadCachedValue) {
-                addDependentKeys(this, obj, keyName, meta);
-              }
-              cache[keyName] = ret;
-            }
-            if (watched) {
-              Ember.propertyDidChange(obj, keyName);
-            }
-          } finally {
-            this._suspended = oldSuspended;
-          }
-          return ret;
-        };
-        ComputedPropertyPrototype.setup = function (obj, keyName) {
-          var meta = obj[META_KEY];
-          if (meta && meta.watching[keyName]) {
-            addDependentKeys(this, obj, keyName, metaFor(obj));
-          }
-        };
-        ComputedPropertyPrototype.teardown = function (obj, keyName) {
-          var meta = metaFor(obj);
-          if (meta.watching[keyName] || keyName in meta.cache) {
-            removeDependentKeys(this, obj, keyName, meta);
-          }
-          if (this._cacheable) {
-            delete meta.cache[keyName];
-          }
-          return null;
-        };
-        Ember.computed = function (func) {
-          var args;
-          if (arguments.length > 1) {
-            args = a_slice.call(arguments, 0, -1);
-            func = a_slice.call(arguments, -1)[0];
-          }
-          if (typeof func !== 'function') {
-            throw new Error('Computed Property declared without a property function');
-          }
-          var cp = new ComputedProperty(func);
-          if (args) {
-            cp.property.apply(cp, args);
-          }
-          return cp;
-        };
-        Ember.cacheFor = function cacheFor(obj, key) {
-          var cache = metaFor(obj, false).cache;
-          if (cache && key in cache) {
-            return cache[key];
-          }
-        };
-        function getProperties(self, propertyNames) {
-          var ret = {};
-          for (var i = 0; i < propertyNames.length; i++) {
-            ret[propertyNames[i]] = get(self, propertyNames[i]);
-          }
-          return ret;
-        }
-        function registerComputed(name, macro) {
-          Ember.computed[name] = function (dependentKey) {
-            var args = a_slice.call(arguments);
-            return Ember.computed(dependentKey, function () {
-              return macro.apply(this, args);
-            });
-          };
-        }
-        function registerComputedWithProperties(name, macro) {
-          Ember.computed[name] = function () {
-            var properties = a_slice.call(arguments);
-            var computed = Ember.computed(function () {
-                return macro.apply(this, [getProperties(this, properties)]);
-              });
-            return computed.property.apply(computed, properties);
-          };
-        }
-        registerComputed('empty', function (dependentKey) {
-          return Ember.isEmpty(get(this, dependentKey));
-        });
-        registerComputed('notEmpty', function (dependentKey) {
-          return !Ember.isEmpty(get(this, dependentKey));
-        });
-        registerComputed('none', function (dependentKey) {
-          return Ember.isNone(get(this, dependentKey));
-        });
-        registerComputed('not', function (dependentKey) {
-          return !get(this, dependentKey);
-        });
-        registerComputed('bool', function (dependentKey) {
-          return !!get(this, dependentKey);
-        });
-        registerComputed('match', function (dependentKey, regexp) {
-          var value = get(this, dependentKey);
-          return typeof value === 'string' ? !!value.match(regexp) : false;
-        });
-        registerComputed('equal', function (dependentKey, value) {
-          return get(this, dependentKey) === value;
-        });
-        registerComputed('gt', function (dependentKey, value) {
-          return get(this, dependentKey) > value;
-        });
-        registerComputed('gte', function (dependentKey, value) {
-          return get(this, dependentKey) >= value;
-        });
-        registerComputed('lt', function (dependentKey, value) {
-          return get(this, dependentKey) < value;
-        });
-        registerComputed('lte', function (dependentKey, value) {
-          return get(this, dependentKey) <= value;
-        });
-        registerComputedWithProperties('and', function (properties) {
-          for (var key in properties) {
-            if (properties.hasOwnProperty(key) && !properties[key]) {
-              return false;
-            }
-          }
-          return true;
-        });
-        registerComputedWithProperties('or', function (properties) {
-          for (var key in properties) {
-            if (properties.hasOwnProperty(key) && properties[key]) {
-              return true;
-            }
-          }
-          return false;
-        });
-        registerComputedWithProperties('any', function (properties) {
-          for (var key in properties) {
-            if (properties.hasOwnProperty(key) && properties[key]) {
-              return properties[key];
-            }
-          }
-          return null;
-        });
-        registerComputedWithProperties('map', function (properties) {
-          var res = [];
-          for (var key in properties) {
-            if (properties.hasOwnProperty(key)) {
-              if (Ember.isNone(properties[key])) {
-                res.push(null);
-              } else {
-                res.push(properties[key]);
-              }
-            }
-          }
-          return res;
-        });
-        Ember.computed.alias = function (dependentKey) {
-          return Ember.computed(dependentKey, function (key, value) {
-            if (arguments.length > 1) {
-              set(this, dependentKey, value);
-              return value;
-            } else {
-              return get(this, dependentKey);
-            }
-          });
-        };
-        Ember.computed.defaultTo = function (defaultPath) {
-          return Ember.computed(function (key, newValue, cachedValue) {
-            var result;
-            if (arguments.length === 1) {
-              return cachedValue != null ? cachedValue : get(this, defaultPath);
-            }
-            return newValue != null ? newValue : get(this, defaultPath);
-          });
-        };
-      }());
-      (function () {
-        var AFTER_OBSERVERS = ':change';
-        var BEFORE_OBSERVERS = ':before';
-        var guidFor = Ember.guidFor;
-        function changeEvent(keyName) {
-          return keyName + AFTER_OBSERVERS;
-        }
-        function beforeEvent(keyName) {
-          return keyName + BEFORE_OBSERVERS;
-        }
-        Ember.addObserver = function (obj, path, target, method) {
-          Ember.addListener(obj, changeEvent(path), target, method);
-          Ember.watch(obj, path);
-          return this;
-        };
-        Ember.observersFor = function (obj, path) {
-          return Ember.listenersFor(obj, changeEvent(path));
-        };
-        Ember.removeObserver = function (obj, path, target, method) {
-          Ember.unwatch(obj, path);
-          Ember.removeListener(obj, changeEvent(path), target, method);
-          return this;
-        };
-        Ember.addBeforeObserver = function (obj, path, target, method) {
-          Ember.addListener(obj, beforeEvent(path), target, method);
-          Ember.watch(obj, path);
-          return this;
-        };
-        Ember._suspendBeforeObserver = function (obj, path, target, method, callback) {
-          return Ember._suspendListener(obj, beforeEvent(path), target, method, callback);
-        };
-        Ember._suspendObserver = function (obj, path, target, method, callback) {
-          return Ember._suspendListener(obj, changeEvent(path), target, method, callback);
-        };
-        var map = Ember.ArrayPolyfills.map;
-        Ember._suspendBeforeObservers = function (obj, paths, target, method, callback) {
-          var events = map.call(paths, beforeEvent);
-          return Ember._suspendListeners(obj, events, target, method, callback);
-        };
-        Ember._suspendObservers = function (obj, paths, target, method, callback) {
-          var events = map.call(paths, changeEvent);
-          return Ember._suspendListeners(obj, events, target, method, callback);
-        };
-        Ember.beforeObserversFor = function (obj, path) {
-          return Ember.listenersFor(obj, beforeEvent(path));
-        };
-        Ember.removeBeforeObserver = function (obj, path, target, method) {
-          Ember.unwatch(obj, path);
-          Ember.removeListener(obj, beforeEvent(path), target, method);
-          return this;
-        };
-      }());
-      (function () {
-        var slice = [].slice, forEach = Ember.ArrayPolyfills.forEach;
-        function invoke(target, method, args, ignore) {
-          if (method === undefined) {
-            method = target;
-            target = undefined;
-          }
-          if ('string' === typeof method) {
-            method = target[method];
-          }
-          if (args && ignore > 0) {
-            args = args.length > ignore ? slice.call(args, ignore) : null;
-          }
-          return Ember.handleErrors(function () {
-            return method.apply(target || this, args || []);
-          }, this);
-        }
-        var timerMark;
-        var RunLoop = function (prev) {
-          this._prev = prev || null;
-          this.onceTimers = {};
-        };
-        RunLoop.prototype = {
-          end: function () {
-            this.flush();
-          },
-          prev: function () {
-            return this._prev;
-          },
-          schedule: function (queueName, target, method) {
-            var queues = this._queues, queue;
-            if (!queues) {
-              queues = this._queues = {};
-            }
-            queue = queues[queueName];
-            if (!queue) {
-              queue = queues[queueName] = [];
-            }
-            var args = arguments.length > 3 ? slice.call(arguments, 3) : null;
-            queue.push({
-              target: target,
-              method: method,
-              args: args
-            });
-            return this;
-          },
-          flush: function (queueName) {
-            var queueNames, idx, len, queue, log;
-            if (!this._queues) {
-              return this;
-            }
-            function iter(item) {
-              invoke(item.target, item.method, item.args);
-            }
-            function tryable() {
-              forEach.call(queue, iter);
-            }
-            Ember.watch.flushPending();
-            if (queueName) {
-              while (this._queues && (queue = this._queues[queueName])) {
-                this._queues[queueName] = null;
-                if (queueName === 'sync') {
-                  log = Ember.LOG_BINDINGS;
-                  if (log) {
-                    Ember.Logger.log('Begin: Flush Sync Queue');
-                  }
-                  Ember.beginPropertyChanges();
-                  Ember.tryFinally(tryable, Ember.endPropertyChanges);
-                  if (log) {
-                    Ember.Logger.log('End: Flush Sync Queue');
-                  }
-                } else {
-                  forEach.call(queue, iter);
-                }
-              }
-            } else {
-              queueNames = Ember.run.queues;
-              len = queueNames.length;
-              idx = 0;
-              outerloop:
-                while (idx < len) {
-                  queueName = queueNames[idx];
-                  queue = this._queues && this._queues[queueName];
-                  delete this._queues[queueName];
-                  if (queue) {
-                    if (queueName === 'sync') {
-                      log = Ember.LOG_BINDINGS;
-                      if (log) {
-                        Ember.Logger.log('Begin: Flush Sync Queue');
-                      }
-                      Ember.beginPropertyChanges();
-                      Ember.tryFinally(tryable, Ember.endPropertyChanges);
-                      if (log) {
-                        Ember.Logger.log('End: Flush Sync Queue');
-                      }
-                    } else {
-                      forEach.call(queue, iter);
-                    }
-                  }
-                  for (var i = 0; i <= idx; i++) {
-                    if (this._queues && this._queues[queueNames[i]]) {
-                      idx = i;
-                      continue outerloop;
-                    }
-                  }
-                  idx++;
-                }
-            }
-            timerMark = null;
-            return this;
-          }
-        };
-        Ember.RunLoop = RunLoop;
-        Ember.run = function (target, method) {
-          var args = arguments;
-          run.begin();
-          function tryable() {
-            if (target || method) {
-              return invoke(target, method, args, 2);
-            }
-          }
-          return Ember.tryFinally(tryable, run.end);
-        };
-        var run = Ember.run;
-        Ember.run.begin = function () {
-          run.currentRunLoop = new RunLoop(run.currentRunLoop);
-        };
-        Ember.run.end = function () {
-          Ember.assert('must have a current run loop', run.currentRunLoop);
-          function tryable() {
-            run.currentRunLoop.end();
-          }
-          function finalizer() {
-            run.currentRunLoop = run.currentRunLoop.prev();
-          }
-          Ember.tryFinally(tryable, finalizer);
-        };
-        Ember.run.queues = [
-          'sync',
-          'actions',
-          'destroy'
-        ];
-        Ember.run.schedule = function (queue, target, method) {
-          var loop = run.autorun();
-          loop.schedule.apply(loop, arguments);
-        };
-        var scheduledAutorun;
-        function autorun() {
-          scheduledAutorun = null;
-          if (run.currentRunLoop) {
-            run.end();
-          }
-        }
-        Ember.run.hasScheduledTimers = function () {
-          return !!(scheduledAutorun || scheduledLater);
-        };
-        Ember.run.cancelTimers = function () {
-          if (scheduledAutorun) {
-            clearTimeout(scheduledAutorun);
-            scheduledAutorun = null;
-          }
-          if (scheduledLater) {
-            clearTimeout(scheduledLater);
-            scheduledLater = null;
-          }
-          timers = {};
-        };
-        Ember.run.autorun = function () {
-          if (!run.currentRunLoop) {
-            Ember.assert("You have turned on testing mode, which disabled the run-loop's autorun. You will need to wrap any code with asynchronous side-effects in an Ember.run", !Ember.testing);
-            run.begin();
-            if (!scheduledAutorun) {
-              scheduledAutorun = setTimeout(autorun, 1);
-            }
-          }
-          return run.currentRunLoop;
-        };
-        Ember.run.sync = function () {
-          run.autorun();
-          run.currentRunLoop.flush('sync');
-        };
-        var timers = {};
-        var scheduledLater, scheduledLaterExpires;
-        function invokeLaterTimers() {
-          scheduledLater = null;
-          run(function () {
-            var now = +new Date, earliest = -1;
-            for (var key in timers) {
-              if (!timers.hasOwnProperty(key)) {
-                continue;
-              }
-              var timer = timers[key];
-              if (timer && timer.expires) {
-                if (now >= timer.expires) {
-                  delete timers[key];
-                  invoke(timer.target, timer.method, timer.args, 2);
-                } else {
-                  if (earliest < 0 || timer.expires < earliest) {
-                    earliest = timer.expires;
-                  }
-                }
-              }
-            }
-            if (earliest > 0) {
-              scheduledLater = setTimeout(invokeLaterTimers, earliest - now);
-              scheduledLaterExpires = earliest;
-            }
-          });
-        }
-        Ember.run.later = function (target, method) {
-          var args, expires, timer, guid, wait;
-          if (arguments.length === 2 && 'function' === typeof target) {
-            wait = method;
-            method = target;
-            target = undefined;
-            args = [
-              target,
-              method
-            ];
-          } else {
-            args = slice.call(arguments);
-            wait = args.pop();
-          }
-          expires = +new Date + wait;
-          timer = {
-            target: target,
-            method: method,
-            expires: expires,
-            args: args
-          };
-          guid = Ember.guidFor(timer);
-          timers[guid] = timer;
-          if (scheduledLater && expires < scheduledLaterExpires) {
-            clearTimeout(scheduledLater);
-            scheduledLater = null;
-          }
-          if (!scheduledLater) {
-            scheduledLater = setTimeout(invokeLaterTimers, wait);
-            scheduledLaterExpires = expires;
-          }
-          return guid;
-        };
-        function invokeOnceTimer(guid, onceTimers) {
-          if (onceTimers[this.tguid]) {
-            delete onceTimers[this.tguid][this.mguid];
-          }
-          if (timers[guid]) {
-            invoke(this.target, this.method, this.args);
-          }
-          delete timers[guid];
-        }
-        function scheduleOnce(queue, target, method, args) {
-          var tguid = Ember.guidFor(target), mguid = Ember.guidFor(method), onceTimers = run.autorun().onceTimers, guid = onceTimers[tguid] && onceTimers[tguid][mguid], timer;
-          if (guid && timers[guid]) {
-            timers[guid].args = args;
-          } else {
-            timer = {
-              target: target,
-              method: method,
-              args: args,
-              tguid: tguid,
-              mguid: mguid
-            };
-            guid = Ember.guidFor(timer);
-            timers[guid] = timer;
-            if (!onceTimers[tguid]) {
-              onceTimers[tguid] = {};
-            }
-            onceTimers[tguid][mguid] = guid;
-            run.schedule(queue, timer, invokeOnceTimer, guid, onceTimers);
-          }
-          return guid;
-        }
-        Ember.run.once = function (target, method) {
-          return scheduleOnce('actions', target, method, slice.call(arguments, 2));
-        };
-        Ember.run.scheduleOnce = function (queue, target, method, args) {
-          return scheduleOnce(queue, target, method, slice.call(arguments, 3));
-        };
-        Ember.run.next = function () {
-          var args = slice.call(arguments);
-          args.push(1);
-          return run.later.apply(this, args);
-        };
-        Ember.run.cancel = function (timer) {
-          delete timers[timer];
-        };
-      }());
-      (function () {
-        Ember.LOG_BINDINGS = false || !!Ember.ENV.LOG_BINDINGS;
-        var get = Ember.get, set = Ember.set, guidFor = Ember.guidFor, IS_GLOBAL = /^([A-Z$]|([0-9][A-Z$]))/;
-        var isGlobalPath = Ember.isGlobalPath = function (path) {
-            return IS_GLOBAL.test(path);
-          };
-        function getWithGlobals(obj, path) {
-          return get(isGlobalPath(path) ? Ember.lookup : obj, path);
-        }
-        var Binding = function (toPath, fromPath) {
-          this._direction = 'fwd';
-          this._from = fromPath;
-          this._to = toPath;
-          this._directionMap = Ember.Map.create();
-        };
-        Binding.prototype = {
-          copy: function () {
-            var copy = new Binding(this._to, this._from);
-            if (this._oneWay) {
-              copy._oneWay = true;
-            }
-            return copy;
-          },
-          from: function (path) {
-            this._from = path;
-            return this;
-          },
-          to: function (path) {
-            this._to = path;
-            return this;
-          },
-          oneWay: function () {
-            this._oneWay = true;
-            return this;
-          },
-          toString: function () {
-            var oneWay = this._oneWay ? '[oneWay]' : '';
-            return 'Ember.Binding<' + guidFor(this) + '>(' + this._from + ' -> ' + this._to + ')' + oneWay;
-          },
-          connect: function (obj) {
-            Ember.assert('Must pass a valid object to Ember.Binding.connect()', !!obj);
-            var fromPath = this._from, toPath = this._to;
-            Ember.trySet(obj, toPath, getWithGlobals(obj, fromPath));
-            Ember.addObserver(obj, fromPath, this, this.fromDidChange);
-            if (!this._oneWay) {
-              Ember.addObserver(obj, toPath, this, this.toDidChange);
-            }
-            this._readyToSync = true;
-            return this;
-          },
-          disconnect: function (obj) {
-            Ember.assert('Must pass a valid object to Ember.Binding.disconnect()', !!obj);
-            var twoWay = !this._oneWay;
-            Ember.removeObserver(obj, this._from, this, this.fromDidChange);
-            if (twoWay) {
-              Ember.removeObserver(obj, this._to, this, this.toDidChange);
-            }
-            this._readyToSync = false;
-            return this;
-          },
-          fromDidChange: function (target) {
-            this._scheduleSync(target, 'fwd');
-          },
-          toDidChange: function (target) {
-            this._scheduleSync(target, 'back');
-          },
-          _scheduleSync: function (obj, dir) {
-            var directionMap = this._directionMap;
-            var existingDir = directionMap.get(obj);
-            if (!existingDir) {
-              Ember.run.schedule('sync', this, this._sync, obj);
-              directionMap.set(obj, dir);
-            }
-            if (existingDir === 'back' && dir === 'fwd') {
-              directionMap.set(obj, 'fwd');
-            }
-          },
-          _sync: function (obj) {
-            var log = Ember.LOG_BINDINGS;
-            if (obj.isDestroyed || !this._readyToSync) {
-              return;
-            }
-            var directionMap = this._directionMap;
-            var direction = directionMap.get(obj);
-            var fromPath = this._from, toPath = this._to;
-            directionMap.remove(obj);
-            if (direction === 'fwd') {
-              var fromValue = getWithGlobals(obj, this._from);
-              if (log) {
-                Ember.Logger.log(' ', this.toString(), '->', fromValue, obj);
-              }
-              if (this._oneWay) {
-                Ember.trySet(obj, toPath, fromValue);
-              } else {
-                Ember._suspendObserver(obj, toPath, this, this.toDidChange, function () {
-                  Ember.trySet(obj, toPath, fromValue);
-                });
-              }
-            } else if (direction === 'back') {
-              var toValue = get(obj, this._to);
-              if (log) {
-                Ember.Logger.log(' ', this.toString(), '<-', toValue, obj);
-              }
-              Ember._suspendObserver(obj, fromPath, this, this.fromDidChange, function () {
-                Ember.trySet(Ember.isGlobalPath(fromPath) ? Ember.lookup : obj, fromPath, toValue);
-              });
-            }
-          }
-        };
-        function mixinProperties(to, from) {
-          for (var key in from) {
-            if (from.hasOwnProperty(key)) {
-              to[key] = from[key];
-            }
-          }
-        }
-        mixinProperties(Binding, {
-          from: function () {
-            var C = this, binding = new C;
-            return binding.from.apply(binding, arguments);
-          },
-          to: function () {
-            var C = this, binding = new C;
-            return binding.to.apply(binding, arguments);
-          },
-          oneWay: function (from, flag) {
-            var C = this, binding = new C(null, from);
-            return binding.oneWay(flag);
-          }
-        });
-        Ember.Binding = Binding;
-        Ember.bind = function (obj, to, from) {
-          return new Ember.Binding(to, from).connect(obj);
-        };
-        Ember.oneWay = function (obj, to, from) {
-          return new Ember.Binding(to, from).oneWay().connect(obj);
-        };
-      }());
-      (function () {
-        var Mixin, REQUIRED, Alias, a_map = Ember.ArrayPolyfills.map, a_indexOf = Ember.ArrayPolyfills.indexOf, a_forEach = Ember.ArrayPolyfills.forEach, a_slice = [].slice, o_create = Ember.create, defineProperty = Ember.defineProperty, guidFor = Ember.guidFor;
-        function mixinsMeta(obj) {
-          var m = Ember.meta(obj, true), ret = m.mixins;
-          if (!ret) {
-            ret = m.mixins = {};
-          } else if (!m.hasOwnProperty('mixins')) {
-            ret = m.mixins = o_create(ret);
-          }
-          return ret;
-        }
-        function initMixin(mixin, args) {
-          if (args && args.length > 0) {
-            mixin.mixins = a_map.call(args, function (x) {
-              if (x instanceof Mixin) {
-                return x;
-              }
-              var mixin = new Mixin;
-              mixin.properties = x;
-              return mixin;
-            });
-          }
-          return mixin;
-        }
-        function isMethod(obj) {
-          return 'function' === typeof obj && obj.isMethod !== false && obj !== Boolean && obj !== Object && obj !== Number && obj !== Array && obj !== Date && obj !== String;
-        }
-        var CONTINUE = {};
-        function mixinProperties(mixinsMeta, mixin) {
-          var guid;
-          if (mixin instanceof Mixin) {
-            guid = guidFor(mixin);
-            if (mixinsMeta[guid]) {
-              return CONTINUE;
-            }
-            mixinsMeta[guid] = mixin;
-            return mixin.properties;
-          } else {
-            return mixin;
-          }
-        }
-        function concatenatedProperties(props, values, base) {
-          var concats;
-          concats = values.concatenatedProperties || base.concatenatedProperties;
-          if (props.concatenatedProperties) {
-            concats = concats ? concats.concat(props.concatenatedProperties) : props.concatenatedProperties;
-          }
-          return concats;
-        }
-        function giveDescriptorSuper(meta, key, property, values, descs) {
-          var superProperty;
-          if (values[key] === undefined) {
-            superProperty = descs[key];
-          }
-          superProperty = superProperty || meta.descs[key];
-          if (!superProperty || !(superProperty instanceof Ember.ComputedProperty)) {
-            return property;
-          }
-          property = o_create(property);
-          property.func = Ember.wrap(property.func, superProperty.func);
-          return property;
-        }
-        function giveMethodSuper(obj, key, method, values, descs) {
-          var superMethod;
-          if (descs[key] === undefined) {
-            superMethod = values[key];
-          }
-          superMethod = superMethod || obj[key];
-          if ('function' !== typeof superMethod) {
-            return method;
-          }
-          return Ember.wrap(method, superMethod);
-        }
-        function applyConcatenatedProperties(obj, key, value, values) {
-          var baseValue = values[key] || obj[key];
-          if (baseValue) {
-            if ('function' === typeof baseValue.concat) {
-              return baseValue.concat(value);
-            } else {
-              return Ember.makeArray(baseValue).concat(value);
-            }
-          } else {
-            return Ember.makeArray(value);
-          }
-        }
-        function addNormalizedProperty(base, key, value, meta, descs, values, concats) {
-          if (value instanceof Ember.Descriptor) {
-            if (value === REQUIRED && descs[key]) {
-              return CONTINUE;
-            }
-            if (value.func) {
-              value = giveDescriptorSuper(meta, key, value, values, descs);
-            }
-            descs[key] = value;
-            values[key] = undefined;
-          } else {
-            if (isMethod(value)) {
-              value = giveMethodSuper(base, key, value, values, descs);
-            } else if (concats && a_indexOf.call(concats, key) >= 0 || key === 'concatenatedProperties') {
-              value = applyConcatenatedProperties(base, key, value, values);
-            }
-            descs[key] = undefined;
-            values[key] = value;
-          }
-        }
-        function mergeMixins(mixins, m, descs, values, base, keys) {
-          var mixin, props, key, concats, meta;
-          function removeKeys(keyName) {
-            delete descs[keyName];
-            delete values[keyName];
-          }
-          for (var i = 0, l = mixins.length; i < l; i++) {
-            mixin = mixins[i];
-            Ember.assert('Expected hash or Mixin instance, got ' + Object.prototype.toString.call(mixin), typeof mixin === 'object' && mixin !== null && Object.prototype.toString.call(mixin) !== '[object Array]');
-            props = mixinProperties(m, mixin);
-            if (props === CONTINUE) {
-              continue;
-            }
-            if (props) {
-              meta = Ember.meta(base);
-              concats = concatenatedProperties(props, values, base);
-              for (key in props) {
-                if (!props.hasOwnProperty(key)) {
-                  continue;
-                }
-                keys.push(key);
-                addNormalizedProperty(base, key, props[key], meta, descs, values, concats);
-              }
-              if (props.hasOwnProperty('toString')) {
-                base.toString = props.toString;
-              }
-            } else if (mixin.mixins) {
-              mergeMixins(mixin.mixins, m, descs, values, base, keys);
-              if (mixin._without) {
-                a_forEach.call(mixin._without, removeKeys);
-              }
-            }
-          }
-        }
-        function writableReq(obj) {
-          var m = Ember.meta(obj), req = m.required;
-          if (!req || !m.hasOwnProperty('required')) {
-            req = m.required = req ? o_create(req) : {};
-          }
-          return req;
-        }
-        var IS_BINDING = Ember.IS_BINDING = /^.+Binding$/;
-        function detectBinding(obj, key, value, m) {
-          if (IS_BINDING.test(key)) {
-            var bindings = m.bindings;
-            if (!bindings) {
-              bindings = m.bindings = {};
-            } else if (!m.hasOwnProperty('bindings')) {
-              bindings = m.bindings = o_create(m.bindings);
-            }
-            bindings[key] = value;
-          }
-        }
-        function connectBindings(obj, m) {
-          var bindings = m.bindings, key, binding, to;
-          if (bindings) {
-            for (key in bindings) {
-              binding = bindings[key];
-              if (binding) {
-                to = key.slice(0, -7);
-                if (binding instanceof Ember.Binding) {
-                  binding = binding.copy();
-                  binding.to(to);
-                } else {
-                  binding = new Ember.Binding(to, binding);
-                }
-                binding.connect(obj);
-                obj[key] = binding;
-              }
-            }
-            m.bindings = {};
-          }
-        }
-        function finishPartial(obj, m) {
-          connectBindings(obj, m || Ember.meta(obj));
-          return obj;
-        }
-        function followAlias(obj, desc, m, descs, values) {
-          var altKey = desc.methodName, value;
-          if (descs[altKey] || values[altKey]) {
-            value = values[altKey];
-            desc = descs[altKey];
-          } else if (m.descs[altKey]) {
-            desc = m.descs[altKey];
-            value = undefined;
-          } else {
-            desc = undefined;
-            value = obj[altKey];
-          }
-          return {
-            desc: desc,
-            value: value
-          };
-        }
-        function updateObservers(obj, key, observer, observerKey, method) {
-          if ('function' !== typeof observer) {
-            return;
-          }
-          var paths = observer[observerKey];
-          if (paths) {
-            for (var i = 0, l = paths.length; i < l; i++) {
-              Ember[method](obj, paths[i], null, key);
-            }
-          }
-        }
-        function replaceObservers(obj, key, observer) {
-          var prevObserver = obj[key];
-          updateObservers(obj, key, prevObserver, '__ember_observesBefore__', 'removeBeforeObserver');
-          updateObservers(obj, key, prevObserver, '__ember_observes__', 'removeObserver');
-          updateObservers(obj, key, observer, '__ember_observesBefore__', 'addBeforeObserver');
-          updateObservers(obj, key, observer, '__ember_observes__', 'addObserver');
-        }
-        function applyMixin(obj, mixins, partial) {
-          var descs = {}, values = {}, m = Ember.meta(obj), key, value, desc, keys = [];
-          mergeMixins(mixins, mixinsMeta(obj), descs, values, obj, keys);
-          for (var i = 0, l = keys.length; i < l; i++) {
-            key = keys[i];
-            if (key === 'constructor' || !values.hasOwnProperty(key)) {
-              continue;
-            }
-            desc = descs[key];
-            value = values[key];
-            if (desc === REQUIRED) {
-              continue;
-            }
-            while (desc && desc instanceof Alias) {
-              var followed = followAlias(obj, desc, m, descs, values);
-              desc = followed.desc;
-              value = followed.value;
-            }
-            if (desc === undefined && value === undefined) {
-              continue;
-            }
-            replaceObservers(obj, key, value);
-            detectBinding(obj, key, value, m);
-            defineProperty(obj, key, desc, value, m);
-          }
-          if (!partial) {
-            finishPartial(obj, m);
-          }
-          return obj;
-        }
-        Ember.mixin = function (obj) {
-          var args = a_slice.call(arguments, 1);
-          applyMixin(obj, args, false);
-          return obj;
-        };
-        Ember.Mixin = function () {
-          return initMixin(this, arguments);
-        };
-        Mixin = Ember.Mixin;
-        Mixin.prototype = {
-          properties: null,
-          mixins: null,
-          ownerConstructor: null
-        };
-        Mixin._apply = applyMixin;
-        Mixin.applyPartial = function (obj) {
-          var args = a_slice.call(arguments, 1);
-          return applyMixin(obj, args, true);
-        };
-        Mixin.finishPartial = finishPartial;
-        Ember.anyUnprocessedMixins = false;
-        Mixin.create = function () {
-          Ember.anyUnprocessedMixins = true;
-          var M = this;
-          return initMixin(new M, arguments);
-        };
-        var MixinPrototype = Mixin.prototype;
-        MixinPrototype.reopen = function () {
-          var mixin, tmp;
-          if (this.properties) {
-            mixin = Mixin.create();
-            mixin.properties = this.properties;
-            delete this.properties;
-            this.mixins = [mixin];
-          } else if (!this.mixins) {
-            this.mixins = [];
-          }
-          var len = arguments.length, mixins = this.mixins, idx;
-          for (idx = 0; idx < len; idx++) {
-            mixin = arguments[idx];
-            Ember.assert('Expected hash or Mixin instance, got ' + Object.prototype.toString.call(mixin), typeof mixin === 'object' && mixin !== null && Object.prototype.toString.call(mixin) !== '[object Array]');
-            if (mixin instanceof Mixin) {
-              mixins.push(mixin);
-            } else {
-              tmp = Mixin.create();
-              tmp.properties = mixin;
-              mixins.push(tmp);
-            }
-          }
-          return this;
-        };
-        MixinPrototype.apply = function (obj) {
-          return applyMixin(obj, [this], false);
-        };
-        MixinPrototype.applyPartial = function (obj) {
-          return applyMixin(obj, [this], true);
-        };
-        function _detect(curMixin, targetMixin, seen) {
-          var guid = guidFor(curMixin);
-          if (seen[guid]) {
-            return false;
-          }
-          seen[guid] = true;
-          if (curMixin === targetMixin) {
-            return true;
-          }
-          var mixins = curMixin.mixins, loc = mixins ? mixins.length : 0;
-          while (--loc >= 0) {
-            if (_detect(mixins[loc], targetMixin, seen)) {
-              return true;
-            }
-          }
-          return false;
-        }
-        MixinPrototype.detect = function (obj) {
-          if (!obj) {
-            return false;
-          }
-          if (obj instanceof Mixin) {
-            return _detect(obj, this, {});
-          }
-          var mixins = Ember.meta(obj, false).mixins;
-          if (mixins) {
-            return !!mixins[guidFor(this)];
-          }
-          return false;
-        };
-        MixinPrototype.without = function () {
-          var ret = new Mixin(this);
-          ret._without = a_slice.call(arguments);
-          return ret;
-        };
-        function _keys(ret, mixin, seen) {
-          if (seen[guidFor(mixin)]) {
-            return;
-          }
-          seen[guidFor(mixin)] = true;
-          if (mixin.properties) {
-            var props = mixin.properties;
-            for (var key in props) {
-              if (props.hasOwnProperty(key)) {
-                ret[key] = true;
-              }
-            }
-          } else if (mixin.mixins) {
-            a_forEach.call(mixin.mixins, function (x) {
-              _keys(ret, x, seen);
-            });
-          }
-        }
-        MixinPrototype.keys = function () {
-          var keys = {}, seen = {}, ret = [];
-          _keys(keys, this, seen);
-          for (var key in keys) {
-            if (keys.hasOwnProperty(key)) {
-              ret.push(key);
-            }
-          }
-          return ret;
-        };
-        Mixin.mixins = function (obj) {
-          var mixins = Ember.meta(obj, false).mixins, ret = [];
-          if (!mixins) {
-            return ret;
-          }
-          for (var key in mixins) {
-            var mixin = mixins[key];
-            if (!mixin.properties) {
-              ret.push(mixin);
-            }
-          }
-          return ret;
-        };
-        REQUIRED = new Ember.Descriptor;
-        REQUIRED.toString = function () {
-          return '(Required Property)';
-        };
-        Ember.required = function () {
-          return REQUIRED;
-        };
-        Alias = function (methodName) {
-          this.methodName = methodName;
-        };
-        Alias.prototype = new Ember.Descriptor;
-        Ember.alias = function (methodName) {
-          return new Alias(methodName);
-        };
-        Ember.deprecateFunc('Ember.alias is deprecated. Please use Ember.aliasMethod or Ember.computed.alias instead.', Ember.alias);
-        Ember.aliasMethod = function (methodName) {
-          return new Alias(methodName);
-        };
-        Ember.observer = function (func) {
-          var paths = a_slice.call(arguments, 1);
-          func.__ember_observes__ = paths;
-          return func;
-        };
-        Ember.immediateObserver = function () {
-          for (var i = 0, l = arguments.length; i < l; i++) {
-            var arg = arguments[i];
-            Ember.assert('Immediate observers must observe internal properties only, not properties on other objects.', typeof arg !== 'string' || arg.indexOf('.') === -1);
-          }
-          return Ember.observer.apply(this, arguments);
-        };
-        Ember.beforeObserver = function (func) {
-          var paths = a_slice.call(arguments, 1);
-          func.__ember_observesBefore__ = paths;
-          return func;
-        };
-      }());
-      (function () {
-      }());
-      (function () {
-        define('rsvp', [], function () {
-          'use strict';
-          var browserGlobal = typeof window !== 'undefined' ? window : {};
-          var MutationObserver = browserGlobal.MutationObserver || browserGlobal.WebKitMutationObserver;
-          var RSVP, async;
-          if (typeof process !== 'undefined' && {}.toString.call(process) === '[object process]') {
-            async = function (callback, binding) {
-              process.nextTick(function () {
-                callback.call(binding);
-              });
-            };
-          } else if (MutationObserver) {
-            var queue = [];
-            var observer = new MutationObserver(function () {
-                var toProcess = queue.slice();
-                queue = [];
-                toProcess.forEach(function (tuple) {
-                  var callback = tuple[0], binding = tuple[1];
-                  callback.call(binding);
-                });
-              });
-            var element = document.createElement('div');
-            observer.observe(element, { attributes: true });
-            window.addEventListener('unload', function () {
-              observer.disconnect();
-              observer = null;
-            });
-            async = function (callback, binding) {
-              queue.push([
-                callback,
-                binding
-              ]);
-              element.setAttribute('drainQueue', 'drainQueue');
-            };
-          } else {
-            async = function (callback, binding) {
-              setTimeout(function () {
-                callback.call(binding);
-              }, 1);
-            };
-          }
-          var Event = function (type, options) {
-            this.type = type;
-            for (var option in options) {
-              if (!options.hasOwnProperty(option)) {
-                continue;
-              }
-              this[option] = options[option];
-            }
-          };
-          var indexOf = function (callbacks, callback) {
-            for (var i = 0, l = callbacks.length; i < l; i++) {
-              if (callbacks[i][0] === callback) {
-                return i;
-              }
-            }
-            return -1;
-          };
-          var callbacksFor = function (object) {
-            var callbacks = object._promiseCallbacks;
-            if (!callbacks) {
-              callbacks = object._promiseCallbacks = {};
-            }
-            return callbacks;
-          };
-          var EventTarget = {
-              mixin: function (object) {
-                object.on = this.on;
-                object.off = this.off;
-                object.trigger = this.trigger;
-                return object;
-              },
-              on: function (eventNames, callback, binding) {
-                var allCallbacks = callbacksFor(this), callbacks, eventName;
-                eventNames = eventNames.split(/\s+/);
-                binding = binding || this;
-                while (eventName = eventNames.shift()) {
-                  callbacks = allCallbacks[eventName];
-                  if (!callbacks) {
-                    callbacks = allCallbacks[eventName] = [];
-                  }
-                  if (indexOf(callbacks, callback) === -1) {
-                    callbacks.push([
-                      callback,
-                      binding
-                    ]);
-                  }
-                }
-              },
-              off: function (eventNames, callback) {
-                var allCallbacks = callbacksFor(this), callbacks, eventName, index;
-                eventNames = eventNames.split(/\s+/);
-                while (eventName = eventNames.shift()) {
-                  if (!callback) {
-                    allCallbacks[eventName] = [];
-                    continue;
-                  }
-                  callbacks = allCallbacks[eventName];
-                  index = indexOf(callbacks, callback);
-                  if (index !== -1) {
-                    callbacks.splice(index, 1);
-                  }
-                }
-              },
-              trigger: function (eventName, options) {
-                var allCallbacks = callbacksFor(this), callbacks, callbackTuple, callback, binding, event;
-                if (callbacks = allCallbacks[eventName]) {
-                  for (var i = 0; i < callbacks.length; i++) {
-                    callbackTuple = callbacks[i];
-                    callback = callbackTuple[0];
-                    binding = callbackTuple[1];
-                    if (typeof options !== 'object') {
-                      options = { detail: options };
-                    }
-                    event = new Event(eventName, options);
-                    callback.call(binding, event);
-                  }
-                }
-              }
-            };
-          var Promise = function () {
-            this.on('promise:resolved', function (event) {
-              this.trigger('success', { detail: event.detail });
-            }, this);
-            this.on('promise:failed', function (event) {
-              this.trigger('error', { detail: event.detail });
-            }, this);
-          };
-          var noop = function () {
-          };
-          var invokeCallback = function (type, promise, callback, event) {
-            var hasCallback = typeof callback === 'function', value, error, succeeded, failed;
-            if (hasCallback) {
-              try {
-                value = callback(event.detail);
-                succeeded = true;
-              } catch (e) {
-                failed = true;
-                error = e;
-              }
-            } else {
-              value = event.detail;
-              succeeded = true;
-            }
-            if (value && typeof value.then === 'function') {
-              value.then(function (value) {
-                promise.resolve(value);
-              }, function (error) {
-                promise.reject(error);
-              });
-            } else if (hasCallback && succeeded) {
-              promise.resolve(value);
-            } else if (failed) {
-              promise.reject(error);
-            } else {
-              promise[type](value);
-            }
-          };
-          Promise.prototype = {
-            then: function (done, fail) {
-              var thenPromise = new Promise;
-              if (this.isResolved) {
-                RSVP.async(function () {
-                  invokeCallback('resolve', thenPromise, done, { detail: this.resolvedValue });
-                }, this);
-              }
-              if (this.isRejected) {
-                RSVP.async(function () {
-                  invokeCallback('reject', thenPromise, fail, { detail: this.rejectedValue });
-                }, this);
-              }
-              this.on('promise:resolved', function (event) {
-                invokeCallback('resolve', thenPromise, done, event);
-              });
-              this.on('promise:failed', function (event) {
-                invokeCallback('reject', thenPromise, fail, event);
-              });
-              return thenPromise;
-            },
-            resolve: function (value) {
-              resolve(this, value);
-              this.resolve = noop;
-              this.reject = noop;
-            },
-            reject: function (value) {
-              reject(this, value);
-              this.resolve = noop;
-              this.reject = noop;
-            }
-          };
-          function resolve(promise, value) {
-            RSVP.async(function () {
-              promise.trigger('promise:resolved', { detail: value });
-              promise.isResolved = true;
-              promise.resolvedValue = value;
-            });
-          }
-          function reject(promise, value) {
-            RSVP.async(function () {
-              promise.trigger('promise:failed', { detail: value });
-              promise.isRejected = true;
-              promise.rejectedValue = value;
-            });
-          }
-          function all(promises) {
-            var i, results = [];
-            var allPromise = new Promise;
-            var remaining = promises.length;
-            if (remaining === 0) {
-              allPromise.resolve([]);
-            }
-            var resolver = function (index) {
-              return function (value) {
-                resolve(index, value);
-              };
-            };
-            var resolve = function (index, value) {
-              results[index] = value;
-              if (--remaining === 0) {
-                allPromise.resolve(results);
-              }
-            };
-            var reject = function (error) {
-              allPromise.reject(error);
-            };
-            for (i = 0; i < remaining; i++) {
-              promises[i].then(resolver(i), reject);
-            }
-            return allPromise;
-          }
-          EventTarget.mixin(Promise.prototype);
-          RSVP = {
-            async: async,
-            Promise: Promise,
-            Event: Event,
-            EventTarget: EventTarget,
-            all: all,
-            raiseOnUncaughtExceptions: true
-          };
-          return RSVP;
-        });
-      }());
-      (function () {
-        define('container', [], function () {
-          function InheritingDict(parent) {
-            this.parent = parent;
-            this.dict = {};
-          }
-          InheritingDict.prototype = {
-            get: function (key) {
-              var dict = this.dict;
-              if (dict.hasOwnProperty(key)) {
-                return dict[key];
-              }
-              if (this.parent) {
-                return this.parent.get(key);
-              }
-            },
-            set: function (key, value) {
-              this.dict[key] = value;
-            },
-            has: function (key) {
-              var dict = this.dict;
-              if (dict.hasOwnProperty(key)) {
-                return true;
-              }
-              if (this.parent) {
-                return this.parent.has(key);
-              }
-              return false;
-            },
-            eachLocal: function (callback, binding) {
-              var dict = this.dict;
-              for (var prop in dict) {
-                if (dict.hasOwnProperty(prop)) {
-                  callback.call(binding, prop, dict[prop]);
-                }
-              }
-            }
-          };
-          function Container(parent) {
-            this.parent = parent;
-            this.children = [];
-            this.resolver = parent && parent.resolver || function () {
-            };
-            this.registry = new InheritingDict(parent && parent.registry);
-            this.cache = new InheritingDict(parent && parent.cache);
-            this.typeInjections = new InheritingDict(parent && parent.typeInjections);
-            this.injections = {};
-            this._options = new InheritingDict(parent && parent._options);
-            this._typeOptions = new InheritingDict(parent && parent._typeOptions);
-          }
-          Container.prototype = {
-            child: function () {
-              var container = new Container(this);
-              this.children.push(container);
-              return container;
-            },
-            set: function (object, key, value) {
-              object[key] = value;
-            },
-            register: function (type, name, factory, options) {
-              var fullName;
-              if (type.indexOf(':') !== -1) {
-                options = factory;
-                factory = name;
-                fullName = type;
-              } else {
-                Ember.deprecate('register("' + type + '", "' + name + '") is now deprecated in-favour of register("' + type + ':' + name + '");', false);
-                fullName = type + ':' + name;
-              }
-              var normalizedName = this.normalize(fullName);
-              this.registry.set(normalizedName, factory);
-              this._options.set(normalizedName, options || {});
-            },
-            resolve: function (fullName) {
-              return this.resolver(fullName) || this.registry.get(fullName);
-            },
-            normalize: function (fullName) {
-              return fullName;
-            },
-            lookup: function (fullName, options) {
-              fullName = this.normalize(fullName);
-              options = options || {};
-              if (this.cache.has(fullName) && options.singleton !== false) {
-                return this.cache.get(fullName);
-              }
-              var value = instantiate(this, fullName);
-              if (!value) {
-                return;
-              }
-              if (isSingleton(this, fullName) && options.singleton !== false) {
-                this.cache.set(fullName, value);
-              }
-              return value;
-            },
-            has: function (fullName) {
-              if (this.cache.has(fullName)) {
-                return true;
-              }
-              return !!factoryFor(this, fullName);
-            },
-            optionsForType: function (type, options) {
-              if (this.parent) {
-                illegalChildOperation('optionsForType');
-              }
-              this._typeOptions.set(type, options);
-            },
-            options: function (type, options) {
-              this.optionsForType(type, options);
-            },
-            typeInjection: function (type, property, fullName) {
-              if (this.parent) {
-                illegalChildOperation('typeInjection');
-              }
-              var injections = this.typeInjections.get(type);
-              if (!injections) {
-                injections = [];
-                this.typeInjections.set(type, injections);
-              }
-              injections.push({
-                property: property,
-                fullName: fullName
-              });
-            },
-            injection: function (factoryName, property, injectionName) {
-              if (this.parent) {
-                illegalChildOperation('injection');
-              }
-              if (factoryName.indexOf(':') === -1) {
-                return this.typeInjection(factoryName, property, injectionName);
-              }
-              var injections = this.injections[factoryName] = this.injections[factoryName] || [];
-              injections.push({
-                property: property,
-                fullName: injectionName
-              });
-            },
-            destroy: function () {
-              this.isDestroyed = true;
-              for (var i = 0, l = this.children.length; i < l; i++) {
-                this.children[i].destroy();
-              }
-              this.children = [];
-              eachDestroyable(this, function (item) {
-                item.isDestroying = true;
-              });
-              eachDestroyable(this, function (item) {
-                item.destroy();
-              });
-              delete this.parent;
-              this.isDestroyed = true;
-            },
-            reset: function () {
-              for (var i = 0, l = this.children.length; i < l; i++) {
-                resetCache(this.children[i]);
-              }
-              resetCache(this);
-            }
-          };
-          function illegalChildOperation(operation) {
-            throw new Error(operation + ' is not currently supported on child containers');
-          }
-          function isSingleton(container, fullName) {
-            var singleton = option(container, fullName, 'singleton');
-            return singleton !== false;
-          }
-          function buildInjections(container, injections) {
-            var hash = {};
-            if (!injections) {
-              return hash;
-            }
-            var injection, lookup;
-            for (var i = 0, l = injections.length; i < l; i++) {
-              injection = injections[i];
-              lookup = container.lookup(injection.fullName);
-              hash[injection.property] = lookup;
-            }
-            return hash;
-          }
-          function option(container, fullName, optionName) {
-            var options = container._options.get(fullName);
-            if (options && options[optionName] !== undefined) {
-              return options[optionName];
-            }
-            var type = fullName.split(':')[0];
-            options = container._typeOptions.get(type);
-            if (options) {
-              return options[optionName];
-            }
-          }
-          function factoryFor(container, fullName) {
-            var name = container.normalize(fullName);
-            return container.resolve(name);
-          }
-          function instantiate(container, fullName) {
-            var factory = factoryFor(container, fullName);
-            var splitName = fullName.split(':'), type = splitName[0], name = splitName[1], value;
-            if (option(container, fullName, 'instantiate') === false) {
-              return factory;
-            }
-            if (factory) {
-              var injections = [];
-              injections = injections.concat(container.typeInjections.get(type) || []);
-              injections = injections.concat(container.injections[fullName] || []);
-              var hash = buildInjections(container, injections);
-              hash.container = container;
-              hash._debugContainerKey = fullName;
-              value = factory.create(hash);
-              return value;
-            }
-          }
-          function eachDestroyable(container, callback) {
-            container.cache.eachLocal(function (key, value) {
-              if (option(container, key, 'instantiate') === false) {
-                return;
-              }
-              callback(value);
-            });
-          }
-          function resetCache(container) {
-            container.cache.eachLocal(function (key, value) {
-              if (option(container, key, 'instantiate') === false) {
-                return;
-              }
-              value.destroy();
-            });
-            container.cache.dict = {};
-          }
-          return Container;
-        });
-      }());
-      (function () {
-        var indexOf = Ember.EnumerableUtils.indexOf;
-        var TYPE_MAP = {};
-        var t = 'Boolean Number String Function Array Date RegExp Object'.split(' ');
-        Ember.ArrayPolyfills.forEach.call(t, function (name) {
-          TYPE_MAP['[object ' + name + ']'] = name.toLowerCase();
-        });
-        var toString = Object.prototype.toString;
-        Ember.typeOf = function (item) {
-          var ret;
-          ret = item === null || item === undefined ? String(item) : TYPE_MAP[toString.call(item)] || 'object';
-          if (ret === 'function') {
-            if (Ember.Object && Ember.Object.detect(item))
-              ret = 'class';
-          } else if (ret === 'object') {
-            if (item instanceof Error)
-              ret = 'error';
-            else if (Ember.Object && item instanceof Ember.Object)
-              ret = 'instance';
-            else
-              ret = 'object';
-          }
-          return ret;
-        };
-        Ember.compare = function compare(v, w) {
-          if (v === w) {
-            return 0;
-          }
-          var type1 = Ember.typeOf(v);
-          var type2 = Ember.typeOf(w);
-          var Comparable = Ember.Comparable;
-          if (Comparable) {
-            if (type1 === 'instance' && Comparable.detect(v.constructor)) {
-              return v.constructor.compare(v, w);
-            }
-            if (type2 === 'instance' && Comparable.detect(w.constructor)) {
-              return 1 - w.constructor.compare(w, v);
-            }
-          }
-          var mapping = Ember.ORDER_DEFINITION_MAPPING;
-          if (!mapping) {
-            var order = Ember.ORDER_DEFINITION;
-            mapping = Ember.ORDER_DEFINITION_MAPPING = {};
-            var idx, len;
-            for (idx = 0, len = order.length; idx < len; ++idx) {
-              mapping[order[idx]] = idx;
-            }
-            delete Ember.ORDER_DEFINITION;
-          }
-          var type1Index = mapping[type1];
-          var type2Index = mapping[type2];
-          if (type1Index < type2Index) {
-            return -1;
-          }
-          if (type1Index > type2Index) {
-            return 1;
-          }
-          switch (type1) {
-          case 'boolean':
-          case 'number':
-            if (v < w) {
-              return -1;
-            }
-            if (v > w) {
-              return 1;
-            }
-            return 0;
-          case 'string':
-            var comp = v.localeCompare(w);
-            if (comp < 0) {
-              return -1;
-            }
-            if (comp > 0) {
-              return 1;
-            }
-            return 0;
-          case 'array':
-            var vLen = v.length;
-            var wLen = w.length;
-            var l = Math.min(vLen, wLen);
-            var r = 0;
-            var i = 0;
-            while (r === 0 && i < l) {
-              r = compare(v[i], w[i]);
-              i++;
-            }
-            if (r !== 0) {
-              return r;
-            }
-            if (vLen < wLen) {
-              return -1;
-            }
-            if (vLen > wLen) {
-              return 1;
-            }
-            return 0;
-          case 'instance':
-            if (Ember.Comparable && Ember.Comparable.detect(v)) {
-              return v.compare(v, w);
-            }
-            return 0;
-          case 'date':
-            var vNum = v.getTime();
-            var wNum = w.getTime();
-            if (vNum < wNum) {
-              return -1;
-            }
-            if (vNum > wNum) {
-              return 1;
-            }
-            return 0;
-          default:
-            return 0;
-          }
-        };
-        function _copy(obj, deep, seen, copies) {
-          var ret, loc, key;
-          if ('object' !== typeof obj || obj === null)
-            return obj;
-          if (deep && (loc = indexOf(seen, obj)) >= 0)
-            return copies[loc];
-          Ember.assert('Cannot clone an Ember.Object that does not implement Ember.Copyable', !(obj instanceof Ember.Object) || Ember.Copyable && Ember.Copyable.detect(obj));
-          if (Ember.typeOf(obj) === 'array') {
-            ret = obj.slice();
-            if (deep) {
-              loc = ret.length;
-              while (--loc >= 0)
-                ret[loc] = _copy(ret[loc], deep, seen, copies);
-            }
-          } else if (Ember.Copyable && Ember.Copyable.detect(obj)) {
-            ret = obj.copy(deep, seen, copies);
-          } else {
-            ret = {};
-            for (key in obj) {
-              if (!obj.hasOwnProperty(key))
-                continue;
-              if (key.substring(0, 2) === '__')
-                continue;
-              ret[key] = deep ? _copy(obj[key], deep, seen, copies) : obj[key];
-            }
-          }
-          if (deep) {
-            seen.push(obj);
-            copies.push(ret);
-          }
-          return ret;
-        }
-        Ember.copy = function (obj, deep) {
-          if ('object' !== typeof obj || obj === null)
-            return obj;
-          if (Ember.Copyable && Ember.Copyable.detect(obj))
-            return obj.copy(deep);
-          return _copy(obj, deep, deep ? [] : null, deep ? [] : null);
-        };
-        Ember.inspect = function (obj) {
-          if (typeof obj !== 'object' || obj === null) {
-            return obj + '';
-          }
-          var v, ret = [];
-          for (var key in obj) {
-            if (obj.hasOwnProperty(key)) {
-              v = obj[key];
-              if (v === 'toString') {
-                continue;
-              }
-              if (Ember.typeOf(v) === 'function') {
-                v = 'function() { ... }';
-              }
-              ret.push(key + ': ' + v);
-            }
-          }
-          return '{' + ret.join(', ') + '}';
-        };
-        Ember.isEqual = function (a, b) {
-          if (a && 'function' === typeof a.isEqual)
-            return a.isEqual(b);
-          return a === b;
-        };
-        Ember.ORDER_DEFINITION = Ember.ENV.ORDER_DEFINITION || [
-          'undefined',
-          'null',
-          'boolean',
-          'number',
-          'string',
-          'array',
-          'object',
-          'instance',
-          'function',
-          'class',
-          'date'
-        ];
-        Ember.keys = Object.keys;
-        if (!Ember.keys) {
-          Ember.keys = function (obj) {
-            var ret = [];
-            for (var key in obj) {
-              if (obj.hasOwnProperty(key)) {
-                ret.push(key);
-              }
-            }
-            return ret;
-          };
-        }
-        var errorProps = [
-            'description',
-            'fileName',
-            'lineNumber',
-            'message',
-            'name',
-            'number',
-            'stack'
-          ];
-        Ember.Error = function () {
-          var tmp = Error.prototype.constructor.apply(this, arguments);
-          for (var idx = 0; idx < errorProps.length; idx++) {
-            this[errorProps[idx]] = tmp[errorProps[idx]];
-          }
-        };
-        Ember.Error.prototype = Ember.create(Error.prototype);
-      }());
-      (function () {
-        Ember.RSVP = requireModule('rsvp');
-      }());
-      (function () {
-        var STRING_DASHERIZE_REGEXP = /[ _]/g;
-        var STRING_DASHERIZE_CACHE = {};
-        var STRING_DECAMELIZE_REGEXP = /([a-z])([A-Z])/g;
-        var STRING_CAMELIZE_REGEXP = /(\-|_|\.|\s)+(.)?/g;
-        var STRING_UNDERSCORE_REGEXP_1 = /([a-z\d])([A-Z]+)/g;
-        var STRING_UNDERSCORE_REGEXP_2 = /\-|\s+/g;
-        Ember.STRINGS = {};
-        Ember.String = {
-          fmt: function (str, formats) {
-            var idx = 0;
-            return str.replace(/%@([0-9]+)?/g, function (s, argIndex) {
-              argIndex = argIndex ? parseInt(argIndex, 0) - 1 : idx++;
-              s = formats[argIndex];
-              return (s === null ? '(null)' : s === undefined ? '' : s).toString();
-            });
-          },
-          loc: function (str, formats) {
-            str = Ember.STRINGS[str] || str;
-            return Ember.String.fmt(str, formats);
-          },
-          w: function (str) {
-            return str.split(/\s+/);
-          },
-          decamelize: function (str) {
-            return str.replace(STRING_DECAMELIZE_REGEXP, '$1_$2').toLowerCase();
-          },
-          dasherize: function (str) {
-            var cache = STRING_DASHERIZE_CACHE, hit = cache.hasOwnProperty(str), ret;
-            if (hit) {
-              return cache[str];
-            } else {
-              ret = Ember.String.decamelize(str).replace(STRING_DASHERIZE_REGEXP, '-');
-              cache[str] = ret;
-            }
-            return ret;
-          },
-          camelize: function (str) {
-            return str.replace(STRING_CAMELIZE_REGEXP, function (match, separator, chr) {
-              return chr ? chr.toUpperCase() : '';
-            }).replace(/^([A-Z])/, function (match, separator, chr) {
-              return match.toLowerCase();
-            });
-          },
-          classify: function (str) {
-            var parts = str.split('.'), out = [];
-            for (var i = 0, l = parts.length; i < l; i++) {
-              var camelized = Ember.String.camelize(parts[i]);
-              out.push(camelized.charAt(0).toUpperCase() + camelized.substr(1));
-            }
-            return out.join('.');
-          },
-          underscore: function (str) {
-            return str.replace(STRING_UNDERSCORE_REGEXP_1, '$1_$2').replace(STRING_UNDERSCORE_REGEXP_2, '_').toLowerCase();
-          },
-          capitalize: function (str) {
-            return str.charAt(0).toUpperCase() + str.substr(1);
-          }
-        };
-      }());
-      (function () {
-        var fmt = Ember.String.fmt, w = Ember.String.w, loc = Ember.String.loc, camelize = Ember.String.camelize, decamelize = Ember.String.decamelize, dasherize = Ember.String.dasherize, underscore = Ember.String.underscore, capitalize = Ember.String.capitalize, classify = Ember.String.classify;
-        if (Ember.EXTEND_PROTOTYPES === true || Ember.EXTEND_PROTOTYPES.String) {
-          String.prototype.fmt = function () {
-            return fmt(this, arguments);
-          };
-          String.prototype.w = function () {
-            return w(this);
-          };
-          String.prototype.loc = function () {
-            return loc(this, arguments);
-          };
-          String.prototype.camelize = function () {
-            return camelize(this);
-          };
-          String.prototype.decamelize = function () {
-            return decamelize(this);
-          };
-          String.prototype.dasherize = function () {
-            return dasherize(this);
-          };
-          String.prototype.underscore = function () {
-            return underscore(this);
-          };
-          String.prototype.classify = function () {
-            return classify(this);
-          };
-          String.prototype.capitalize = function () {
-            return capitalize(this);
-          };
-        }
-      }());
-      (function () {
-        var a_slice = Array.prototype.slice;
-        if (Ember.EXTEND_PROTOTYPES === true || Ember.EXTEND_PROTOTYPES.Function) {
-          Function.prototype.property = function () {
-            var ret = Ember.computed(this);
-            return ret.property.apply(ret, arguments);
-          };
-          Function.prototype.observes = function () {
-            this.__ember_observes__ = a_slice.call(arguments);
-            return this;
-          };
-          Function.prototype.observesBefore = function () {
-            this.__ember_observesBefore__ = a_slice.call(arguments);
-            return this;
-          };
-        }
-      }());
-      (function () {
-      }());
-      (function () {
-        var get = Ember.get, set = Ember.set;
-        var a_slice = Array.prototype.slice;
-        var a_indexOf = Ember.EnumerableUtils.indexOf;
-        var contexts = [];
-        function popCtx() {
-          return contexts.length === 0 ? {} : contexts.pop();
-        }
-        function pushCtx(ctx) {
-          contexts.push(ctx);
-          return null;
-        }
-        function iter(key, value) {
-          var valueProvided = arguments.length === 2;
-          function i(item) {
-            var cur = get(item, key);
-            return valueProvided ? value === cur : !!cur;
-          }
-          return i;
-        }
-        Ember.Enumerable = Ember.Mixin.create({
-          isEnumerable: true,
-          nextObject: Ember.required(Function),
-          firstObject: Ember.computed(function () {
-            if (get(this, 'length') === 0)
-              return undefined;
-            var context = popCtx(), ret;
-            ret = this.nextObject(0, null, context);
-            pushCtx(context);
-            return ret;
-          }).property('[]'),
-          lastObject: Ember.computed(function () {
-            var len = get(this, 'length');
-            if (len === 0)
-              return undefined;
-            var context = popCtx(), idx = 0, cur, last = null;
-            do {
-              last = cur;
-              cur = this.nextObject(idx++, last, context);
-            } while (cur !== undefined);
-            pushCtx(context);
-            return last;
-          }).property('[]'),
-          contains: function (obj) {
-            return this.find(function (item) {
-              return item === obj;
-            }) !== undefined;
-          },
-          forEach: function (callback, target) {
-            if (typeof callback !== 'function')
-              throw new TypeError;
-            var len = get(this, 'length'), last = null, context = popCtx();
-            if (target === undefined)
-              target = null;
-            for (var idx = 0; idx < len; idx++) {
-              var next = this.nextObject(idx, last, context);
-              callback.call(target, next, idx, this);
-              last = next;
-            }
-            last = null;
-            context = pushCtx(context);
-            return this;
-          },
-          getEach: function (key) {
-            return this.mapProperty(key);
-          },
-          setEach: function (key, value) {
-            return this.forEach(function (item) {
-              set(item, key, value);
-            });
-          },
-          map: function (callback, target) {
-            var ret = Ember.A([]);
-            this.forEach(function (x, idx, i) {
-              ret[idx] = callback.call(target, x, idx, i);
-            });
-            return ret;
-          },
-          mapProperty: function (key) {
-            return this.map(function (next) {
-              return get(next, key);
-            });
-          },
-          filter: function (callback, target) {
-            var ret = Ember.A([]);
-            this.forEach(function (x, idx, i) {
-              if (callback.call(target, x, idx, i))
-                ret.push(x);
-            });
-            return ret;
-          },
-          reject: function (callback, target) {
-            return this.filter(function () {
-              return !callback.apply(target, arguments);
-            });
-          },
-          filterProperty: function (key, value) {
-            return this.filter(iter.apply(this, arguments));
-          },
-          rejectProperty: function (key, value) {
-            var exactValue = function (item) {
-                return get(item, key) === value;
-              }, hasValue = function (item) {
-                return !!get(item, key);
-              }, use = arguments.length === 2 ? exactValue : hasValue;
-            return this.reject(use);
-          },
-          find: function (callback, target) {
-            var len = get(this, 'length');
-            if (target === undefined)
-              target = null;
-            var last = null, next, found = false, ret;
-            var context = popCtx();
-            for (var idx = 0; idx < len && !found; idx++) {
-              next = this.nextObject(idx, last, context);
-              if (found = callback.call(target, next, idx, this))
-                ret = next;
-              last = next;
-            }
-            next = last = null;
-            context = pushCtx(context);
-            return ret;
-          },
-          findProperty: function (key, value) {
-            return this.find(iter.apply(this, arguments));
-          },
-          every: function (callback, target) {
-            return !this.find(function (x, idx, i) {
-              return !callback.call(target, x, idx, i);
-            });
-          },
-          everyProperty: function (key, value) {
-            return this.every(iter.apply(this, arguments));
-          },
-          some: function (callback, target) {
-            return !!this.find(function (x, idx, i) {
-              return !!callback.call(target, x, idx, i);
-            });
-          },
-          someProperty: function (key, value) {
-            return this.some(iter.apply(this, arguments));
-          },
-          reduce: function (callback, initialValue, reducerProperty) {
-            if (typeof callback !== 'function') {
-              throw new TypeError;
-            }
-            var ret = initialValue;
-            this.forEach(function (item, i) {
-              ret = callback.call(null, ret, item, i, this, reducerProperty);
-            }, this);
-            return ret;
-          },
-          invoke: function (methodName) {
-            var args, ret = Ember.A([]);
-            if (arguments.length > 1)
-              args = a_slice.call(arguments, 1);
-            this.forEach(function (x, idx) {
-              var method = x && x[methodName];
-              if ('function' === typeof method) {
-                ret[idx] = args ? method.apply(x, args) : method.call(x);
-              }
-            }, this);
-            return ret;
-          },
-          toArray: function () {
-            var ret = Ember.A([]);
-            this.forEach(function (o, idx) {
-              ret[idx] = o;
-            });
-            return ret;
-          },
-          compact: function () {
-            return this.filter(function (value) {
-              return value != null;
-            });
-          },
-          without: function (value) {
-            if (!this.contains(value))
-              return this;
-            var ret = Ember.A([]);
-            this.forEach(function (k) {
-              if (k !== value)
-                ret[ret.length] = k;
-            });
-            return ret;
-          },
-          uniq: function () {
-            var ret = Ember.A([]);
-            this.forEach(function (k) {
-              if (a_indexOf(ret, k) < 0)
-                ret.push(k);
-            });
-            return ret;
-          },
-          '[]': Ember.computed(function (key, value) {
-            return this;
-          }),
-          addEnumerableObserver: function (target, opts) {
-            var willChange = opts && opts.willChange || 'enumerableWillChange', didChange = opts && opts.didChange || 'enumerableDidChange';
-            var hasObservers = get(this, 'hasEnumerableObservers');
-            if (!hasObservers)
-              Ember.propertyWillChange(this, 'hasEnumerableObservers');
-            Ember.addListener(this, '@enumerable:before', target, willChange);
-            Ember.addListener(this, '@enumerable:change', target, didChange);
-            if (!hasObservers)
-              Ember.propertyDidChange(this, 'hasEnumerableObservers');
-            return this;
-          },
-          removeEnumerableObserver: function (target, opts) {
-            var willChange = opts && opts.willChange || 'enumerableWillChange', didChange = opts && opts.didChange || 'enumerableDidChange';
-            var hasObservers = get(this, 'hasEnumerableObservers');
-            if (hasObservers)
-              Ember.propertyWillChange(this, 'hasEnumerableObservers');
-            Ember.removeListener(this, '@enumerable:before', target, willChange);
-            Ember.removeListener(this, '@enumerable:change', target, didChange);
-            if (hasObservers)
-              Ember.propertyDidChange(this, 'hasEnumerableObservers');
-            return this;
-          },
-          hasEnumerableObservers: Ember.computed(function () {
-            return Ember.hasListeners(this, '@enumerable:change') || Ember.hasListeners(this, '@enumerable:before');
-          }),
-          enumerableContentWillChange: function (removing, adding) {
-            var removeCnt, addCnt, hasDelta;
-            if ('number' === typeof removing)
-              removeCnt = removing;
-            else if (removing)
-              removeCnt = get(removing, 'length');
-            else
-              removeCnt = removing = -1;
-            if ('number' === typeof adding)
-              addCnt = adding;
-            else if (adding)
-              addCnt = get(adding, 'length');
-            else
-              addCnt = adding = -1;
-            hasDelta = addCnt < 0 || removeCnt < 0 || addCnt - removeCnt !== 0;
-            if (removing === -1)
-              removing = null;
-            if (adding === -1)
-              adding = null;
-            Ember.propertyWillChange(this, '[]');
-            if (hasDelta)
-              Ember.propertyWillChange(this, 'length');
-            Ember.sendEvent(this, '@enumerable:before', [
-              this,
-              removing,
-              adding
-            ]);
-            return this;
-          },
-          enumerableContentDidChange: function (removing, adding) {
-            var removeCnt, addCnt, hasDelta;
-            if ('number' === typeof removing)
-              removeCnt = removing;
-            else if (removing)
-              removeCnt = get(removing, 'length');
-            else
-              removeCnt = removing = -1;
-            if ('number' === typeof adding)
-              addCnt = adding;
-            else if (adding)
-              addCnt = get(adding, 'length');
-            else
-              addCnt = adding = -1;
-            hasDelta = addCnt < 0 || removeCnt < 0 || addCnt - removeCnt !== 0;
-            if (removing === -1)
-              removing = null;
-            if (adding === -1)
-              adding = null;
-            Ember.sendEvent(this, '@enumerable:change', [
-              this,
-              removing,
-              adding
-            ]);
-            if (hasDelta)
-              Ember.propertyDidChange(this, 'length');
-            Ember.propertyDidChange(this, '[]');
-            return this;
-          }
-        });
-      }());
-      (function () {
-        var get = Ember.get, set = Ember.set, map = Ember.EnumerableUtils.map, cacheFor = Ember.cacheFor;
-        function none(obj) {
-          return obj === null || obj === undefined;
-        }
-        Ember.Array = Ember.Mixin.create(Ember.Enumerable, {
-          isSCArray: true,
-          length: Ember.required(),
-          objectAt: function (idx) {
-            if (idx < 0 || idx >= get(this, 'length'))
-              return undefined;
-            return get(this, idx);
-          },
-          objectsAt: function (indexes) {
-            var self = this;
-            return map(indexes, function (idx) {
-              return self.objectAt(idx);
-            });
-          },
-          nextObject: function (idx) {
-            return this.objectAt(idx);
-          },
-          '[]': Ember.computed(function (key, value) {
-            if (value !== undefined)
-              this.replace(0, get(this, 'length'), value);
-            return this;
-          }),
-          firstObject: Ember.computed(function () {
-            return this.objectAt(0);
-          }),
-          lastObject: Ember.computed(function () {
-            return this.objectAt(get(this, 'length') - 1);
-          }),
-          contains: function (obj) {
-            return this.indexOf(obj) >= 0;
-          },
-          slice: function (beginIndex, endIndex) {
-            var ret = Ember.A([]);
-            var length = get(this, 'length');
-            if (none(beginIndex))
-              beginIndex = 0;
-            if (none(endIndex) || endIndex > length)
-              endIndex = length;
-            if (beginIndex < 0)
-              beginIndex = length + beginIndex;
-            if (endIndex < 0)
-              endIndex = length + endIndex;
-            while (beginIndex < endIndex) {
-              ret[ret.length] = this.objectAt(beginIndex++);
-            }
-            return ret;
-          },
-          indexOf: function (object, startAt) {
-            var idx, len = get(this, 'length');
-            if (startAt === undefined)
-              startAt = 0;
-            if (startAt < 0)
-              startAt += len;
-            for (idx = startAt; idx < len; idx++) {
-              if (this.objectAt(idx, true) === object)
-                return idx;
-            }
-            return -1;
-          },
-          lastIndexOf: function (object, startAt) {
-            var idx, len = get(this, 'length');
-            if (startAt === undefined || startAt >= len)
-              startAt = len - 1;
-            if (startAt < 0)
-              startAt += len;
-            for (idx = startAt; idx >= 0; idx--) {
-              if (this.objectAt(idx) === object)
-                return idx;
-            }
-            return -1;
-          },
-          addArrayObserver: function (target, opts) {
-            var willChange = opts && opts.willChange || 'arrayWillChange', didChange = opts && opts.didChange || 'arrayDidChange';
-            var hasObservers = get(this, 'hasArrayObservers');
-            if (!hasObservers)
-              Ember.propertyWillChange(this, 'hasArrayObservers');
-            Ember.addListener(this, '@array:before', target, willChange);
-            Ember.addListener(this, '@array:change', target, didChange);
-            if (!hasObservers)
-              Ember.propertyDidChange(this, 'hasArrayObservers');
-            return this;
-          },
-          removeArrayObserver: function (target, opts) {
-            var willChange = opts && opts.willChange || 'arrayWillChange', didChange = opts && opts.didChange || 'arrayDidChange';
-            var hasObservers = get(this, 'hasArrayObservers');
-            if (hasObservers)
-              Ember.propertyWillChange(this, 'hasArrayObservers');
-            Ember.removeListener(this, '@array:before', target, willChange);
-            Ember.removeListener(this, '@array:change', target, didChange);
-            if (hasObservers)
-              Ember.propertyDidChange(this, 'hasArrayObservers');
-            return this;
-          },
-          hasArrayObservers: Ember.computed(function () {
-            return Ember.hasListeners(this, '@array:change') || Ember.hasListeners(this, '@array:before');
-          }),
-          arrayContentWillChange: function (startIdx, removeAmt, addAmt) {
-            if (startIdx === undefined) {
-              startIdx = 0;
-              removeAmt = addAmt = -1;
-            } else {
-              if (removeAmt === undefined)
-                removeAmt = -1;
-              if (addAmt === undefined)
-                addAmt = -1;
-            }
-            if (Ember.isWatching(this, '@each')) {
-              get(this, '@each');
-            }
-            Ember.sendEvent(this, '@array:before', [
-              this,
-              startIdx,
-              removeAmt,
-              addAmt
-            ]);
-            var removing, lim;
-            if (startIdx >= 0 && removeAmt >= 0 && get(this, 'hasEnumerableObservers')) {
-              removing = [];
-              lim = startIdx + removeAmt;
-              for (var idx = startIdx; idx < lim; idx++)
-                removing.push(this.objectAt(idx));
-            } else {
-              removing = removeAmt;
-            }
-            this.enumerableContentWillChange(removing, addAmt);
-            return this;
-          },
-          arrayContentDidChange: function (startIdx, removeAmt, addAmt) {
-            if (startIdx === undefined) {
-              startIdx = 0;
-              removeAmt = addAmt = -1;
-            } else {
-              if (removeAmt === undefined)
-                removeAmt = -1;
-              if (addAmt === undefined)
-                addAmt = -1;
-            }
-            var adding, lim;
-            if (startIdx >= 0 && addAmt >= 0 && get(this, 'hasEnumerableObservers')) {
-              adding = [];
-              lim = startIdx + addAmt;
-              for (var idx = startIdx; idx < lim; idx++)
-                adding.push(this.objectAt(idx));
-            } else {
-              adding = addAmt;
-            }
-            this.enumerableContentDidChange(removeAmt, adding);
-            Ember.sendEvent(this, '@array:change', [
-              this,
-              startIdx,
-              removeAmt,
-              addAmt
-            ]);
-            var length = get(this, 'length'), cachedFirst = cacheFor(this, 'firstObject'), cachedLast = cacheFor(this, 'lastObject');
-            if (this.objectAt(0) !== cachedFirst) {
-              Ember.propertyWillChange(this, 'firstObject');
-              Ember.propertyDidChange(this, 'firstObject');
-            }
-            if (this.objectAt(length - 1) !== cachedLast) {
-              Ember.propertyWillChange(this, 'lastObject');
-              Ember.propertyDidChange(this, 'lastObject');
-            }
-            return this;
-          },
-          '@each': Ember.computed(function () {
-            if (!this.__each)
-              this.__each = new Ember.EachProxy(this);
-            return this.__each;
-          })
-        });
-      }());
-      (function () {
-        Ember.Comparable = Ember.Mixin.create({
-          isComparable: true,
-          compare: Ember.required(Function)
-        });
-      }());
-      (function () {
-        var get = Ember.get, set = Ember.set;
-        Ember.Copyable = Ember.Mixin.create({
-          copy: Ember.required(Function),
-          frozenCopy: function () {
-            if (Ember.Freezable && Ember.Freezable.detect(this)) {
-              return get(this, 'isFrozen') ? this : this.copy().freeze();
-            } else {
-              throw new Error(Ember.String.fmt('%@ does not support freezing', [this]));
-            }
-          }
-        });
-      }());
-      (function () {
-        var get = Ember.get, set = Ember.set;
-        Ember.Freezable = Ember.Mixin.create({
-          isFrozen: false,
-          freeze: function () {
-            if (get(this, 'isFrozen'))
-              return this;
-            set(this, 'isFrozen', true);
-            return this;
-          }
-        });
-        Ember.FROZEN_ERROR = 'Frozen object cannot be modified.';
-      }());
-      (function () {
-        var forEach = Ember.EnumerableUtils.forEach;
-        Ember.MutableEnumerable = Ember.Mixin.create(Ember.Enumerable, {
-          addObject: Ember.required(Function),
-          addObjects: function (objects) {
-            Ember.beginPropertyChanges(this);
-            forEach(objects, function (obj) {
-              this.addObject(obj);
-            }, this);
-            Ember.endPropertyChanges(this);
-            return this;
-          },
-          removeObject: Ember.required(Function),
-          removeObjects: function (objects) {
-            Ember.beginPropertyChanges(this);
-            forEach(objects, function (obj) {
-              this.removeObject(obj);
-            }, this);
-            Ember.endPropertyChanges(this);
-            return this;
-          }
-        });
-      }());
-      (function () {
-        var OUT_OF_RANGE_EXCEPTION = 'Index out of range';
-        var EMPTY = [];
-        var get = Ember.get, set = Ember.set;
-        Ember.MutableArray = Ember.Mixin.create(Ember.Array, Ember.MutableEnumerable, {
-          replace: Ember.required(),
-          clear: function () {
-            var len = get(this, 'length');
-            if (len === 0)
-              return this;
-            this.replace(0, len, EMPTY);
-            return this;
-          },
-          insertAt: function (idx, object) {
-            if (idx > get(this, 'length'))
-              throw new Error(OUT_OF_RANGE_EXCEPTION);
-            this.replace(idx, 0, [object]);
-            return this;
-          },
-          removeAt: function (start, len) {
-            if ('number' === typeof start) {
-              if (start < 0 || start >= get(this, 'length')) {
-                throw new Error(OUT_OF_RANGE_EXCEPTION);
-              }
-              if (len === undefined)
-                len = 1;
-              this.replace(start, len, EMPTY);
-            }
-            return this;
-          },
-          pushObject: function (obj) {
-            this.insertAt(get(this, 'length'), obj);
-            return obj;
-          },
-          pushObjects: function (objects) {
-            this.replace(get(this, 'length'), 0, objects);
-            return this;
-          },
-          popObject: function () {
-            var len = get(this, 'length');
-            if (len === 0)
-              return null;
-            var ret = this.objectAt(len - 1);
-            this.removeAt(len - 1, 1);
-            return ret;
-          },
-          shiftObject: function () {
-            if (get(this, 'length') === 0)
-              return null;
-            var ret = this.objectAt(0);
-            this.removeAt(0);
-            return ret;
-          },
-          unshiftObject: function (obj) {
-            this.insertAt(0, obj);
-            return obj;
-          },
-          unshiftObjects: function (objects) {
-            this.replace(0, 0, objects);
-            return this;
-          },
-          reverseObjects: function () {
-            var len = get(this, 'length');
-            if (len === 0)
-              return this;
-            var objects = this.toArray().reverse();
-            this.replace(0, len, objects);
-            return this;
-          },
-          setObjects: function (objects) {
-            if (objects.length === 0)
-              return this.clear();
-            var len = get(this, 'length');
-            this.replace(0, len, objects);
-            return this;
-          },
-          removeObject: function (obj) {
-            var loc = get(this, 'length') || 0;
-            while (--loc >= 0) {
-              var curObject = this.objectAt(loc);
-              if (curObject === obj)
-                this.removeAt(loc);
-            }
-            return this;
-          },
-          addObject: function (obj) {
-            if (!this.contains(obj))
-              this.pushObject(obj);
-            return this;
-          }
-        });
-      }());
-      (function () {
-        var get = Ember.get, set = Ember.set;
-        Ember.Observable = Ember.Mixin.create({
-          get: function (keyName) {
-            return get(this, keyName);
-          },
-          getProperties: function () {
-            var ret = {};
-            var propertyNames = arguments;
-            if (arguments.length === 1 && Ember.typeOf(arguments[0]) === 'array') {
-              propertyNames = arguments[0];
-            }
-            for (var i = 0; i < propertyNames.length; i++) {
-              ret[propertyNames[i]] = get(this, propertyNames[i]);
-            }
-            return ret;
-          },
-          set: function (keyName, value) {
-            set(this, keyName, value);
-            return this;
-          },
-          setProperties: function (hash) {
-            return Ember.setProperties(this, hash);
-          },
-          beginPropertyChanges: function () {
-            Ember.beginPropertyChanges();
-            return this;
-          },
-          endPropertyChanges: function () {
-            Ember.endPropertyChanges();
-            return this;
-          },
-          propertyWillChange: function (keyName) {
-            Ember.propertyWillChange(this, keyName);
-            return this;
-          },
-          propertyDidChange: function (keyName) {
-            Ember.propertyDidChange(this, keyName);
-            return this;
-          },
-          notifyPropertyChange: function (keyName) {
-            this.propertyWillChange(keyName);
-            this.propertyDidChange(keyName);
-            return this;
-          },
-          addBeforeObserver: function (key, target, method) {
-            Ember.addBeforeObserver(this, key, target, method);
-          },
-          addObserver: function (key, target, method) {
-            Ember.addObserver(this, key, target, method);
-          },
-          removeObserver: function (key, target, method) {
-            Ember.removeObserver(this, key, target, method);
-          },
-          hasObserverFor: function (key) {
-            return Ember.hasListeners(this, key + ':change');
-          },
-          getPath: function (path) {
-            Ember.deprecate('getPath is deprecated since get now supports paths');
-            return this.get(path);
-          },
-          setPath: function (path, value) {
-            Ember.deprecate('setPath is deprecated since set now supports paths');
-            return this.set(path, value);
-          },
-          getWithDefault: function (keyName, defaultValue) {
-            return Ember.getWithDefault(this, keyName, defaultValue);
-          },
-          incrementProperty: function (keyName, increment) {
-            if (!increment) {
-              increment = 1;
-            }
-            set(this, keyName, (get(this, keyName) || 0) + increment);
-            return get(this, keyName);
-          },
-          decrementProperty: function (keyName, increment) {
-            if (!increment) {
-              increment = 1;
-            }
-            set(this, keyName, (get(this, keyName) || 0) - increment);
-            return get(this, keyName);
-          },
-          toggleProperty: function (keyName) {
-            set(this, keyName, !get(this, keyName));
-            return get(this, keyName);
-          },
-          cacheFor: function (keyName) {
-            return Ember.cacheFor(this, keyName);
-          },
-          observersForKey: function (keyName) {
-            return Ember.observersFor(this, keyName);
-          }
-        });
-      }());
-      (function () {
-        var get = Ember.get, set = Ember.set;
-        Ember.TargetActionSupport = Ember.Mixin.create({
-          target: null,
-          action: null,
-          targetObject: Ember.computed(function () {
-            var target = get(this, 'target');
-            if (Ember.typeOf(target) === 'string') {
-              var value = get(this, target);
-              if (value === undefined) {
-                value = get(Ember.lookup, target);
-              }
-              return value;
-            } else {
-              return target;
-            }
-          }).property('target'),
-          triggerAction: function () {
-            var action = get(this, 'action'), target = get(this, 'targetObject');
-            if (target && action) {
-              var ret;
-              if (typeof target.send === 'function') {
-                ret = target.send(action, this);
-              } else {
-                if (typeof action === 'string') {
-                  action = target[action];
-                }
-                ret = action.call(target, this);
-              }
-              if (ret !== false)
-                ret = true;
-              return ret;
-            } else {
-              return false;
-            }
-          }
-        });
-      }());
-      (function () {
-        Ember.Evented = Ember.Mixin.create({
-          on: function (name, target, method) {
-            Ember.addListener(this, name, target, method);
-            return this;
-          },
-          one: function (name, target, method) {
-            if (!method) {
-              method = target;
-              target = null;
-            }
-            Ember.addListener(this, name, target, method, true);
-            return this;
-          },
-          trigger: function (name) {
-            var args = [], i, l;
-            for (i = 1, l = arguments.length; i < l; i++) {
-              args.push(arguments[i]);
-            }
-            Ember.sendEvent(this, name, args);
-          },
-          fire: function (name) {
-            Ember.deprecate('Ember.Evented#fire() has been deprecated in favor of trigger() for compatibility with jQuery. It will be removed in 1.0. Please update your code to call trigger() instead.');
-            this.trigger.apply(this, arguments);
-          },
-          off: function (name, target, method) {
-            Ember.removeListener(this, name, target, method);
-            return this;
-          },
-          has: function (name) {
-            return Ember.hasListeners(this, name);
-          }
-        });
-      }());
-      (function () {
-        var RSVP = requireModule('rsvp');
-        RSVP.async = function (callback, binding) {
-          Ember.run.schedule('actions', binding, callback);
-        };
-        var get = Ember.get;
-        Ember.DeferredMixin = Ember.Mixin.create({
-          then: function (doneCallback, failCallback) {
-            var promise = get(this, 'promise');
-            return promise.then.apply(promise, arguments);
-          },
-          resolve: function (value) {
-            get(this, 'promise').resolve(value);
-          },
-          reject: function (value) {
-            get(this, 'promise').reject(value);
-          },
-          promise: Ember.computed(function () {
-            return new RSVP.Promise;
-          })
-        });
-      }());
-      (function () {
-      }());
-      (function () {
-        Ember.Container = requireModule('container');
-        Ember.Container.set = Ember.set;
-      }());
-      (function () {
-        var set = Ember.set, get = Ember.get, o_create = Ember.create, o_defineProperty = Ember.platform.defineProperty, GUID_KEY = Ember.GUID_KEY, guidFor = Ember.guidFor, generateGuid = Ember.generateGuid, meta = Ember.meta, rewatch = Ember.rewatch, finishChains = Ember.finishChains, destroy = Ember.destroy, schedule = Ember.run.schedule, Mixin = Ember.Mixin, applyMixin = Mixin._apply, finishPartial = Mixin.finishPartial, reopen = Mixin.prototype.reopen, MANDATORY_SETTER = Ember.ENV.MANDATORY_SETTER, indexOf = Ember.EnumerableUtils.indexOf;
-        var undefinedDescriptor = {
-            configurable: true,
-            writable: true,
-            enumerable: false,
-            value: undefined
-          };
-        function makeCtor() {
-          var wasApplied = false, initMixins, initProperties;
-          var Class = function () {
-            if (!wasApplied) {
-              Class.proto();
-            }
-            o_defineProperty(this, GUID_KEY, undefinedDescriptor);
-            o_defineProperty(this, '_super', undefinedDescriptor);
-            var m = meta(this);
-            m.proto = this;
-            if (initMixins) {
-              var mixins = initMixins;
-              initMixins = null;
-              this.reopen.apply(this, mixins);
-            }
-            if (initProperties) {
-              var props = initProperties;
-              initProperties = null;
-              var concatenatedProperties = this.concatenatedProperties;
-              for (var i = 0, l = props.length; i < l; i++) {
-                var properties = props[i];
-                for (var keyName in properties) {
-                  if (!properties.hasOwnProperty(keyName)) {
-                    continue;
-                  }
-                  var value = properties[keyName], IS_BINDING = Ember.IS_BINDING;
-                  if (IS_BINDING.test(keyName)) {
-                    var bindings = m.bindings;
-                    if (!bindings) {
-                      bindings = m.bindings = {};
-                    } else if (!m.hasOwnProperty('bindings')) {
-                      bindings = m.bindings = o_create(m.bindings);
-                    }
-                    bindings[keyName] = value;
-                  }
-                  var desc = m.descs[keyName];
-                  Ember.assert('Ember.Object.create no longer supports defining computed properties.', !(value instanceof Ember.ComputedProperty));
-                  Ember.assert('Ember.Object.create no longer supports defining methods that call _super.', !(typeof value === 'function' && value.toString().indexOf('._super') !== -1));
-                  if (concatenatedProperties && indexOf(concatenatedProperties, keyName) >= 0) {
-                    var baseValue = this[keyName];
-                    if (baseValue) {
-                      if ('function' === typeof baseValue.concat) {
-                        value = baseValue.concat(value);
-                      } else {
-                        value = Ember.makeArray(baseValue).concat(value);
-                      }
-                    } else {
-                      value = Ember.makeArray(value);
-                    }
-                  }
-                  if (desc) {
-                    desc.set(this, keyName, value);
-                  } else {
-                    if (typeof this.setUnknownProperty === 'function' && !(keyName in this)) {
-                      this.setUnknownProperty(keyName, value);
-                    } else if (MANDATORY_SETTER) {
-                      Ember.defineProperty(this, keyName, null, value);
-                    } else {
-                      this[keyName] = value;
-                    }
-                  }
-                }
-              }
-            }
-            finishPartial(this, m);
-            delete m.proto;
-            finishChains(this);
-            this.init.apply(this, arguments);
-          };
-          Class.toString = Mixin.prototype.toString;
-          Class.willReopen = function () {
-            if (wasApplied) {
-              Class.PrototypeMixin = Mixin.create(Class.PrototypeMixin);
-            }
-            wasApplied = false;
-          };
-          Class._initMixins = function (args) {
-            initMixins = args;
-          };
-          Class._initProperties = function (args) {
-            initProperties = args;
-          };
-          Class.proto = function () {
-            var superclass = Class.superclass;
-            if (superclass) {
-              superclass.proto();
-            }
-            if (!wasApplied) {
-              wasApplied = true;
-              Class.PrototypeMixin.applyPartial(Class.prototype);
-              rewatch(Class.prototype);
-            }
-            return this.prototype;
-          };
-          return Class;
-        }
-        var CoreObject = makeCtor();
-        CoreObject.toString = function () {
-          return 'Ember.CoreObject';
-        };
-        CoreObject.PrototypeMixin = Mixin.create({
-          reopen: function () {
-            applyMixin(this, arguments, true);
-            return this;
-          },
-          isInstance: true,
-          init: function () {
-          },
-          concatenatedProperties: null,
-          isDestroyed: false,
-          isDestroying: false,
-          destroy: function () {
-            if (this._didCallDestroy) {
-              return;
-            }
-            this.isDestroying = true;
-            this._didCallDestroy = true;
-            schedule('destroy', this, this._scheduledDestroy);
-            return this;
-          },
-          willDestroy: Ember.K,
-          _scheduledDestroy: function () {
-            if (this.willDestroy) {
-              this.willDestroy();
-            }
-            destroy(this);
-            this.isDestroyed = true;
-            if (this.didDestroy) {
-              this.didDestroy();
-            }
-          },
-          bind: function (to, from) {
-            if (!(from instanceof Ember.Binding)) {
-              from = Ember.Binding.from(from);
-            }
-            from.to(to).connect(this);
-            return from;
-          },
-          toString: function toString() {
-            var hasToStringExtension = typeof this.toStringExtension === 'function', extension = hasToStringExtension ? ':' + this.toStringExtension() : '';
-            var ret = '<' + this.constructor.toString() + ':' + guidFor(this) + extension + '>';
-            this.toString = makeToString(ret);
-            return ret;
-          }
-        });
-        CoreObject.PrototypeMixin.ownerConstructor = CoreObject;
-        function makeToString(ret) {
-          return function () {
-            return ret;
-          };
-        }
-        if (Ember.config.overridePrototypeMixin) {
-          Ember.config.overridePrototypeMixin(CoreObject.PrototypeMixin);
-        }
-        CoreObject.__super__ = null;
-        var ClassMixin = Mixin.create({
-            ClassMixin: Ember.required(),
-            PrototypeMixin: Ember.required(),
-            isClass: true,
-            isMethod: false,
-            extend: function () {
-              var Class = makeCtor(), proto;
-              Class.ClassMixin = Mixin.create(this.ClassMixin);
-              Class.PrototypeMixin = Mixin.create(this.PrototypeMixin);
-              Class.ClassMixin.ownerConstructor = Class;
-              Class.PrototypeMixin.ownerConstructor = Class;
-              reopen.apply(Class.PrototypeMixin, arguments);
-              Class.superclass = this;
-              Class.__super__ = this.prototype;
-              proto = Class.prototype = o_create(this.prototype);
-              proto.constructor = Class;
-              generateGuid(proto, 'ember');
-              meta(proto).proto = proto;
-              Class.ClassMixin.apply(Class);
-              return Class;
-            },
-            createWithMixins: function () {
-              var C = this;
-              if (arguments.length > 0) {
-                this._initMixins(arguments);
-              }
-              return new C;
-            },
-            create: function () {
-              var C = this;
-              if (arguments.length > 0) {
-                this._initProperties(arguments);
-              }
-              return new C;
-            },
-            reopen: function () {
-              this.willReopen();
-              reopen.apply(this.PrototypeMixin, arguments);
-              return this;
-            },
-            reopenClass: function () {
-              reopen.apply(this.ClassMixin, arguments);
-              applyMixin(this, arguments, false);
-              return this;
-            },
-            detect: function (obj) {
-              if ('function' !== typeof obj) {
-                return false;
-              }
-              while (obj) {
-                if (obj === this) {
-                  return true;
-                }
-                obj = obj.superclass;
-              }
-              return false;
-            },
-            detectInstance: function (obj) {
-              return obj instanceof this;
-            },
-            metaForProperty: function (key) {
-              var desc = meta(this.proto(), false).descs[key];
-              Ember.assert("metaForProperty() could not find a computed property with key '" + key + "'.", !!desc && desc instanceof Ember.ComputedProperty);
-              return desc._meta || {};
-            },
-            eachComputedProperty: function (callback, binding) {
-              var proto = this.proto(), descs = meta(proto).descs, empty = {}, property;
-              for (var name in descs) {
-                property = descs[name];
-                if (property instanceof Ember.ComputedProperty) {
-                  callback.call(binding || this, name, property._meta || empty);
-                }
-              }
-            }
-          });
-        ClassMixin.ownerConstructor = CoreObject;
-        if (Ember.config.overrideClassMixin) {
-          Ember.config.overrideClassMixin(ClassMixin);
-        }
-        CoreObject.ClassMixin = ClassMixin;
-        ClassMixin.apply(CoreObject);
-        Ember.CoreObject = CoreObject;
-      }());
-      (function () {
-        Ember.Object = Ember.CoreObject.extend(Ember.Observable);
-        Ember.Object.toString = function () {
-          return 'Ember.Object';
-        };
-      }());
-      (function () {
-        var get = Ember.get, indexOf = Ember.ArrayPolyfills.indexOf;
-        var Namespace = Ember.Namespace = Ember.Object.extend({
-            isNamespace: true,
-            init: function () {
-              Ember.Namespace.NAMESPACES.push(this);
-              Ember.Namespace.PROCESSED = false;
-            },
-            toString: function () {
-              var name = get(this, 'name');
-              if (name) {
-                return name;
-              }
-              findNamespaces();
-              return this[Ember.GUID_KEY + '_name'];
-            },
-            nameClasses: function () {
-              processNamespace([this.toString()], this, {});
-            },
-            destroy: function () {
-              var namespaces = Ember.Namespace.NAMESPACES;
-              Ember.lookup[this.toString()] = undefined;
-              namespaces.splice(indexOf.call(namespaces, this), 1);
-              this._super();
-            }
-          });
-        Namespace.reopenClass({
-          NAMESPACES: [Ember],
-          NAMESPACES_BY_ID: {},
-          PROCESSED: false,
-          processAll: processAllNamespaces,
-          byName: function (name) {
-            if (!Ember.BOOTED) {
-              processAllNamespaces();
-            }
-            return NAMESPACES_BY_ID[name];
-          }
-        });
-        var NAMESPACES_BY_ID = Namespace.NAMESPACES_BY_ID;
-        var hasOwnProp = {}.hasOwnProperty, guidFor = Ember.guidFor;
-        function processNamespace(paths, root, seen) {
-          var idx = paths.length;
-          NAMESPACES_BY_ID[paths.join('.')] = root;
-          for (var key in root) {
-            if (!hasOwnProp.call(root, key)) {
-              continue;
-            }
-            var obj = root[key];
-            paths[idx] = key;
-            if (obj && obj.toString === classToString) {
-              obj.toString = makeToString(paths.join('.'));
-              obj[NAME_KEY] = paths.join('.');
-            } else if (obj && obj.isNamespace) {
-              if (seen[guidFor(obj)]) {
-                continue;
-              }
-              seen[guidFor(obj)] = true;
-              processNamespace(paths, obj, seen);
-            }
-          }
-          paths.length = idx;
-        }
-        function findNamespaces() {
-          var Namespace = Ember.Namespace, lookup = Ember.lookup, obj, isNamespace;
-          if (Namespace.PROCESSED) {
-            return;
-          }
-          for (var prop in lookup) {
-            if (prop === 'parent' || prop === 'top' || prop === 'frameElement') {
-              continue;
-            }
-            if (prop === 'globalStorage' && lookup.StorageList && lookup.globalStorage instanceof lookup.StorageList) {
-              continue;
-            }
-            if (lookup.hasOwnProperty && !lookup.hasOwnProperty(prop)) {
-              continue;
-            }
-            try {
-              obj = Ember.lookup[prop];
-              isNamespace = obj && obj.isNamespace;
-            } catch (e) {
-              continue;
-            }
-            if (isNamespace) {
-              Ember.deprecate('Namespaces should not begin with lowercase.', /^[A-Z]/.test(prop));
-              obj[NAME_KEY] = prop;
-            }
-          }
-        }
-        var NAME_KEY = Ember.NAME_KEY = Ember.GUID_KEY + '_name';
-        function superClassString(mixin) {
-          var superclass = mixin.superclass;
-          if (superclass) {
-            if (superclass[NAME_KEY]) {
-              return superclass[NAME_KEY];
-            } else {
-              return superClassString(superclass);
-            }
-          } else {
-            return;
-          }
-        }
-        function classToString() {
-          if (!Ember.BOOTED && !this[NAME_KEY]) {
-            processAllNamespaces();
-          }
-          var ret;
-          if (this[NAME_KEY]) {
-            ret = this[NAME_KEY];
-          } else {
-            var str = superClassString(this);
-            if (str) {
-              ret = '(subclass of ' + str + ')';
-            } else {
-              ret = '(unknown mixin)';
-            }
-            this.toString = makeToString(ret);
-          }
-          return ret;
-        }
-        function processAllNamespaces() {
-          var unprocessedNamespaces = !Namespace.PROCESSED, unprocessedMixins = Ember.anyUnprocessedMixins;
-          if (unprocessedNamespaces) {
-            findNamespaces();
-            Namespace.PROCESSED = true;
-          }
-          if (unprocessedNamespaces || unprocessedMixins) {
-            var namespaces = Namespace.NAMESPACES, namespace;
-            for (var i = 0, l = namespaces.length; i < l; i++) {
-              namespace = namespaces[i];
-              processNamespace([namespace.toString()], namespace, {});
-            }
-            Ember.anyUnprocessedMixins = false;
-          }
-        }
-        function makeToString(ret) {
-          return function () {
-            return ret;
-          };
-        }
-        Ember.Mixin.prototype.toString = classToString;
-      }());
-      (function () {
-        Ember.Application = Ember.Namespace.extend();
-      }());
-      (function () {
-        var OUT_OF_RANGE_EXCEPTION = 'Index out of range';
-        var EMPTY = [];
-        var get = Ember.get, set = Ember.set;
-        Ember.ArrayProxy = Ember.Object.extend(Ember.MutableArray, {
-          content: null,
-          arrangedContent: Ember.computed.alias('content'),
-          objectAtContent: function (idx) {
-            return get(this, 'arrangedContent').objectAt(idx);
-          },
-          replaceContent: function (idx, amt, objects) {
-            get(this, 'content').replace(idx, amt, objects);
-          },
-          _contentWillChange: Ember.beforeObserver(function () {
-            this._teardownContent();
-          }, 'content'),
-          _teardownContent: function () {
-            var content = get(this, 'content');
-            if (content) {
-              content.removeArrayObserver(this, {
-                willChange: 'contentArrayWillChange',
-                didChange: 'contentArrayDidChange'
-              });
-            }
-          },
-          contentArrayWillChange: Ember.K,
-          contentArrayDidChange: Ember.K,
-          _contentDidChange: Ember.observer(function () {
-            var content = get(this, 'content');
-            Ember.assert("Can't set ArrayProxy's content to itself", content !== this);
-            this._setupContent();
-          }, 'content'),
-          _setupContent: function () {
-            var content = get(this, 'content');
-            if (content) {
-              content.addArrayObserver(this, {
-                willChange: 'contentArrayWillChange',
-                didChange: 'contentArrayDidChange'
-              });
-            }
-          },
-          _arrangedContentWillChange: Ember.beforeObserver(function () {
-            var arrangedContent = get(this, 'arrangedContent'), len = arrangedContent ? get(arrangedContent, 'length') : 0;
-            this.arrangedContentArrayWillChange(this, 0, len, undefined);
-            this.arrangedContentWillChange(this);
-            this._teardownArrangedContent(arrangedContent);
-          }, 'arrangedContent'),
-          _arrangedContentDidChange: Ember.observer(function () {
-            var arrangedContent = get(this, 'arrangedContent'), len = arrangedContent ? get(arrangedContent, 'length') : 0;
-            Ember.assert("Can't set ArrayProxy's content to itself", arrangedContent !== this);
-            this._setupArrangedContent();
-            this.arrangedContentDidChange(this);
-            this.arrangedContentArrayDidChange(this, 0, undefined, len);
-          }, 'arrangedContent'),
-          _setupArrangedContent: function () {
-            var arrangedContent = get(this, 'arrangedContent');
-            if (arrangedContent) {
-              arrangedContent.addArrayObserver(this, {
-                willChange: 'arrangedContentArrayWillChange',
-                didChange: 'arrangedContentArrayDidChange'
-              });
-            }
-          },
-          _teardownArrangedContent: function () {
-            var arrangedContent = get(this, 'arrangedContent');
-            if (arrangedContent) {
-              arrangedContent.removeArrayObserver(this, {
-                willChange: 'arrangedContentArrayWillChange',
-                didChange: 'arrangedContentArrayDidChange'
-              });
-            }
-          },
-          arrangedContentWillChange: Ember.K,
-          arrangedContentDidChange: Ember.K,
-          objectAt: function (idx) {
-            return get(this, 'content') && this.objectAtContent(idx);
-          },
-          length: Ember.computed(function () {
-            var arrangedContent = get(this, 'arrangedContent');
-            return arrangedContent ? get(arrangedContent, 'length') : 0;
-          }),
-          _replace: function (idx, amt, objects) {
-            var content = get(this, 'content');
-            Ember.assert('The content property of ' + this.constructor + ' should be set before modifying it', content);
-            if (content)
-              this.replaceContent(idx, amt, objects);
-            return this;
-          },
-          replace: function () {
-            if (get(this, 'arrangedContent') === get(this, 'content')) {
-              this._replace.apply(this, arguments);
-            } else {
-              throw new Ember.Error('Using replace on an arranged ArrayProxy is not allowed.');
-            }
-          },
-          _insertAt: function (idx, object) {
-            if (idx > get(this, 'content.length'))
-              throw new Error(OUT_OF_RANGE_EXCEPTION);
-            this._replace(idx, 0, [object]);
-            return this;
-          },
-          insertAt: function (idx, object) {
-            if (get(this, 'arrangedContent') === get(this, 'content')) {
-              return this._insertAt(idx, object);
-            } else {
-              throw new Ember.Error('Using insertAt on an arranged ArrayProxy is not allowed.');
-            }
-          },
-          removeAt: function (start, len) {
-            if ('number' === typeof start) {
-              var content = get(this, 'content'), arrangedContent = get(this, 'arrangedContent'), indices = [], i;
-              if (start < 0 || start >= get(this, 'length')) {
-                throw new Error(OUT_OF_RANGE_EXCEPTION);
-              }
-              if (len === undefined)
-                len = 1;
-              for (i = start; i < start + len; i++) {
-                indices.push(content.indexOf(arrangedContent.objectAt(i)));
-              }
-              indices.sort(function (a, b) {
-                return b - a;
-              });
-              Ember.beginPropertyChanges();
-              for (i = 0; i < indices.length; i++) {
-                this._replace(indices[i], 1, EMPTY);
-              }
-              Ember.endPropertyChanges();
-            }
-            return this;
-          },
-          pushObject: function (obj) {
-            this._insertAt(get(this, 'content.length'), obj);
-            return obj;
-          },
-          pushObjects: function (objects) {
-            this._replace(get(this, 'length'), 0, objects);
-            return this;
-          },
-          setObjects: function (objects) {
-            if (objects.length === 0)
-              return this.clear();
-            var len = get(this, 'length');
-            this._replace(0, len, objects);
-            return this;
-          },
-          unshiftObject: function (obj) {
-            this._insertAt(0, obj);
-            return obj;
-          },
-          unshiftObjects: function (objects) {
-            this._replace(0, 0, objects);
-            return this;
-          },
-          slice: function () {
-            var arr = this.toArray();
-            return arr.slice.apply(arr, arguments);
-          },
-          arrangedContentArrayWillChange: function (item, idx, removedCnt, addedCnt) {
-            this.arrayContentWillChange(idx, removedCnt, addedCnt);
-          },
-          arrangedContentArrayDidChange: function (item, idx, removedCnt, addedCnt) {
-            this.arrayContentDidChange(idx, removedCnt, addedCnt);
-          },
-          init: function () {
-            this._super();
-            this._setupContent();
-            this._setupArrangedContent();
-          },
-          willDestroy: function () {
-            this._teardownArrangedContent();
-            this._teardownContent();
-          }
-        });
-      }());
-      (function () {
-        var get = Ember.get, set = Ember.set, fmt = Ember.String.fmt, addBeforeObserver = Ember.addBeforeObserver, addObserver = Ember.addObserver, removeBeforeObserver = Ember.removeBeforeObserver, removeObserver = Ember.removeObserver, propertyWillChange = Ember.propertyWillChange, propertyDidChange = Ember.propertyDidChange;
-        function contentPropertyWillChange(content, contentKey) {
-          var key = contentKey.slice(8);
-          if (key in this) {
-            return;
-          }
-          propertyWillChange(this, key);
-        }
-        function contentPropertyDidChange(content, contentKey) {
-          var key = contentKey.slice(8);
-          if (key in this) {
-            return;
-          }
-          propertyDidChange(this, key);
-        }
-        Ember.ObjectProxy = Ember.Object.extend({
-          content: null,
-          _contentDidChange: Ember.observer(function () {
-            Ember.assert("Can't set ObjectProxy's content to itself", this.get('content') !== this);
-          }, 'content'),
-          isTruthy: Ember.computed.bool('content'),
-          _debugContainerKey: null,
-          willWatchProperty: function (key) {
-            var contentKey = 'content.' + key;
-            addBeforeObserver(this, contentKey, null, contentPropertyWillChange);
-            addObserver(this, contentKey, null, contentPropertyDidChange);
-          },
-          didUnwatchProperty: function (key) {
-            var contentKey = 'content.' + key;
-            removeBeforeObserver(this, contentKey, null, contentPropertyWillChange);
-            removeObserver(this, contentKey, null, contentPropertyDidChange);
-          },
-          unknownProperty: function (key) {
-            var content = get(this, 'content');
-            if (content) {
-              return get(content, key);
-            }
-          },
-          setUnknownProperty: function (key, value) {
-            var content = get(this, 'content');
-            Ember.assert(fmt("Cannot delegate set('%@', %@) to the 'content' property of object proxy %@: its 'content' is undefined.", [
-              key,
-              value,
-              this
-            ]), content);
-            return set(content, key, value);
-          }
-        });
-        Ember.ObjectProxy.reopenClass({
-          create: function () {
-            var mixin, prototype, i, l, properties, keyName;
-            if (arguments.length) {
-              prototype = this.proto();
-              for (i = 0, l = arguments.length; i < l; i++) {
-                properties = arguments[i];
-                for (keyName in properties) {
-                  if (!properties.hasOwnProperty(keyName) || keyName in prototype) {
-                    continue;
-                  }
-                  if (!mixin)
-                    mixin = {};
-                  mixin[keyName] = null;
-                }
-              }
-              if (mixin)
-                this._initMixins([mixin]);
-            }
-            return this._super.apply(this, arguments);
-          }
-        });
-      }());
-      (function () {
-        var set = Ember.set, get = Ember.get, guidFor = Ember.guidFor;
-        var forEach = Ember.EnumerableUtils.forEach;
-        var EachArray = Ember.Object.extend(Ember.Array, {
-            init: function (content, keyName, owner) {
-              this._super();
-              this._keyName = keyName;
-              this._owner = owner;
-              this._content = content;
-            },
-            objectAt: function (idx) {
-              var item = this._content.objectAt(idx);
-              return item && get(item, this._keyName);
-            },
-            length: Ember.computed(function () {
-              var content = this._content;
-              return content ? get(content, 'length') : 0;
-            })
-          });
-        var IS_OBSERVER = /^.+:(before|change)$/;
-        function addObserverForContentKey(content, keyName, proxy, idx, loc) {
-          var objects = proxy._objects, guid;
-          if (!objects)
-            objects = proxy._objects = {};
-          while (--loc >= idx) {
-            var item = content.objectAt(loc);
-            if (item) {
-              Ember.addBeforeObserver(item, keyName, proxy, 'contentKeyWillChange');
-              Ember.addObserver(item, keyName, proxy, 'contentKeyDidChange');
-              guid = guidFor(item);
-              if (!objects[guid])
-                objects[guid] = [];
-              objects[guid].push(loc);
-            }
-          }
-        }
-        function removeObserverForContentKey(content, keyName, proxy, idx, loc) {
-          var objects = proxy._objects;
-          if (!objects)
-            objects = proxy._objects = {};
-          var indicies, guid;
-          while (--loc >= idx) {
-            var item = content.objectAt(loc);
-            if (item) {
-              Ember.removeBeforeObserver(item, keyName, proxy, 'contentKeyWillChange');
-              Ember.removeObserver(item, keyName, proxy, 'contentKeyDidChange');
-              guid = guidFor(item);
-              indicies = objects[guid];
-              indicies[indicies.indexOf(loc)] = null;
-            }
-          }
-        }
-        Ember.EachProxy = Ember.Object.extend({
-          init: function (content) {
-            this._super();
-            this._content = content;
-            content.addArrayObserver(this);
-            forEach(Ember.watchedEvents(this), function (eventName) {
-              this.didAddListener(eventName);
-            }, this);
-          },
-          unknownProperty: function (keyName, value) {
-            var ret;
-            ret = new EachArray(this._content, keyName, this);
-            Ember.defineProperty(this, keyName, null, ret);
-            this.beginObservingContentKey(keyName);
-            return ret;
-          },
-          arrayWillChange: function (content, idx, removedCnt, addedCnt) {
-            var keys = this._keys, key, lim;
-            lim = removedCnt > 0 ? idx + removedCnt : -1;
-            Ember.beginPropertyChanges(this);
-            for (key in keys) {
-              if (!keys.hasOwnProperty(key)) {
-                continue;
-              }
-              if (lim > 0)
-                removeObserverForContentKey(content, key, this, idx, lim);
-              Ember.propertyWillChange(this, key);
-            }
-            Ember.propertyWillChange(this._content, '@each');
-            Ember.endPropertyChanges(this);
-          },
-          arrayDidChange: function (content, idx, removedCnt, addedCnt) {
-            var keys = this._keys, key, lim;
-            lim = addedCnt > 0 ? idx + addedCnt : -1;
-            Ember.beginPropertyChanges(this);
-            for (key in keys) {
-              if (!keys.hasOwnProperty(key)) {
-                continue;
-              }
-              if (lim > 0)
-                addObserverForContentKey(content, key, this, idx, lim);
-              Ember.propertyDidChange(this, key);
-            }
-            Ember.propertyDidChange(this._content, '@each');
-            Ember.endPropertyChanges(this);
-          },
-          didAddListener: function (eventName) {
-            if (IS_OBSERVER.test(eventName)) {
-              this.beginObservingContentKey(eventName.slice(0, -7));
-            }
-          },
-          didRemoveListener: function (eventName) {
-            if (IS_OBSERVER.test(eventName)) {
-              this.stopObservingContentKey(eventName.slice(0, -7));
-            }
-          },
-          beginObservingContentKey: function (keyName) {
-            var keys = this._keys;
-            if (!keys)
-              keys = this._keys = {};
-            if (!keys[keyName]) {
-              keys[keyName] = 1;
-              var content = this._content, len = get(content, 'length');
-              addObserverForContentKey(content, keyName, this, 0, len);
-            } else {
-              keys[keyName]++;
-            }
-          },
-          stopObservingContentKey: function (keyName) {
-            var keys = this._keys;
-            if (keys && keys[keyName] > 0 && --keys[keyName] <= 0) {
-              var content = this._content, len = get(content, 'length');
-              removeObserverForContentKey(content, keyName, this, 0, len);
-            }
-          },
-          contentKeyWillChange: function (obj, keyName) {
-            Ember.propertyWillChange(this, keyName);
-          },
-          contentKeyDidChange: function (obj, keyName) {
-            Ember.propertyDidChange(this, keyName);
-          }
-        });
-      }());
-      (function () {
-        var get = Ember.get, set = Ember.set;
-        var NativeArray = Ember.Mixin.create(Ember.MutableArray, Ember.Observable, Ember.Copyable, {
-            get: function (key) {
-              if (key === 'length')
-                return this.length;
-              else if ('number' === typeof key)
-                return this[key];
-              else
-                return this._super(key);
-            },
-            objectAt: function (idx) {
-              return this[idx];
-            },
-            replace: function (idx, amt, objects) {
-              if (this.isFrozen)
-                throw Ember.FROZEN_ERROR;
-              var len = objects ? get(objects, 'length') : 0;
-              this.arrayContentWillChange(idx, amt, len);
-              if (!objects || objects.length === 0) {
-                this.splice(idx, amt);
-              } else {
-                var args = [
-                    idx,
-                    amt
-                  ].concat(objects);
-                this.splice.apply(this, args);
-              }
-              this.arrayContentDidChange(idx, amt, len);
-              return this;
-            },
-            unknownProperty: function (key, value) {
-              var ret;
-              if (value !== undefined && ret === undefined) {
-                ret = this[key] = value;
-              }
-              return ret;
-            },
-            indexOf: function (object, startAt) {
-              var idx, len = this.length;
-              if (startAt === undefined)
-                startAt = 0;
-              else
-                startAt = startAt < 0 ? Math.ceil(startAt) : Math.floor(startAt);
-              if (startAt < 0)
-                startAt += len;
-              for (idx = startAt; idx < len; idx++) {
-                if (this[idx] === object)
-                  return idx;
-              }
-              return -1;
-            },
-            lastIndexOf: function (object, startAt) {
-              var idx, len = this.length;
-              if (startAt === undefined)
-                startAt = len - 1;
-              else
-                startAt = startAt < 0 ? Math.ceil(startAt) : Math.floor(startAt);
-              if (startAt < 0)
-                startAt += len;
-              for (idx = startAt; idx >= 0; idx--) {
-                if (this[idx] === object)
-                  return idx;
-              }
-              return -1;
-            },
-            copy: function (deep) {
-              if (deep) {
-                return this.map(function (item) {
-                  return Ember.copy(item, true);
-                });
-              }
-              return this.slice();
-            }
-          });
-        var ignore = ['length'];
-        Ember.EnumerableUtils.forEach(NativeArray.keys(), function (methodName) {
-          if (Array.prototype[methodName])
-            ignore.push(methodName);
-        });
-        if (ignore.length > 0) {
-          NativeArray = NativeArray.without.apply(NativeArray, ignore);
-        }
-        Ember.NativeArray = NativeArray;
-        Ember.A = function (arr) {
-          if (arr === undefined) {
-            arr = [];
-          }
-          return Ember.Array.detect(arr) ? arr : Ember.NativeArray.apply(arr);
-        };
-        Ember.NativeArray.activate = function () {
-          NativeArray.apply(Array.prototype);
-          Ember.A = function (arr) {
-            return arr || [];
-          };
-        };
-        if (Ember.EXTEND_PROTOTYPES === true || Ember.EXTEND_PROTOTYPES.Array) {
-          Ember.NativeArray.activate();
-        }
-      }());
-      (function () {
-        var get = Ember.get, set = Ember.set, guidFor = Ember.guidFor, none = Ember.isNone, fmt = Ember.String.fmt;
-        Ember.Set = Ember.CoreObject.extend(Ember.MutableEnumerable, Ember.Copyable, Ember.Freezable, {
-          length: 0,
-          clear: function () {
-            if (this.isFrozen) {
-              throw new Error(Ember.FROZEN_ERROR);
-            }
-            var len = get(this, 'length');
-            if (len === 0) {
-              return this;
-            }
-            var guid;
-            this.enumerableContentWillChange(len, 0);
-            Ember.propertyWillChange(this, 'firstObject');
-            Ember.propertyWillChange(this, 'lastObject');
-            for (var i = 0; i < len; i++) {
-              guid = guidFor(this[i]);
-              delete this[guid];
-              delete this[i];
-            }
-            set(this, 'length', 0);
-            Ember.propertyDidChange(this, 'firstObject');
-            Ember.propertyDidChange(this, 'lastObject');
-            this.enumerableContentDidChange(len, 0);
-            return this;
-          },
-          isEqual: function (obj) {
-            if (!Ember.Enumerable.detect(obj))
-              return false;
-            var loc = get(this, 'length');
-            if (get(obj, 'length') !== loc)
-              return false;
-            while (--loc >= 0) {
-              if (!obj.contains(this[loc]))
-                return false;
-            }
-            return true;
-          },
-          add: Ember.aliasMethod('addObject'),
-          remove: Ember.aliasMethod('removeObject'),
-          pop: function () {
-            if (get(this, 'isFrozen'))
-              throw new Error(Ember.FROZEN_ERROR);
-            var obj = this.length > 0 ? this[this.length - 1] : null;
-            this.remove(obj);
-            return obj;
-          },
-          push: Ember.aliasMethod('addObject'),
-          shift: Ember.aliasMethod('pop'),
-          unshift: Ember.aliasMethod('push'),
-          addEach: Ember.aliasMethod('addObjects'),
-          removeEach: Ember.aliasMethod('removeObjects'),
-          init: function (items) {
-            this._super();
-            if (items)
-              this.addObjects(items);
-          },
-          nextObject: function (idx) {
-            return this[idx];
-          },
-          firstObject: Ember.computed(function () {
-            return this.length > 0 ? this[0] : undefined;
-          }),
-          lastObject: Ember.computed(function () {
-            return this.length > 0 ? this[this.length - 1] : undefined;
-          }),
-          addObject: function (obj) {
-            if (get(this, 'isFrozen'))
-              throw new Error(Ember.FROZEN_ERROR);
-            if (none(obj))
-              return this;
-            var guid = guidFor(obj), idx = this[guid], len = get(this, 'length'), added;
-            if (idx >= 0 && idx < len && this[idx] === obj)
-              return this;
-            added = [obj];
-            this.enumerableContentWillChange(null, added);
-            Ember.propertyWillChange(this, 'lastObject');
-            len = get(this, 'length');
-            this[guid] = len;
-            this[len] = obj;
-            set(this, 'length', len + 1);
-            Ember.propertyDidChange(this, 'lastObject');
-            this.enumerableContentDidChange(null, added);
-            return this;
-          },
-          removeObject: function (obj) {
-            if (get(this, 'isFrozen'))
-              throw new Error(Ember.FROZEN_ERROR);
-            if (none(obj))
-              return this;
-            var guid = guidFor(obj), idx = this[guid], len = get(this, 'length'), isFirst = idx === 0, isLast = idx === len - 1, last, removed;
-            if (idx >= 0 && idx < len && this[idx] === obj) {
-              removed = [obj];
-              this.enumerableContentWillChange(removed, null);
-              if (isFirst) {
-                Ember.propertyWillChange(this, 'firstObject');
-              }
-              if (isLast) {
-                Ember.propertyWillChange(this, 'lastObject');
-              }
-              if (idx < len - 1) {
-                last = this[len - 1];
-                this[idx] = last;
-                this[guidFor(last)] = idx;
-              }
-              delete this[guid];
-              delete this[len - 1];
-              set(this, 'length', len - 1);
-              if (isFirst) {
-                Ember.propertyDidChange(this, 'firstObject');
-              }
-              if (isLast) {
-                Ember.propertyDidChange(this, 'lastObject');
-              }
-              this.enumerableContentDidChange(removed, null);
-            }
-            return this;
-          },
-          contains: function (obj) {
-            return this[guidFor(obj)] >= 0;
-          },
-          copy: function () {
-            var C = this.constructor, ret = new C, loc = get(this, 'length');
-            set(ret, 'length', loc);
-            while (--loc >= 0) {
-              ret[loc] = this[loc];
-              ret[guidFor(this[loc])] = loc;
-            }
-            return ret;
-          },
-          toString: function () {
-            var len = this.length, idx, array = [];
-            for (idx = 0; idx < len; idx++) {
-              array[idx] = this[idx];
-            }
-            return fmt('Ember.Set<%@>', [array.join(',')]);
-          }
-        });
-      }());
-      (function () {
-        var DeferredMixin = Ember.DeferredMixin, get = Ember.get;
-        var Deferred = Ember.Object.extend(DeferredMixin);
-        Deferred.reopenClass({
-          promise: function (callback, binding) {
-            var deferred = Deferred.create();
-            callback.call(binding, deferred);
-            return get(deferred, 'promise');
-          }
-        });
-        Ember.Deferred = Deferred;
-      }());
-      (function () {
-        var loadHooks = Ember.ENV.EMBER_LOAD_HOOKS || {};
-        var loaded = {};
-        Ember.onLoad = function (name, callback) {
-          var object;
-          loadHooks[name] = loadHooks[name] || Ember.A();
-          loadHooks[name].pushObject(callback);
-          if (object = loaded[name]) {
-            callback(object);
-          }
-        };
-        Ember.runLoadHooks = function (name, object) {
-          var hooks;
-          loaded[name] = object;
-          if (hooks = loadHooks[name]) {
-            loadHooks[name].forEach(function (callback) {
-              callback(object);
-            });
-          }
-        };
-      }());
-      (function () {
-      }());
-      (function () {
-        var get = Ember.get;
-        Ember.ControllerMixin = Ember.Mixin.create({
-          isController: true,
-          target: null,
-          container: null,
-          store: null,
-          model: Ember.computed.alias('content'),
-          send: function (actionName) {
-            var args = [].slice.call(arguments, 1), target;
-            if (this[actionName]) {
-              Ember.assert('The controller ' + this + ' does not have the action ' + actionName, typeof this[actionName] === 'function');
-              this[actionName].apply(this, args);
-            } else if (target = get(this, 'target')) {
-              Ember.assert('The target for controller ' + this + ' (' + target + ') did not define a `send` method', typeof target.send === 'function');
-              target.send.apply(target, arguments);
-            }
-          }
-        });
-        Ember.Controller = Ember.Object.extend(Ember.ControllerMixin);
-      }());
-      (function () {
-        var get = Ember.get, set = Ember.set, forEach = Ember.EnumerableUtils.forEach;
-        Ember.SortableMixin = Ember.Mixin.create(Ember.MutableEnumerable, {
-          sortProperties: null,
-          sortAscending: true,
-          orderBy: function (item1, item2) {
-            var result = 0, sortProperties = get(this, 'sortProperties'), sortAscending = get(this, 'sortAscending');
-            Ember.assert('you need to define `sortProperties`', !!sortProperties);
-            forEach(sortProperties, function (propertyName) {
-              if (result === 0) {
-                result = Ember.compare(get(item1, propertyName), get(item2, propertyName));
-                if (result !== 0 && !sortAscending) {
-                  result = -1 * result;
-                }
-              }
-            });
-            return result;
-          },
-          destroy: function () {
-            var content = get(this, 'content'), sortProperties = get(this, 'sortProperties');
-            if (content && sortProperties) {
-              forEach(content, function (item) {
-                forEach(sortProperties, function (sortProperty) {
-                  Ember.removeObserver(item, sortProperty, this, 'contentItemSortPropertyDidChange');
-                }, this);
-              }, this);
-            }
-            return this._super();
-          },
-          isSorted: Ember.computed.bool('sortProperties'),
-          arrangedContent: Ember.computed('content', 'sortProperties.@each', function (key, value) {
-            var content = get(this, 'content'), isSorted = get(this, 'isSorted'), sortProperties = get(this, 'sortProperties'), self = this;
-            if (content && isSorted) {
-              content = content.slice();
-              content.sort(function (item1, item2) {
-                return self.orderBy(item1, item2);
-              });
-              forEach(content, function (item) {
-                forEach(sortProperties, function (sortProperty) {
-                  Ember.addObserver(item, sortProperty, this, 'contentItemSortPropertyDidChange');
-                }, this);
-              }, this);
-              return Ember.A(content);
-            }
-            return content;
-          }),
-          _contentWillChange: Ember.beforeObserver(function () {
-            var content = get(this, 'content'), sortProperties = get(this, 'sortProperties');
-            if (content && sortProperties) {
-              forEach(content, function (item) {
-                forEach(sortProperties, function (sortProperty) {
-                  Ember.removeObserver(item, sortProperty, this, 'contentItemSortPropertyDidChange');
-                }, this);
-              }, this);
-            }
-            this._super();
-          }, 'content'),
-          sortAscendingWillChange: Ember.beforeObserver(function () {
-            this._lastSortAscending = get(this, 'sortAscending');
-          }, 'sortAscending'),
-          sortAscendingDidChange: Ember.observer(function () {
-            if (get(this, 'sortAscending') !== this._lastSortAscending) {
-              var arrangedContent = get(this, 'arrangedContent');
-              arrangedContent.reverseObjects();
-            }
-          }, 'sortAscending'),
-          contentArrayWillChange: function (array, idx, removedCount, addedCount) {
-            var isSorted = get(this, 'isSorted');
-            if (isSorted) {
-              var arrangedContent = get(this, 'arrangedContent');
-              var removedObjects = array.slice(idx, idx + removedCount);
-              var sortProperties = get(this, 'sortProperties');
-              forEach(removedObjects, function (item) {
-                arrangedContent.removeObject(item);
-                forEach(sortProperties, function (sortProperty) {
-                  Ember.removeObserver(item, sortProperty, this, 'contentItemSortPropertyDidChange');
-                }, this);
-              }, this);
-            }
-            return this._super(array, idx, removedCount, addedCount);
-          },
-          contentArrayDidChange: function (array, idx, removedCount, addedCount) {
-            var isSorted = get(this, 'isSorted'), sortProperties = get(this, 'sortProperties');
-            if (isSorted) {
-              var addedObjects = array.slice(idx, idx + addedCount);
-              forEach(addedObjects, function (item) {
-                this.insertItemSorted(item);
-                forEach(sortProperties, function (sortProperty) {
-                  Ember.addObserver(item, sortProperty, this, 'contentItemSortPropertyDidChange');
-                }, this);
-              }, this);
-            }
-            return this._super(array, idx, removedCount, addedCount);
-          },
-          insertItemSorted: function (item) {
-            var arrangedContent = get(this, 'arrangedContent');
-            var length = get(arrangedContent, 'length');
-            var idx = this._binarySearch(item, 0, length);
-            arrangedContent.insertAt(idx, item);
-          },
-          contentItemSortPropertyDidChange: function (item) {
-            var arrangedContent = get(this, 'arrangedContent'), oldIndex = arrangedContent.indexOf(item), leftItem = arrangedContent.objectAt(oldIndex - 1), rightItem = arrangedContent.objectAt(oldIndex + 1), leftResult = leftItem && this.orderBy(item, leftItem), rightResult = rightItem && this.orderBy(item, rightItem);
-            if (leftResult < 0 || rightResult > 0) {
-              arrangedContent.removeObject(item);
-              this.insertItemSorted(item);
-            }
-          },
-          _binarySearch: function (item, low, high) {
-            var mid, midItem, res, arrangedContent;
-            if (low === high) {
-              return low;
-            }
-            arrangedContent = get(this, 'arrangedContent');
-            mid = low + Math.floor((high - low) / 2);
-            midItem = arrangedContent.objectAt(mid);
-            res = this.orderBy(midItem, item);
-            if (res < 0) {
-              return this._binarySearch(item, mid + 1, high);
-            } else if (res > 0) {
-              return this._binarySearch(item, low, mid);
-            }
-            return mid;
-          }
-        });
-      }());
-      (function () {
-        var get = Ember.get, set = Ember.set, forEach = Ember.EnumerableUtils.forEach, replace = Ember.EnumerableUtils.replace;
-        Ember.ArrayController = Ember.ArrayProxy.extend(Ember.ControllerMixin, Ember.SortableMixin, {
-          itemController: null,
-          lookupItemController: function (object) {
-            return get(this, 'itemController');
-          },
-          objectAtContent: function (idx) {
-            var length = get(this, 'length'), arrangedContent = get(this, 'arrangedContent'), object = arrangedContent && arrangedContent.objectAt(idx);
-            if (idx >= 0 && idx < length) {
-              var controllerClass = this.lookupItemController(object);
-              if (controllerClass) {
-                return this.controllerAt(idx, object, controllerClass);
-              }
-            }
-            return object;
-          },
-          arrangedContentDidChange: function () {
-            this._super();
-            this._resetSubControllers();
-          },
-          arrayContentDidChange: function (idx, removedCnt, addedCnt) {
-            var subControllers = get(this, '_subControllers'), subControllersToRemove = subControllers.slice(idx, idx + removedCnt);
-            forEach(subControllersToRemove, function (subController) {
-              if (subController) {
-                subController.destroy();
-              }
-            });
-            replace(subControllers, idx, removedCnt, new Array(addedCnt));
-            this._super(idx, removedCnt, addedCnt);
-          },
-          init: function () {
-            this._super();
-            if (!this.get('content')) {
-              Ember.defineProperty(this, 'content', undefined, Ember.A());
-            }
-            this.set('_subControllers', Ember.A());
-          },
-          controllerAt: function (idx, object, controllerClass) {
-            var container = get(this, 'container'), subControllers = get(this, '_subControllers'), subController = subControllers[idx];
-            if (!subController) {
-              subController = container.lookup('controller:' + controllerClass, { singleton: false });
-              subControllers[idx] = subController;
-            }
-            if (!subController) {
-              throw new Error('Could not resolve itemController: "' + controllerClass + '"');
-            }
-            subController.set('target', this);
-            subController.set('content', object);
-            return subController;
-          },
-          _subControllers: null,
-          _resetSubControllers: function () {
-            var subControllers = get(this, '_subControllers');
-            forEach(subControllers, function (subController) {
-              if (subController) {
-                subController.destroy();
-              }
-            });
-            this.set('_subControllers', Ember.A());
-          }
-        });
-      }());
-      (function () {
-        Ember.ObjectController = Ember.ObjectProxy.extend(Ember.ControllerMixin);
-      }());
-      (function () {
-      }());
-      (function () {
-      }());
-    }());
-  });
   require.define('/src/compiler.coffee', function (module, exports, __dirname, __filename) {
-    var any, assignment, beingDeclared, collectIdentifiers, concat, concatMap, CS, declarationsNeeded, declarationsNeededRecursive, defaultRules, difference, divMod, dynamicMemberAccess, emberComputedProperty, enabledHelpers, envEnrichments, exports, expr, fn, fn, foldl1, forceBlock, forceComputedProperty, generateMutatingWalker, generateSoak, genSym, h, h, hasSoak, helperNames, helpers, inlineHelpers, intersect, isIdentifierName, JS, jsReserved, makeReturn, makeVarDeclaration, map, memberAccess, needsCaching, nub, owns, partition, span, stmt, union, usedAsExpression, variableDeclarations;
+    var _, any, assignment, beingDeclared, collectIdentifiers, concat, concatMap, CS, declarationsNeeded, declarationsNeededRecursive, defaultRules, difference, divMod, dynamicMemberAccess, emberComputedProperty, enabledHelpers, envEnrichments, exports, expr, fn, fn, foldl1, forceBlock, forceComputedProperty, generateMutatingWalker, generateSoak, genSym, h, h, hasSoak, helperNames, helpers, inlineHelpers, intersect, isIdentifierName, JS, jsReserved, makeReturn, makeVarDeclaration, map, memberAccess, needsCaching, nub, owns, partition, span, stmt, union, usedAsExpression, variableDeclarations;
     cache$ = require('/src/functional-helpers.coffee', module);
     any = cache$.any;
     concat = cache$.concat;
@@ -11849,6 +5892,7 @@
     CS = require('/src/nodes.coffee', module);
     JS = require('/src/js-nodes.coffee', module);
     exports = null != ('undefined' !== typeof module && null != module ? module.exports : void 0) ? 'undefined' !== typeof module && null != module ? module.exports : void 0 : this;
+    _ = require('/node_modules/lodash/index.js', module);
     jsReserved = [
       'break',
       'case',
@@ -12934,17 +6978,17 @@
             }
             expression = expr(expression);
             this.annotations || (this.annotations = []);
-            if (computed = this.annotations.find(function (a) {
+            if (computed = _.find(this.annotations, function (a) {
                 return a['instanceof'](CS.Computed);
               }))
               expression = forceComputedProperty(expression, computed.parameters);
-            if (volatile = this.annotations.find(function (a) {
+            if (volatile = _.find(this.annotations, function (a) {
                 return a['instanceof'](CS.Volatile);
               })) {
               expression = forceComputedProperty(expression, volatile.parameters);
               expression = new JS.CallExpression(memberAccess(expression, 'volatile'), []);
             }
-            if (observes = this.annotations.find(function (a) {
+            if (observes = _.find(this.annotations, function (a) {
                 return a['instanceof'](CS.Observes);
               })) {
               args = [expression].concat(observes.parameters.map(function (p) {
@@ -13085,9 +7129,9 @@
               if (performedRewrite)
                 fn = new JS.CallExpression(new JS.FunctionExpression(null, [newThis], new JS.BlockStatement([new JS.ReturnStatement(fn)])), [new JS.ThisExpression]);
               if (this['instanceof'](CS.ComputedProperty)) {
-                chains = Ember.A(this.dependentKeys().map(function (c) {
+                chains = _.uniq(this.dependentKeys().map(function (c) {
                   return c.join('.');
-                })).uniq();
+                }));
                 return emberComputedProperty(fn, chains);
               } else {
                 return fn;
@@ -14283,6 +8327,3875 @@
       return {}.hasOwnProperty.call(o, p);
     }
   });
+  require.define('/node_modules/lodash/index.js', function (module, exports, __dirname, __filename) {
+    ;
+    (function () {
+      var undefined;
+      var VERSION = '3.6.0';
+      var BIND_FLAG = 1, BIND_KEY_FLAG = 2, CURRY_BOUND_FLAG = 4, CURRY_FLAG = 8, CURRY_RIGHT_FLAG = 16, PARTIAL_FLAG = 32, PARTIAL_RIGHT_FLAG = 64, ARY_FLAG = 128, REARG_FLAG = 256;
+      var DEFAULT_TRUNC_LENGTH = 30, DEFAULT_TRUNC_OMISSION = '...';
+      var HOT_COUNT = 150, HOT_SPAN = 16;
+      var LAZY_DROP_WHILE_FLAG = 0, LAZY_FILTER_FLAG = 1, LAZY_MAP_FLAG = 2;
+      var FUNC_ERROR_TEXT = 'Expected a function';
+      var PLACEHOLDER = '__lodash_placeholder__';
+      var argsTag = '[object Arguments]', arrayTag = '[object Array]', boolTag = '[object Boolean]', dateTag = '[object Date]', errorTag = '[object Error]', funcTag = '[object Function]', mapTag = '[object Map]', numberTag = '[object Number]', objectTag = '[object Object]', regexpTag = '[object RegExp]', setTag = '[object Set]', stringTag = '[object String]', weakMapTag = '[object WeakMap]';
+      var arrayBufferTag = '[object ArrayBuffer]', float32Tag = '[object Float32Array]', float64Tag = '[object Float64Array]', int8Tag = '[object Int8Array]', int16Tag = '[object Int16Array]', int32Tag = '[object Int32Array]', uint8Tag = '[object Uint8Array]', uint8ClampedTag = '[object Uint8ClampedArray]', uint16Tag = '[object Uint16Array]', uint32Tag = '[object Uint32Array]';
+      var reEmptyStringLeading = /\b__p \+= '';/g, reEmptyStringMiddle = /\b(__p \+=) '' \+/g, reEmptyStringTrailing = /(__e\(.*?\)|\b__t\)) \+\n'';/g;
+      var reEscapedHtml = /&(?:amp|lt|gt|quot|#39|#96);/g, reUnescapedHtml = /[&<>"'`]/g, reHasEscapedHtml = RegExp(reEscapedHtml.source), reHasUnescapedHtml = RegExp(reUnescapedHtml.source);
+      var reEscape = /<%-([\s\S]+?)%>/g, reEvaluate = /<%([\s\S]+?)%>/g, reInterpolate = /<%=([\s\S]+?)%>/g;
+      var reComboMarks = /[\u0300-\u036f\ufe20-\ufe23]/g;
+      var reEsTemplate = /\$\{([^\\}]*(?:\\.[^\\}]*)*)\}/g;
+      var reFlags = /\w*$/;
+      var reHexPrefix = /^0[xX]/;
+      var reHostCtor = /^\[object .+?Constructor\]$/;
+      var reLatin1 = /[\xc0-\xd6\xd8-\xde\xdf-\xf6\xf8-\xff]/g;
+      var reNoMatch = /($^)/;
+      var reRegExpChars = /[.*+?^${}()|[\]\/\\]/g, reHasRegExpChars = RegExp(reRegExpChars.source);
+      var reUnescapedString = /['\n\r\u2028\u2029\\]/g;
+      var reWords = function () {
+          var upper = '[A-Z\\xc0-\\xd6\\xd8-\\xde]', lower = '[a-z\\xdf-\\xf6\\xf8-\\xff]+';
+          return RegExp(upper + '+(?=' + upper + lower + ')|' + upper + '?' + lower + '|' + upper + '+|[0-9]+', 'g');
+        }();
+      var whitespace = ' \t\x0B\f\xA0\uFEFF' + '\n\r\u2028\u2029' + '\u1680\u180E\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200A\u202F\u205F\u3000';
+      var contextProps = [
+          'Array',
+          'ArrayBuffer',
+          'Date',
+          'Error',
+          'Float32Array',
+          'Float64Array',
+          'Function',
+          'Int8Array',
+          'Int16Array',
+          'Int32Array',
+          'Math',
+          'Number',
+          'Object',
+          'RegExp',
+          'Set',
+          'String',
+          '_',
+          'clearTimeout',
+          'document',
+          'isFinite',
+          'parseInt',
+          'setTimeout',
+          'TypeError',
+          'Uint8Array',
+          'Uint8ClampedArray',
+          'Uint16Array',
+          'Uint32Array',
+          'WeakMap',
+          'window'
+        ];
+      var templateCounter = -1;
+      var typedArrayTags = {};
+      typedArrayTags[float32Tag] = typedArrayTags[float64Tag] = typedArrayTags[int8Tag] = typedArrayTags[int16Tag] = typedArrayTags[int32Tag] = typedArrayTags[uint8Tag] = typedArrayTags[uint8ClampedTag] = typedArrayTags[uint16Tag] = typedArrayTags[uint32Tag] = true;
+      typedArrayTags[argsTag] = typedArrayTags[arrayTag] = typedArrayTags[arrayBufferTag] = typedArrayTags[boolTag] = typedArrayTags[dateTag] = typedArrayTags[errorTag] = typedArrayTags[funcTag] = typedArrayTags[mapTag] = typedArrayTags[numberTag] = typedArrayTags[objectTag] = typedArrayTags[regexpTag] = typedArrayTags[setTag] = typedArrayTags[stringTag] = typedArrayTags[weakMapTag] = false;
+      var cloneableTags = {};
+      cloneableTags[argsTag] = cloneableTags[arrayTag] = cloneableTags[arrayBufferTag] = cloneableTags[boolTag] = cloneableTags[dateTag] = cloneableTags[float32Tag] = cloneableTags[float64Tag] = cloneableTags[int8Tag] = cloneableTags[int16Tag] = cloneableTags[int32Tag] = cloneableTags[numberTag] = cloneableTags[objectTag] = cloneableTags[regexpTag] = cloneableTags[stringTag] = cloneableTags[uint8Tag] = cloneableTags[uint8ClampedTag] = cloneableTags[uint16Tag] = cloneableTags[uint32Tag] = true;
+      cloneableTags[errorTag] = cloneableTags[funcTag] = cloneableTags[mapTag] = cloneableTags[setTag] = cloneableTags[weakMapTag] = false;
+      var debounceOptions = {
+          'leading': false,
+          'maxWait': 0,
+          'trailing': false
+        };
+      var deburredLetters = {
+          '\xC0': 'A',
+          '\xC1': 'A',
+          '\xC2': 'A',
+          '\xC3': 'A',
+          '\xC4': 'A',
+          '\xC5': 'A',
+          '\xE0': 'a',
+          '\xE1': 'a',
+          '\xE2': 'a',
+          '\xE3': 'a',
+          '\xE4': 'a',
+          '\xE5': 'a',
+          '\xC7': 'C',
+          '\xE7': 'c',
+          '\xD0': 'D',
+          '\xF0': 'd',
+          '\xC8': 'E',
+          '\xC9': 'E',
+          '\xCA': 'E',
+          '\xCB': 'E',
+          '\xE8': 'e',
+          '\xE9': 'e',
+          '\xEA': 'e',
+          '\xEB': 'e',
+          '\xCC': 'I',
+          '\xCD': 'I',
+          '\xCE': 'I',
+          '\xCF': 'I',
+          '\xEC': 'i',
+          '\xED': 'i',
+          '\xEE': 'i',
+          '\xEF': 'i',
+          '\xD1': 'N',
+          '\xF1': 'n',
+          '\xD2': 'O',
+          '\xD3': 'O',
+          '\xD4': 'O',
+          '\xD5': 'O',
+          '\xD6': 'O',
+          '\xD8': 'O',
+          '\xF2': 'o',
+          '\xF3': 'o',
+          '\xF4': 'o',
+          '\xF5': 'o',
+          '\xF6': 'o',
+          '\xF8': 'o',
+          '\xD9': 'U',
+          '\xDA': 'U',
+          '\xDB': 'U',
+          '\xDC': 'U',
+          '\xF9': 'u',
+          '\xFA': 'u',
+          '\xFB': 'u',
+          '\xFC': 'u',
+          '\xDD': 'Y',
+          '\xFD': 'y',
+          '\xFF': 'y',
+          '\xC6': 'Ae',
+          '\xE6': 'ae',
+          '\xDE': 'Th',
+          '\xFE': 'th',
+          '\xDF': 'ss'
+        };
+      var htmlEscapes = {
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          '"': '&quot;',
+          "'": '&#39;',
+          '`': '&#96;'
+        };
+      var htmlUnescapes = {
+          '&amp;': '&',
+          '&lt;': '<',
+          '&gt;': '>',
+          '&quot;': '"',
+          '&#39;': "'",
+          '&#96;': '`'
+        };
+      var objectTypes = {
+          'function': true,
+          'object': true
+        };
+      var stringEscapes = {
+          '\\': '\\',
+          "'": "'",
+          '\n': 'n',
+          '\r': 'r',
+          '\u2028': 'u2028',
+          '\u2029': 'u2029'
+        };
+      var freeExports = objectTypes[typeof exports] && exports && !exports.nodeType && exports;
+      var freeModule = objectTypes[typeof module] && module && !module.nodeType && module;
+      var freeGlobal = freeExports && freeModule && typeof global == 'object' && global;
+      var freeSelf = objectTypes[typeof self] && self && self.Object && self;
+      var freeWindow = objectTypes[typeof window] && window && window.Object && window;
+      var moduleExports = freeModule && freeModule.exports === freeExports && freeExports;
+      var root = freeGlobal || freeWindow !== (this && this.window) && freeWindow || freeSelf || this;
+      function baseCompareAscending(value, other) {
+        if (value !== other) {
+          var valIsReflexive = value === value, othIsReflexive = other === other;
+          if (value > other || !valIsReflexive || typeof value == 'undefined' && othIsReflexive) {
+            return 1;
+          }
+          if (value < other || !othIsReflexive || typeof other == 'undefined' && valIsReflexive) {
+            return -1;
+          }
+        }
+        return 0;
+      }
+      function baseFindIndex(array, predicate, fromRight) {
+        var length = array.length, index = fromRight ? length : -1;
+        while (fromRight ? index-- : ++index < length) {
+          if (predicate(array[index], index, array)) {
+            return index;
+          }
+        }
+        return -1;
+      }
+      function baseIndexOf(array, value, fromIndex) {
+        if (value !== value) {
+          return indexOfNaN(array, fromIndex);
+        }
+        var index = fromIndex - 1, length = array.length;
+        while (++index < length) {
+          if (array[index] === value) {
+            return index;
+          }
+        }
+        return -1;
+      }
+      function baseIsFunction(value) {
+        return typeof value == 'function' || false;
+      }
+      function baseToString(value) {
+        if (typeof value == 'string') {
+          return value;
+        }
+        return value == null ? '' : value + '';
+      }
+      function charAtCallback(string) {
+        return string.charCodeAt(0);
+      }
+      function charsLeftIndex(string, chars) {
+        var index = -1, length = string.length;
+        while (++index < length && chars.indexOf(string.charAt(index)) > -1) {
+        }
+        return index;
+      }
+      function charsRightIndex(string, chars) {
+        var index = string.length;
+        while (index-- && chars.indexOf(string.charAt(index)) > -1) {
+        }
+        return index;
+      }
+      function compareAscending(object, other) {
+        return baseCompareAscending(object.criteria, other.criteria) || object.index - other.index;
+      }
+      function compareMultiple(object, other, orders) {
+        var index = -1, objCriteria = object.criteria, othCriteria = other.criteria, length = objCriteria.length, ordersLength = orders.length;
+        while (++index < length) {
+          var result = baseCompareAscending(objCriteria[index], othCriteria[index]);
+          if (result) {
+            if (index >= ordersLength) {
+              return result;
+            }
+            return result * (orders[index] ? 1 : -1);
+          }
+        }
+        return object.index - other.index;
+      }
+      function deburrLetter(letter) {
+        return deburredLetters[letter];
+      }
+      function escapeHtmlChar(chr) {
+        return htmlEscapes[chr];
+      }
+      function escapeStringChar(chr) {
+        return '\\' + stringEscapes[chr];
+      }
+      function indexOfNaN(array, fromIndex, fromRight) {
+        var length = array.length, index = fromIndex + (fromRight ? 0 : -1);
+        while (fromRight ? index-- : ++index < length) {
+          var other = array[index];
+          if (other !== other) {
+            return index;
+          }
+        }
+        return -1;
+      }
+      function isObjectLike(value) {
+        return !!value && typeof value == 'object';
+      }
+      function isSpace(charCode) {
+        return charCode <= 160 && (charCode >= 9 && charCode <= 13) || charCode == 32 || charCode == 160 || charCode == 5760 || charCode == 6158 || charCode >= 8192 && (charCode <= 8202 || charCode == 8232 || charCode == 8233 || charCode == 8239 || charCode == 8287 || charCode == 12288 || charCode == 65279);
+      }
+      function replaceHolders(array, placeholder) {
+        var index = -1, length = array.length, resIndex = -1, result = [];
+        while (++index < length) {
+          if (array[index] === placeholder) {
+            array[index] = PLACEHOLDER;
+            result[++resIndex] = index;
+          }
+        }
+        return result;
+      }
+      function sortedUniq(array, iteratee) {
+        var seen, index = -1, length = array.length, resIndex = -1, result = [];
+        while (++index < length) {
+          var value = array[index], computed = iteratee ? iteratee(value, index, array) : value;
+          if (!index || seen !== computed) {
+            seen = computed;
+            result[++resIndex] = value;
+          }
+        }
+        return result;
+      }
+      function trimmedLeftIndex(string) {
+        var index = -1, length = string.length;
+        while (++index < length && isSpace(string.charCodeAt(index))) {
+        }
+        return index;
+      }
+      function trimmedRightIndex(string) {
+        var index = string.length;
+        while (index-- && isSpace(string.charCodeAt(index))) {
+        }
+        return index;
+      }
+      function unescapeHtmlChar(chr) {
+        return htmlUnescapes[chr];
+      }
+      function runInContext(context) {
+        context = context ? _.defaults(root.Object(), context, _.pick(root, contextProps)) : root;
+        var Array = context.Array, Date = context.Date, Error = context.Error, Function = context.Function, Math = context.Math, Number = context.Number, Object = context.Object, RegExp = context.RegExp, String = context.String, TypeError = context.TypeError;
+        var arrayProto = Array.prototype, objectProto = Object.prototype, stringProto = String.prototype;
+        var document = (document = context.window) && document.document;
+        var fnToString = Function.prototype.toString;
+        var getLength = baseProperty('length');
+        var hasOwnProperty = objectProto.hasOwnProperty;
+        var idCounter = 0;
+        var objToString = objectProto.toString;
+        var oldDash = context._;
+        var reNative = RegExp('^' + escapeRegExp(objToString).replace(/toString|(function).*?(?=\\\()| for .+?(?=\\\])/g, '$1.*?') + '$');
+        var ArrayBuffer = isNative(ArrayBuffer = context.ArrayBuffer) && ArrayBuffer, bufferSlice = isNative(bufferSlice = ArrayBuffer && new ArrayBuffer(0).slice) && bufferSlice, ceil = Math.ceil, clearTimeout = context.clearTimeout, floor = Math.floor, getPrototypeOf = isNative(getPrototypeOf = Object.getPrototypeOf) && getPrototypeOf, push = arrayProto.push, propertyIsEnumerable = objectProto.propertyIsEnumerable, Set = isNative(Set = context.Set) && Set, setTimeout = context.setTimeout, splice = arrayProto.splice, Uint8Array = isNative(Uint8Array = context.Uint8Array) && Uint8Array, WeakMap = isNative(WeakMap = context.WeakMap) && WeakMap;
+        var Float64Array = function () {
+            try {
+              var func = isNative(func = context.Float64Array) && func, result = new func(new ArrayBuffer(10), 0, 1) && func;
+            } catch (e) {
+            }
+            return result;
+          }();
+        var nativeIsArray = isNative(nativeIsArray = Array.isArray) && nativeIsArray, nativeCreate = isNative(nativeCreate = Object.create) && nativeCreate, nativeIsFinite = context.isFinite, nativeKeys = isNative(nativeKeys = Object.keys) && nativeKeys, nativeMax = Math.max, nativeMin = Math.min, nativeNow = isNative(nativeNow = Date.now) && nativeNow, nativeNumIsFinite = isNative(nativeNumIsFinite = Number.isFinite) && nativeNumIsFinite, nativeParseInt = context.parseInt, nativeRandom = Math.random;
+        var NEGATIVE_INFINITY = Number.NEGATIVE_INFINITY, POSITIVE_INFINITY = Number.POSITIVE_INFINITY;
+        var MAX_ARRAY_LENGTH = Math.pow(2, 32) - 1, MAX_ARRAY_INDEX = MAX_ARRAY_LENGTH - 1, HALF_MAX_ARRAY_LENGTH = MAX_ARRAY_LENGTH >>> 1;
+        var FLOAT64_BYTES_PER_ELEMENT = Float64Array ? Float64Array.BYTES_PER_ELEMENT : 0;
+        var MAX_SAFE_INTEGER = Math.pow(2, 53) - 1;
+        var metaMap = WeakMap && new WeakMap;
+        var realNames = {};
+        function lodash(value) {
+          if (isObjectLike(value) && !isArray(value) && !(value instanceof LazyWrapper)) {
+            if (value instanceof LodashWrapper) {
+              return value;
+            }
+            if (hasOwnProperty.call(value, '__chain__') && hasOwnProperty.call(value, '__wrapped__')) {
+              return wrapperClone(value);
+            }
+          }
+          return new LodashWrapper(value);
+        }
+        function baseLodash() {
+        }
+        function LodashWrapper(value, chainAll, actions) {
+          this.__wrapped__ = value;
+          this.__actions__ = actions || [];
+          this.__chain__ = !!chainAll;
+        }
+        var support = lodash.support = {};
+        (function (x) {
+          support.funcDecomp = /\bthis\b/.test(function () {
+            return this;
+          });
+          support.funcNames = typeof Function.name == 'string';
+          try {
+            support.dom = document.createDocumentFragment().nodeType === 11;
+          } catch (e) {
+            support.dom = false;
+          }
+          try {
+            support.nonEnumArgs = !propertyIsEnumerable.call(arguments, 1);
+          } catch (e) {
+            support.nonEnumArgs = true;
+          }
+        }(0, 0));
+        lodash.templateSettings = {
+          'escape': reEscape,
+          'evaluate': reEvaluate,
+          'interpolate': reInterpolate,
+          'variable': '',
+          'imports': { '_': lodash }
+        };
+        function LazyWrapper(value) {
+          this.__wrapped__ = value;
+          this.__actions__ = null;
+          this.__dir__ = 1;
+          this.__dropCount__ = 0;
+          this.__filtered__ = false;
+          this.__iteratees__ = null;
+          this.__takeCount__ = POSITIVE_INFINITY;
+          this.__views__ = null;
+        }
+        function lazyClone() {
+          var actions = this.__actions__, iteratees = this.__iteratees__, views = this.__views__, result = new LazyWrapper(this.__wrapped__);
+          result.__actions__ = actions ? arrayCopy(actions) : null;
+          result.__dir__ = this.__dir__;
+          result.__filtered__ = this.__filtered__;
+          result.__iteratees__ = iteratees ? arrayCopy(iteratees) : null;
+          result.__takeCount__ = this.__takeCount__;
+          result.__views__ = views ? arrayCopy(views) : null;
+          return result;
+        }
+        function lazyReverse() {
+          if (this.__filtered__) {
+            var result = new LazyWrapper(this);
+            result.__dir__ = -1;
+            result.__filtered__ = true;
+          } else {
+            result = this.clone();
+            result.__dir__ *= -1;
+          }
+          return result;
+        }
+        function lazyValue() {
+          var array = this.__wrapped__.value();
+          if (!isArray(array)) {
+            return baseWrapperValue(array, this.__actions__);
+          }
+          var dir = this.__dir__, isRight = dir < 0, view = getView(0, array.length, this.__views__), start = view.start, end = view.end, length = end - start, index = isRight ? end : start - 1, takeCount = nativeMin(length, this.__takeCount__), iteratees = this.__iteratees__, iterLength = iteratees ? iteratees.length : 0, resIndex = 0, result = [];
+          outer:
+            while (length-- && resIndex < takeCount) {
+              index += dir;
+              var iterIndex = -1, value = array[index];
+              while (++iterIndex < iterLength) {
+                var data = iteratees[iterIndex], iteratee = data.iteratee, type = data.type;
+                if (type == LAZY_DROP_WHILE_FLAG) {
+                  if (data.done && (isRight ? index > data.index : index < data.index)) {
+                    data.count = 0;
+                    data.done = false;
+                  }
+                  data.index = index;
+                  if (!data.done) {
+                    var limit = data.limit;
+                    if (!(data.done = limit > -1 ? data.count++ >= limit : !iteratee(value))) {
+                      continue outer;
+                    }
+                  }
+                } else {
+                  var computed = iteratee(value);
+                  if (type == LAZY_MAP_FLAG) {
+                    value = computed;
+                  } else if (!computed) {
+                    if (type == LAZY_FILTER_FLAG) {
+                      continue outer;
+                    } else {
+                      break outer;
+                    }
+                  }
+                }
+              }
+              result[resIndex++] = value;
+            }
+          return result;
+        }
+        function MapCache() {
+          this.__data__ = {};
+        }
+        function mapDelete(key) {
+          return this.has(key) && delete this.__data__[key];
+        }
+        function mapGet(key) {
+          return key == '__proto__' ? undefined : this.__data__[key];
+        }
+        function mapHas(key) {
+          return key != '__proto__' && hasOwnProperty.call(this.__data__, key);
+        }
+        function mapSet(key, value) {
+          if (key != '__proto__') {
+            this.__data__[key] = value;
+          }
+          return this;
+        }
+        function SetCache(values) {
+          var length = values ? values.length : 0;
+          this.data = {
+            'hash': nativeCreate(null),
+            'set': new Set
+          };
+          while (length--) {
+            this.push(values[length]);
+          }
+        }
+        function cacheIndexOf(cache, value) {
+          var data = cache.data, result = typeof value == 'string' || isObject(value) ? data.set.has(value) : data.hash[value];
+          return result ? 0 : -1;
+        }
+        function cachePush(value) {
+          var data = this.data;
+          if (typeof value == 'string' || isObject(value)) {
+            data.set.add(value);
+          } else {
+            data.hash[value] = true;
+          }
+        }
+        function arrayCopy(source, array) {
+          var index = -1, length = source.length;
+          array || (array = Array(length));
+          while (++index < length) {
+            array[index] = source[index];
+          }
+          return array;
+        }
+        function arrayEach(array, iteratee) {
+          var index = -1, length = array.length;
+          while (++index < length) {
+            if (iteratee(array[index], index, array) === false) {
+              break;
+            }
+          }
+          return array;
+        }
+        function arrayEachRight(array, iteratee) {
+          var length = array.length;
+          while (length--) {
+            if (iteratee(array[length], length, array) === false) {
+              break;
+            }
+          }
+          return array;
+        }
+        function arrayEvery(array, predicate) {
+          var index = -1, length = array.length;
+          while (++index < length) {
+            if (!predicate(array[index], index, array)) {
+              return false;
+            }
+          }
+          return true;
+        }
+        function arrayFilter(array, predicate) {
+          var index = -1, length = array.length, resIndex = -1, result = [];
+          while (++index < length) {
+            var value = array[index];
+            if (predicate(value, index, array)) {
+              result[++resIndex] = value;
+            }
+          }
+          return result;
+        }
+        function arrayMap(array, iteratee) {
+          var index = -1, length = array.length, result = Array(length);
+          while (++index < length) {
+            result[index] = iteratee(array[index], index, array);
+          }
+          return result;
+        }
+        function arrayMax(array) {
+          var index = -1, length = array.length, result = NEGATIVE_INFINITY;
+          while (++index < length) {
+            var value = array[index];
+            if (value > result) {
+              result = value;
+            }
+          }
+          return result;
+        }
+        function arrayMin(array) {
+          var index = -1, length = array.length, result = POSITIVE_INFINITY;
+          while (++index < length) {
+            var value = array[index];
+            if (value < result) {
+              result = value;
+            }
+          }
+          return result;
+        }
+        function arrayReduce(array, iteratee, accumulator, initFromArray) {
+          var index = -1, length = array.length;
+          if (initFromArray && length) {
+            accumulator = array[++index];
+          }
+          while (++index < length) {
+            accumulator = iteratee(accumulator, array[index], index, array);
+          }
+          return accumulator;
+        }
+        function arrayReduceRight(array, iteratee, accumulator, initFromArray) {
+          var length = array.length;
+          if (initFromArray && length) {
+            accumulator = array[--length];
+          }
+          while (length--) {
+            accumulator = iteratee(accumulator, array[length], length, array);
+          }
+          return accumulator;
+        }
+        function arraySome(array, predicate) {
+          var index = -1, length = array.length;
+          while (++index < length) {
+            if (predicate(array[index], index, array)) {
+              return true;
+            }
+          }
+          return false;
+        }
+        function arraySum(array) {
+          var length = array.length, result = 0;
+          while (length--) {
+            result += +array[length] || 0;
+          }
+          return result;
+        }
+        function assignDefaults(objectValue, sourceValue) {
+          return typeof objectValue == 'undefined' ? sourceValue : objectValue;
+        }
+        function assignOwnDefaults(objectValue, sourceValue, key, object) {
+          return typeof objectValue == 'undefined' || !hasOwnProperty.call(object, key) ? sourceValue : objectValue;
+        }
+        function baseAssign(object, source, customizer) {
+          var props = keys(source);
+          if (!customizer) {
+            return baseCopy(source, object, props);
+          }
+          var index = -1, length = props.length;
+          while (++index < length) {
+            var key = props[index], value = object[key], result = customizer(value, source[key], key, object, source);
+            if ((result === result ? result !== value : value === value) || typeof value == 'undefined' && !(key in object)) {
+              object[key] = result;
+            }
+          }
+          return object;
+        }
+        function baseAt(collection, props) {
+          var index = -1, length = collection.length, isArr = isLength(length), propsLength = props.length, result = Array(propsLength);
+          while (++index < propsLength) {
+            var key = props[index];
+            if (isArr) {
+              key = parseFloat(key);
+              result[index] = isIndex(key, length) ? collection[key] : undefined;
+            } else {
+              result[index] = collection[key];
+            }
+          }
+          return result;
+        }
+        function baseCopy(source, object, props) {
+          if (!props) {
+            props = object;
+            object = {};
+          }
+          var index = -1, length = props.length;
+          while (++index < length) {
+            var key = props[index];
+            object[key] = source[key];
+          }
+          return object;
+        }
+        function baseCallback(func, thisArg, argCount) {
+          var type = typeof func;
+          if (type == 'function') {
+            return typeof thisArg == 'undefined' ? func : bindCallback(func, thisArg, argCount);
+          }
+          if (func == null) {
+            return identity;
+          }
+          if (type == 'object') {
+            return baseMatches(func);
+          }
+          return typeof thisArg == 'undefined' ? baseProperty(func + '') : baseMatchesProperty(func + '', thisArg);
+        }
+        function baseClone(value, isDeep, customizer, key, object, stackA, stackB) {
+          var result;
+          if (customizer) {
+            result = object ? customizer(value, key, object) : customizer(value);
+          }
+          if (typeof result != 'undefined') {
+            return result;
+          }
+          if (!isObject(value)) {
+            return value;
+          }
+          var isArr = isArray(value);
+          if (isArr) {
+            result = initCloneArray(value);
+            if (!isDeep) {
+              return arrayCopy(value, result);
+            }
+          } else {
+            var tag = objToString.call(value), isFunc = tag == funcTag;
+            if (tag == objectTag || tag == argsTag || isFunc && !object) {
+              result = initCloneObject(isFunc ? {} : value);
+              if (!isDeep) {
+                return baseCopy(value, result, keys(value));
+              }
+            } else {
+              return cloneableTags[tag] ? initCloneByTag(value, tag, isDeep) : object ? value : {};
+            }
+          }
+          stackA || (stackA = []);
+          stackB || (stackB = []);
+          var length = stackA.length;
+          while (length--) {
+            if (stackA[length] == value) {
+              return stackB[length];
+            }
+          }
+          stackA.push(value);
+          stackB.push(result);
+          (isArr ? arrayEach : baseForOwn)(value, function (subValue, key) {
+            result[key] = baseClone(subValue, isDeep, customizer, key, value, stackA, stackB);
+          });
+          return result;
+        }
+        var baseCreate = function () {
+            function Object() {
+            }
+            return function (prototype) {
+              if (isObject(prototype)) {
+                Object.prototype = prototype;
+                var result = new Object;
+                Object.prototype = null;
+              }
+              return result || context.Object();
+            };
+          }();
+        function baseDelay(func, wait, args) {
+          if (typeof func != 'function') {
+            throw new TypeError(FUNC_ERROR_TEXT);
+          }
+          return setTimeout(function () {
+            func.apply(undefined, args);
+          }, wait);
+        }
+        function baseDifference(array, values) {
+          var length = array ? array.length : 0, result = [];
+          if (!length) {
+            return result;
+          }
+          var index = -1, indexOf = getIndexOf(), isCommon = indexOf == baseIndexOf, cache = isCommon && values.length >= 200 ? createCache(values) : null, valuesLength = values.length;
+          if (cache) {
+            indexOf = cacheIndexOf;
+            isCommon = false;
+            values = cache;
+          }
+          outer:
+            while (++index < length) {
+              var value = array[index];
+              if (isCommon && value === value) {
+                var valuesIndex = valuesLength;
+                while (valuesIndex--) {
+                  if (values[valuesIndex] === value) {
+                    continue outer;
+                  }
+                }
+                result.push(value);
+              } else if (indexOf(values, value, 0) < 0) {
+                result.push(value);
+              }
+            }
+          return result;
+        }
+        var baseEach = createBaseEach(baseForOwn);
+        var baseEachRight = createBaseEach(baseForOwnRight, true);
+        function baseEvery(collection, predicate) {
+          var result = true;
+          baseEach(collection, function (value, index, collection) {
+            result = !!predicate(value, index, collection);
+            return result;
+          });
+          return result;
+        }
+        function baseFill(array, value, start, end) {
+          var length = array.length;
+          start = start == null ? 0 : +start || 0;
+          if (start < 0) {
+            start = -start > length ? 0 : length + start;
+          }
+          end = typeof end == 'undefined' || end > length ? length : +end || 0;
+          if (end < 0) {
+            end += length;
+          }
+          length = start > end ? 0 : end >>> 0;
+          start >>>= 0;
+          while (start < length) {
+            array[start++] = value;
+          }
+          return array;
+        }
+        function baseFilter(collection, predicate) {
+          var result = [];
+          baseEach(collection, function (value, index, collection) {
+            if (predicate(value, index, collection)) {
+              result.push(value);
+            }
+          });
+          return result;
+        }
+        function baseFind(collection, predicate, eachFunc, retKey) {
+          var result;
+          eachFunc(collection, function (value, key, collection) {
+            if (predicate(value, key, collection)) {
+              result = retKey ? key : value;
+              return false;
+            }
+          });
+          return result;
+        }
+        function baseFlatten(array, isDeep, isStrict) {
+          var index = -1, length = array.length, resIndex = -1, result = [];
+          while (++index < length) {
+            var value = array[index];
+            if (isObjectLike(value) && isLength(value.length) && (isArray(value) || isArguments(value))) {
+              if (isDeep) {
+                value = baseFlatten(value, isDeep, isStrict);
+              }
+              var valIndex = -1, valLength = value.length;
+              result.length += valLength;
+              while (++valIndex < valLength) {
+                result[++resIndex] = value[valIndex];
+              }
+            } else if (!isStrict) {
+              result[++resIndex] = value;
+            }
+          }
+          return result;
+        }
+        var baseFor = createBaseFor();
+        var baseForRight = createBaseFor(true);
+        function baseForIn(object, iteratee) {
+          return baseFor(object, iteratee, keysIn);
+        }
+        function baseForOwn(object, iteratee) {
+          return baseFor(object, iteratee, keys);
+        }
+        function baseForOwnRight(object, iteratee) {
+          return baseForRight(object, iteratee, keys);
+        }
+        function baseFunctions(object, props) {
+          var index = -1, length = props.length, resIndex = -1, result = [];
+          while (++index < length) {
+            var key = props[index];
+            if (isFunction(object[key])) {
+              result[++resIndex] = key;
+            }
+          }
+          return result;
+        }
+        function baseIsEqual(value, other, customizer, isLoose, stackA, stackB) {
+          if (value === other) {
+            return value !== 0 || 1 / value == 1 / other;
+          }
+          var valType = typeof value, othType = typeof other;
+          if (valType != 'function' && valType != 'object' && othType != 'function' && othType != 'object' || value == null || other == null) {
+            return value !== value && other !== other;
+          }
+          return baseIsEqualDeep(value, other, baseIsEqual, customizer, isLoose, stackA, stackB);
+        }
+        function baseIsEqualDeep(object, other, equalFunc, customizer, isLoose, stackA, stackB) {
+          var objIsArr = isArray(object), othIsArr = isArray(other), objTag = arrayTag, othTag = arrayTag;
+          if (!objIsArr) {
+            objTag = objToString.call(object);
+            if (objTag == argsTag) {
+              objTag = objectTag;
+            } else if (objTag != objectTag) {
+              objIsArr = isTypedArray(object);
+            }
+          }
+          if (!othIsArr) {
+            othTag = objToString.call(other);
+            if (othTag == argsTag) {
+              othTag = objectTag;
+            } else if (othTag != objectTag) {
+              othIsArr = isTypedArray(other);
+            }
+          }
+          var objIsObj = objTag == objectTag || isLoose && objTag == funcTag, othIsObj = othTag == objectTag || isLoose && othTag == funcTag, isSameTag = objTag == othTag;
+          if (isSameTag && !(objIsArr || objIsObj)) {
+            return equalByTag(object, other, objTag);
+          }
+          if (isLoose) {
+            if (!isSameTag && !(objIsObj && othIsObj)) {
+              return false;
+            }
+          } else {
+            var valWrapped = objIsObj && hasOwnProperty.call(object, '__wrapped__'), othWrapped = othIsObj && hasOwnProperty.call(other, '__wrapped__');
+            if (valWrapped || othWrapped) {
+              return equalFunc(valWrapped ? object.value() : object, othWrapped ? other.value() : other, customizer, isLoose, stackA, stackB);
+            }
+            if (!isSameTag) {
+              return false;
+            }
+          }
+          stackA || (stackA = []);
+          stackB || (stackB = []);
+          var length = stackA.length;
+          while (length--) {
+            if (stackA[length] == object) {
+              return stackB[length] == other;
+            }
+          }
+          stackA.push(object);
+          stackB.push(other);
+          var result = (objIsArr ? equalArrays : equalObjects)(object, other, equalFunc, customizer, isLoose, stackA, stackB);
+          stackA.pop();
+          stackB.pop();
+          return result;
+        }
+        function baseIsMatch(object, props, values, strictCompareFlags, customizer) {
+          var index = -1, length = props.length, noCustomizer = !customizer;
+          while (++index < length) {
+            if (noCustomizer && strictCompareFlags[index] ? values[index] !== object[props[index]] : !(props[index] in object)) {
+              return false;
+            }
+          }
+          index = -1;
+          while (++index < length) {
+            var key = props[index], objValue = object[key], srcValue = values[index];
+            if (noCustomizer && strictCompareFlags[index]) {
+              var result = typeof objValue != 'undefined' || key in object;
+            } else {
+              result = customizer ? customizer(objValue, srcValue, key) : undefined;
+              if (typeof result == 'undefined') {
+                result = baseIsEqual(srcValue, objValue, customizer, true);
+              }
+            }
+            if (!result) {
+              return false;
+            }
+          }
+          return true;
+        }
+        function baseMap(collection, iteratee) {
+          var result = [];
+          baseEach(collection, function (value, key, collection) {
+            result.push(iteratee(value, key, collection));
+          });
+          return result;
+        }
+        function baseMatches(source) {
+          var props = keys(source), length = props.length;
+          if (!length) {
+            return constant(true);
+          }
+          if (length == 1) {
+            var key = props[0], value = source[key];
+            if (isStrictComparable(value)) {
+              return function (object) {
+                return object != null && object[key] === value && (typeof value != 'undefined' || key in toObject(object));
+              };
+            }
+          }
+          var values = Array(length), strictCompareFlags = Array(length);
+          while (length--) {
+            value = source[props[length]];
+            values[length] = value;
+            strictCompareFlags[length] = isStrictComparable(value);
+          }
+          return function (object) {
+            return object != null && baseIsMatch(toObject(object), props, values, strictCompareFlags);
+          };
+        }
+        function baseMatchesProperty(key, value) {
+          if (isStrictComparable(value)) {
+            return function (object) {
+              return object != null && object[key] === value && (typeof value != 'undefined' || key in toObject(object));
+            };
+          }
+          return function (object) {
+            return object != null && baseIsEqual(value, object[key], null, true);
+          };
+        }
+        function baseMerge(object, source, customizer, stackA, stackB) {
+          if (!isObject(object)) {
+            return object;
+          }
+          var isSrcArr = isLength(source.length) && (isArray(source) || isTypedArray(source));
+          (isSrcArr ? arrayEach : baseForOwn)(source, function (srcValue, key, source) {
+            if (isObjectLike(srcValue)) {
+              stackA || (stackA = []);
+              stackB || (stackB = []);
+              return baseMergeDeep(object, source, key, baseMerge, customizer, stackA, stackB);
+            }
+            var value = object[key], result = customizer ? customizer(value, srcValue, key, object, source) : undefined, isCommon = typeof result == 'undefined';
+            if (isCommon) {
+              result = srcValue;
+            }
+            if ((isSrcArr || typeof result != 'undefined') && (isCommon || (result === result ? result !== value : value === value))) {
+              object[key] = result;
+            }
+          });
+          return object;
+        }
+        function baseMergeDeep(object, source, key, mergeFunc, customizer, stackA, stackB) {
+          var length = stackA.length, srcValue = source[key];
+          while (length--) {
+            if (stackA[length] == srcValue) {
+              object[key] = stackB[length];
+              return;
+            }
+          }
+          var value = object[key], result = customizer ? customizer(value, srcValue, key, object, source) : undefined, isCommon = typeof result == 'undefined';
+          if (isCommon) {
+            result = srcValue;
+            if (isLength(srcValue.length) && (isArray(srcValue) || isTypedArray(srcValue))) {
+              result = isArray(value) ? value : value && value.length ? arrayCopy(value) : [];
+            } else if (isPlainObject(srcValue) || isArguments(srcValue)) {
+              result = isArguments(value) ? toPlainObject(value) : isPlainObject(value) ? value : {};
+            } else {
+              isCommon = false;
+            }
+          }
+          stackA.push(srcValue);
+          stackB.push(result);
+          if (isCommon) {
+            object[key] = mergeFunc(result, srcValue, customizer, stackA, stackB);
+          } else if (result === result ? result !== value : value === value) {
+            object[key] = result;
+          }
+        }
+        function baseProperty(key) {
+          return function (object) {
+            return object == null ? undefined : object[key];
+          };
+        }
+        function baseRandom(min, max) {
+          return min + floor(nativeRandom() * (max - min + 1));
+        }
+        function baseReduce(collection, iteratee, accumulator, initFromCollection, eachFunc) {
+          eachFunc(collection, function (value, index, collection) {
+            accumulator = initFromCollection ? (initFromCollection = false, value) : iteratee(accumulator, value, index, collection);
+          });
+          return accumulator;
+        }
+        var baseSetData = !metaMap ? identity : function (func, data) {
+            metaMap.set(func, data);
+            return func;
+          };
+        function baseSlice(array, start, end) {
+          var index = -1, length = array.length;
+          start = start == null ? 0 : +start || 0;
+          if (start < 0) {
+            start = -start > length ? 0 : length + start;
+          }
+          end = typeof end == 'undefined' || end > length ? length : +end || 0;
+          if (end < 0) {
+            end += length;
+          }
+          length = start > end ? 0 : end - start >>> 0;
+          start >>>= 0;
+          var result = Array(length);
+          while (++index < length) {
+            result[index] = array[index + start];
+          }
+          return result;
+        }
+        function baseSome(collection, predicate) {
+          var result;
+          baseEach(collection, function (value, index, collection) {
+            result = predicate(value, index, collection);
+            return !result;
+          });
+          return !!result;
+        }
+        function baseSortBy(array, comparer) {
+          var length = array.length;
+          array.sort(comparer);
+          while (length--) {
+            array[length] = array[length].value;
+          }
+          return array;
+        }
+        function baseSortByOrder(collection, props, orders) {
+          var index = -1, length = collection.length, result = isLength(length) ? Array(length) : [];
+          baseEach(collection, function (value) {
+            var length = props.length, criteria = Array(length);
+            while (length--) {
+              criteria[length] = value == null ? undefined : value[props[length]];
+            }
+            result[++index] = {
+              'criteria': criteria,
+              'index': index,
+              'value': value
+            };
+          });
+          return baseSortBy(result, function (object, other) {
+            return compareMultiple(object, other, orders);
+          });
+        }
+        function baseSum(collection, iteratee) {
+          var result = 0;
+          baseEach(collection, function (value, index, collection) {
+            result += +iteratee(value, index, collection) || 0;
+          });
+          return result;
+        }
+        function baseUniq(array, iteratee) {
+          var index = -1, indexOf = getIndexOf(), length = array.length, isCommon = indexOf == baseIndexOf, isLarge = isCommon && length >= 200, seen = isLarge ? createCache() : null, result = [];
+          if (seen) {
+            indexOf = cacheIndexOf;
+            isCommon = false;
+          } else {
+            isLarge = false;
+            seen = iteratee ? [] : result;
+          }
+          outer:
+            while (++index < length) {
+              var value = array[index], computed = iteratee ? iteratee(value, index, array) : value;
+              if (isCommon && value === value) {
+                var seenIndex = seen.length;
+                while (seenIndex--) {
+                  if (seen[seenIndex] === computed) {
+                    continue outer;
+                  }
+                }
+                if (iteratee) {
+                  seen.push(computed);
+                }
+                result.push(value);
+              } else if (indexOf(seen, computed, 0) < 0) {
+                if (iteratee || isLarge) {
+                  seen.push(computed);
+                }
+                result.push(value);
+              }
+            }
+          return result;
+        }
+        function baseValues(object, props) {
+          var index = -1, length = props.length, result = Array(length);
+          while (++index < length) {
+            result[index] = object[props[index]];
+          }
+          return result;
+        }
+        function baseWhile(array, predicate, isDrop, fromRight) {
+          var length = array.length, index = fromRight ? length : -1;
+          while ((fromRight ? index-- : ++index < length) && predicate(array[index], index, array)) {
+          }
+          return isDrop ? baseSlice(array, fromRight ? 0 : index, fromRight ? index + 1 : length) : baseSlice(array, fromRight ? index + 1 : 0, fromRight ? length : index);
+        }
+        function baseWrapperValue(value, actions) {
+          var result = value;
+          if (result instanceof LazyWrapper) {
+            result = result.value();
+          }
+          var index = -1, length = actions.length;
+          while (++index < length) {
+            var args = [result], action = actions[index];
+            push.apply(args, action.args);
+            result = action.func.apply(action.thisArg, args);
+          }
+          return result;
+        }
+        function binaryIndex(array, value, retHighest) {
+          var low = 0, high = array ? array.length : low;
+          if (typeof value == 'number' && value === value && high <= HALF_MAX_ARRAY_LENGTH) {
+            while (low < high) {
+              var mid = low + high >>> 1, computed = array[mid];
+              if (retHighest ? computed <= value : computed < value) {
+                low = mid + 1;
+              } else {
+                high = mid;
+              }
+            }
+            return high;
+          }
+          return binaryIndexBy(array, value, identity, retHighest);
+        }
+        function binaryIndexBy(array, value, iteratee, retHighest) {
+          value = iteratee(value);
+          var low = 0, high = array ? array.length : 0, valIsNaN = value !== value, valIsUndef = typeof value == 'undefined';
+          while (low < high) {
+            var mid = floor((low + high) / 2), computed = iteratee(array[mid]), isReflexive = computed === computed;
+            if (valIsNaN) {
+              var setLow = isReflexive || retHighest;
+            } else if (valIsUndef) {
+              setLow = isReflexive && (retHighest || typeof computed != 'undefined');
+            } else {
+              setLow = retHighest ? computed <= value : computed < value;
+            }
+            if (setLow) {
+              low = mid + 1;
+            } else {
+              high = mid;
+            }
+          }
+          return nativeMin(high, MAX_ARRAY_INDEX);
+        }
+        function bindCallback(func, thisArg, argCount) {
+          if (typeof func != 'function') {
+            return identity;
+          }
+          if (typeof thisArg == 'undefined') {
+            return func;
+          }
+          switch (argCount) {
+          case 1:
+            return function (value) {
+              return func.call(thisArg, value);
+            };
+          case 3:
+            return function (value, index, collection) {
+              return func.call(thisArg, value, index, collection);
+            };
+          case 4:
+            return function (accumulator, value, index, collection) {
+              return func.call(thisArg, accumulator, value, index, collection);
+            };
+          case 5:
+            return function (value, other, key, object, source) {
+              return func.call(thisArg, value, other, key, object, source);
+            };
+          }
+          return function () {
+            return func.apply(thisArg, arguments);
+          };
+        }
+        function bufferClone(buffer) {
+          return bufferSlice.call(buffer, 0);
+        }
+        if (!bufferSlice) {
+          bufferClone = !(ArrayBuffer && Uint8Array) ? constant(null) : function (buffer) {
+            var byteLength = buffer.byteLength, floatLength = Float64Array ? floor(byteLength / FLOAT64_BYTES_PER_ELEMENT) : 0, offset = floatLength * FLOAT64_BYTES_PER_ELEMENT, result = new ArrayBuffer(byteLength);
+            if (floatLength) {
+              var view = new Float64Array(result, 0, floatLength);
+              view.set(new Float64Array(buffer, 0, floatLength));
+            }
+            if (byteLength != offset) {
+              view = new Uint8Array(result, offset);
+              view.set(new Uint8Array(buffer, offset));
+            }
+            return result;
+          };
+        }
+        function composeArgs(args, partials, holders) {
+          var holdersLength = holders.length, argsIndex = -1, argsLength = nativeMax(args.length - holdersLength, 0), leftIndex = -1, leftLength = partials.length, result = Array(argsLength + leftLength);
+          while (++leftIndex < leftLength) {
+            result[leftIndex] = partials[leftIndex];
+          }
+          while (++argsIndex < holdersLength) {
+            result[holders[argsIndex]] = args[argsIndex];
+          }
+          while (argsLength--) {
+            result[leftIndex++] = args[argsIndex++];
+          }
+          return result;
+        }
+        function composeArgsRight(args, partials, holders) {
+          var holdersIndex = -1, holdersLength = holders.length, argsIndex = -1, argsLength = nativeMax(args.length - holdersLength, 0), rightIndex = -1, rightLength = partials.length, result = Array(argsLength + rightLength);
+          while (++argsIndex < argsLength) {
+            result[argsIndex] = args[argsIndex];
+          }
+          var pad = argsIndex;
+          while (++rightIndex < rightLength) {
+            result[pad + rightIndex] = partials[rightIndex];
+          }
+          while (++holdersIndex < holdersLength) {
+            result[pad + holders[holdersIndex]] = args[argsIndex++];
+          }
+          return result;
+        }
+        function createAggregator(setter, initializer) {
+          return function (collection, iteratee, thisArg) {
+            var result = initializer ? initializer() : {};
+            iteratee = getCallback(iteratee, thisArg, 3);
+            if (isArray(collection)) {
+              var index = -1, length = collection.length;
+              while (++index < length) {
+                var value = collection[index];
+                setter(result, value, iteratee(value, index, collection), collection);
+              }
+            } else {
+              baseEach(collection, function (value, key, collection) {
+                setter(result, value, iteratee(value, key, collection), collection);
+              });
+            }
+            return result;
+          };
+        }
+        function createAssigner(assigner) {
+          return function () {
+            var args = arguments, length = args.length, object = args[0];
+            if (length < 2 || object == null) {
+              return object;
+            }
+            var customizer = args[length - 2], thisArg = args[length - 1], guard = args[3];
+            if (length > 3 && typeof customizer == 'function') {
+              customizer = bindCallback(customizer, thisArg, 5);
+              length -= 2;
+            } else {
+              customizer = length > 2 && typeof thisArg == 'function' ? thisArg : null;
+              length -= customizer ? 1 : 0;
+            }
+            if (guard && isIterateeCall(args[1], args[2], guard)) {
+              customizer = length == 3 ? null : customizer;
+              length = 2;
+            }
+            var index = 0;
+            while (++index < length) {
+              var source = args[index];
+              if (source) {
+                assigner(object, source, customizer);
+              }
+            }
+            return object;
+          };
+        }
+        function createBaseEach(eachFunc, fromRight) {
+          return function (collection, iteratee) {
+            var length = collection ? collection.length : 0;
+            if (!isLength(length)) {
+              return eachFunc(collection, iteratee);
+            }
+            var index = fromRight ? length : -1, iterable = toObject(collection);
+            while (fromRight ? index-- : ++index < length) {
+              if (iteratee(iterable[index], index, iterable) === false) {
+                break;
+              }
+            }
+            return collection;
+          };
+        }
+        function createBaseFor(fromRight) {
+          return function (object, iteratee, keysFunc) {
+            var iterable = toObject(object), props = keysFunc(object), length = props.length, index = fromRight ? length : -1;
+            while (fromRight ? index-- : ++index < length) {
+              var key = props[index];
+              if (iteratee(iterable[key], key, iterable) === false) {
+                break;
+              }
+            }
+            return object;
+          };
+        }
+        function createBindWrapper(func, thisArg) {
+          var Ctor = createCtorWrapper(func);
+          function wrapper() {
+            var fn = this && this !== root && this instanceof wrapper ? Ctor : func;
+            return fn.apply(thisArg, arguments);
+          }
+          return wrapper;
+        }
+        var createCache = !(nativeCreate && Set) ? constant(null) : function (values) {
+            return new SetCache(values);
+          };
+        function createCompounder(callback) {
+          return function (string) {
+            var index = -1, array = words(deburr(string)), length = array.length, result = '';
+            while (++index < length) {
+              result = callback(result, array[index], index);
+            }
+            return result;
+          };
+        }
+        function createCtorWrapper(Ctor) {
+          return function () {
+            var thisBinding = baseCreate(Ctor.prototype), result = Ctor.apply(thisBinding, arguments);
+            return isObject(result) ? result : thisBinding;
+          };
+        }
+        function createCurry(flag) {
+          function curryFunc(func, arity, guard) {
+            if (guard && isIterateeCall(func, arity, guard)) {
+              arity = null;
+            }
+            var result = createWrapper(func, flag, null, null, null, null, null, arity);
+            result.placeholder = curryFunc.placeholder;
+            return result;
+          }
+          return curryFunc;
+        }
+        function createExtremum(arrayFunc, isMin) {
+          return function (collection, iteratee, thisArg) {
+            if (thisArg && isIterateeCall(collection, iteratee, thisArg)) {
+              iteratee = null;
+            }
+            var func = getCallback(), noIteratee = iteratee == null;
+            if (!(func === baseCallback && noIteratee)) {
+              noIteratee = false;
+              iteratee = func(iteratee, thisArg, 3);
+            }
+            if (noIteratee) {
+              var isArr = isArray(collection);
+              if (!isArr && isString(collection)) {
+                iteratee = charAtCallback;
+              } else {
+                return arrayFunc(isArr ? collection : toIterable(collection));
+              }
+            }
+            return extremumBy(collection, iteratee, isMin);
+          };
+        }
+        function createFind(eachFunc, fromRight) {
+          return function (collection, predicate, thisArg) {
+            predicate = getCallback(predicate, thisArg, 3);
+            if (isArray(collection)) {
+              var index = baseFindIndex(collection, predicate, fromRight);
+              return index > -1 ? collection[index] : undefined;
+            }
+            return baseFind(collection, predicate, eachFunc);
+          };
+        }
+        function createFindIndex(fromRight) {
+          return function (array, predicate, thisArg) {
+            if (!(array && array.length)) {
+              return -1;
+            }
+            predicate = getCallback(predicate, thisArg, 3);
+            return baseFindIndex(array, predicate, fromRight);
+          };
+        }
+        function createFindKey(objectFunc) {
+          return function (object, predicate, thisArg) {
+            predicate = getCallback(predicate, thisArg, 3);
+            return baseFind(object, predicate, objectFunc, true);
+          };
+        }
+        function createFlow(fromRight) {
+          return function () {
+            var length = arguments.length;
+            if (!length) {
+              return function () {
+                return arguments[0];
+              };
+            }
+            var wrapper, index = fromRight ? length : -1, leftIndex = 0, funcs = Array(length);
+            while (fromRight ? index-- : ++index < length) {
+              var func = funcs[leftIndex++] = arguments[index];
+              if (typeof func != 'function') {
+                throw new TypeError(FUNC_ERROR_TEXT);
+              }
+              var funcName = wrapper ? '' : getFuncName(func);
+              wrapper = funcName == 'wrapper' ? new LodashWrapper([]) : wrapper;
+            }
+            index = wrapper ? -1 : length;
+            while (++index < length) {
+              func = funcs[index];
+              funcName = getFuncName(func);
+              var data = funcName == 'wrapper' ? getData(func) : null;
+              if (data && isLaziable(data[0])) {
+                wrapper = wrapper[getFuncName(data[0])].apply(wrapper, data[3]);
+              } else {
+                wrapper = func.length == 1 && isLaziable(func) ? wrapper[funcName]() : wrapper.thru(func);
+              }
+            }
+            return function () {
+              var args = arguments;
+              if (wrapper && args.length == 1 && isArray(args[0])) {
+                return wrapper.plant(args[0]).value();
+              }
+              var index = 0, result = funcs[index].apply(this, args);
+              while (++index < length) {
+                result = funcs[index].call(this, result);
+              }
+              return result;
+            };
+          };
+        }
+        function createForEach(arrayFunc, eachFunc) {
+          return function (collection, iteratee, thisArg) {
+            return typeof iteratee == 'function' && typeof thisArg == 'undefined' && isArray(collection) ? arrayFunc(collection, iteratee) : eachFunc(collection, bindCallback(iteratee, thisArg, 3));
+          };
+        }
+        function createForIn(objectFunc) {
+          return function (object, iteratee, thisArg) {
+            if (typeof iteratee != 'function' || typeof thisArg != 'undefined') {
+              iteratee = bindCallback(iteratee, thisArg, 3);
+            }
+            return objectFunc(object, iteratee, keysIn);
+          };
+        }
+        function createForOwn(objectFunc) {
+          return function (object, iteratee, thisArg) {
+            if (typeof iteratee != 'function' || typeof thisArg != 'undefined') {
+              iteratee = bindCallback(iteratee, thisArg, 3);
+            }
+            return objectFunc(object, iteratee);
+          };
+        }
+        function createPadDir(fromRight) {
+          return function (string, length, chars) {
+            string = baseToString(string);
+            return string && (fromRight ? string : '') + createPadding(string, length, chars) + (fromRight ? '' : string);
+          };
+        }
+        function createPartial(flag) {
+          var partialFunc = restParam(function (func, partials) {
+              var holders = replaceHolders(partials, partialFunc.placeholder);
+              return createWrapper(func, flag, null, partials, holders);
+            });
+          return partialFunc;
+        }
+        function createReduce(arrayFunc, eachFunc) {
+          return function (collection, iteratee, accumulator, thisArg) {
+            var initFromArray = arguments.length < 3;
+            return typeof iteratee == 'function' && typeof thisArg == 'undefined' && isArray(collection) ? arrayFunc(collection, iteratee, accumulator, initFromArray) : baseReduce(collection, getCallback(iteratee, thisArg, 4), accumulator, initFromArray, eachFunc);
+          };
+        }
+        function createHybridWrapper(func, bitmask, thisArg, partials, holders, partialsRight, holdersRight, argPos, ary, arity) {
+          var isAry = bitmask & ARY_FLAG, isBind = bitmask & BIND_FLAG, isBindKey = bitmask & BIND_KEY_FLAG, isCurry = bitmask & CURRY_FLAG, isCurryBound = bitmask & CURRY_BOUND_FLAG, isCurryRight = bitmask & CURRY_RIGHT_FLAG;
+          var Ctor = !isBindKey && createCtorWrapper(func), key = func;
+          function wrapper() {
+            var length = arguments.length, index = length, args = Array(length);
+            while (index--) {
+              args[index] = arguments[index];
+            }
+            if (partials) {
+              args = composeArgs(args, partials, holders);
+            }
+            if (partialsRight) {
+              args = composeArgsRight(args, partialsRight, holdersRight);
+            }
+            if (isCurry || isCurryRight) {
+              var placeholder = wrapper.placeholder, argsHolders = replaceHolders(args, placeholder);
+              length -= argsHolders.length;
+              if (length < arity) {
+                var newArgPos = argPos ? arrayCopy(argPos) : null, newArity = nativeMax(arity - length, 0), newsHolders = isCurry ? argsHolders : null, newHoldersRight = isCurry ? null : argsHolders, newPartials = isCurry ? args : null, newPartialsRight = isCurry ? null : args;
+                bitmask |= isCurry ? PARTIAL_FLAG : PARTIAL_RIGHT_FLAG;
+                bitmask &= ~(isCurry ? PARTIAL_RIGHT_FLAG : PARTIAL_FLAG);
+                if (!isCurryBound) {
+                  bitmask &= ~(BIND_FLAG | BIND_KEY_FLAG);
+                }
+                var newData = [
+                    func,
+                    bitmask,
+                    thisArg,
+                    newPartials,
+                    newsHolders,
+                    newPartialsRight,
+                    newHoldersRight,
+                    newArgPos,
+                    ary,
+                    newArity
+                  ], result = createHybridWrapper.apply(undefined, newData);
+                if (isLaziable(func)) {
+                  setData(result, newData);
+                }
+                result.placeholder = placeholder;
+                return result;
+              }
+            }
+            var thisBinding = isBind ? thisArg : this;
+            if (isBindKey) {
+              func = thisBinding[key];
+            }
+            if (argPos) {
+              args = reorder(args, argPos);
+            }
+            if (isAry && ary < args.length) {
+              args.length = ary;
+            }
+            var fn = this && this !== root && this instanceof wrapper ? Ctor || createCtorWrapper(func) : func;
+            return fn.apply(thisBinding, args);
+          }
+          return wrapper;
+        }
+        function createPadding(string, length, chars) {
+          var strLength = string.length;
+          length = +length;
+          if (strLength >= length || !nativeIsFinite(length)) {
+            return '';
+          }
+          var padLength = length - strLength;
+          chars = chars == null ? ' ' : chars + '';
+          return repeat(chars, ceil(padLength / chars.length)).slice(0, padLength);
+        }
+        function createPartialWrapper(func, bitmask, thisArg, partials) {
+          var isBind = bitmask & BIND_FLAG, Ctor = createCtorWrapper(func);
+          function wrapper() {
+            var argsIndex = -1, argsLength = arguments.length, leftIndex = -1, leftLength = partials.length, args = Array(argsLength + leftLength);
+            while (++leftIndex < leftLength) {
+              args[leftIndex] = partials[leftIndex];
+            }
+            while (argsLength--) {
+              args[leftIndex++] = arguments[++argsIndex];
+            }
+            var fn = this && this !== root && this instanceof wrapper ? Ctor : func;
+            return fn.apply(isBind ? thisArg : this, args);
+          }
+          return wrapper;
+        }
+        function createSortedIndex(retHighest) {
+          return function (array, value, iteratee, thisArg) {
+            var func = getCallback(iteratee);
+            return func === baseCallback && iteratee == null ? binaryIndex(array, value, retHighest) : binaryIndexBy(array, value, func(iteratee, thisArg, 1), retHighest);
+          };
+        }
+        function createWrapper(func, bitmask, thisArg, partials, holders, argPos, ary, arity) {
+          var isBindKey = bitmask & BIND_KEY_FLAG;
+          if (!isBindKey && typeof func != 'function') {
+            throw new TypeError(FUNC_ERROR_TEXT);
+          }
+          var length = partials ? partials.length : 0;
+          if (!length) {
+            bitmask &= ~(PARTIAL_FLAG | PARTIAL_RIGHT_FLAG);
+            partials = holders = null;
+          }
+          length -= holders ? holders.length : 0;
+          if (bitmask & PARTIAL_RIGHT_FLAG) {
+            var partialsRight = partials, holdersRight = holders;
+            partials = holders = null;
+          }
+          var data = isBindKey ? null : getData(func), newData = [
+              func,
+              bitmask,
+              thisArg,
+              partials,
+              holders,
+              partialsRight,
+              holdersRight,
+              argPos,
+              ary,
+              arity
+            ];
+          if (data) {
+            mergeData(newData, data);
+            bitmask = newData[1];
+            arity = newData[9];
+          }
+          newData[9] = arity == null ? isBindKey ? 0 : func.length : nativeMax(arity - length, 0) || 0;
+          if (bitmask == BIND_FLAG) {
+            var result = createBindWrapper(newData[0], newData[2]);
+          } else if ((bitmask == PARTIAL_FLAG || bitmask == (BIND_FLAG | PARTIAL_FLAG)) && !newData[4].length) {
+            result = createPartialWrapper.apply(undefined, newData);
+          } else {
+            result = createHybridWrapper.apply(undefined, newData);
+          }
+          var setter = data ? baseSetData : setData;
+          return setter(result, newData);
+        }
+        function equalArrays(array, other, equalFunc, customizer, isLoose, stackA, stackB) {
+          var index = -1, arrLength = array.length, othLength = other.length, result = true;
+          if (arrLength != othLength && !(isLoose && othLength > arrLength)) {
+            return false;
+          }
+          while (result && ++index < arrLength) {
+            var arrValue = array[index], othValue = other[index];
+            result = undefined;
+            if (customizer) {
+              result = isLoose ? customizer(othValue, arrValue, index) : customizer(arrValue, othValue, index);
+            }
+            if (typeof result == 'undefined') {
+              if (isLoose) {
+                var othIndex = othLength;
+                while (othIndex--) {
+                  othValue = other[othIndex];
+                  result = arrValue && arrValue === othValue || equalFunc(arrValue, othValue, customizer, isLoose, stackA, stackB);
+                  if (result) {
+                    break;
+                  }
+                }
+              } else {
+                result = arrValue && arrValue === othValue || equalFunc(arrValue, othValue, customizer, isLoose, stackA, stackB);
+              }
+            }
+          }
+          return !!result;
+        }
+        function equalByTag(object, other, tag) {
+          switch (tag) {
+          case boolTag:
+          case dateTag:
+            return +object == +other;
+          case errorTag:
+            return object.name == other.name && object.message == other.message;
+          case numberTag:
+            return object != +object ? other != +other : object == 0 ? 1 / object == 1 / other : object == +other;
+          case regexpTag:
+          case stringTag:
+            return object == other + '';
+          }
+          return false;
+        }
+        function equalObjects(object, other, equalFunc, customizer, isLoose, stackA, stackB) {
+          var objProps = keys(object), objLength = objProps.length, othProps = keys(other), othLength = othProps.length;
+          if (objLength != othLength && !isLoose) {
+            return false;
+          }
+          var skipCtor = isLoose, index = -1;
+          while (++index < objLength) {
+            var key = objProps[index], result = isLoose ? key in other : hasOwnProperty.call(other, key);
+            if (result) {
+              var objValue = object[key], othValue = other[key];
+              result = undefined;
+              if (customizer) {
+                result = isLoose ? customizer(othValue, objValue, key) : customizer(objValue, othValue, key);
+              }
+              if (typeof result == 'undefined') {
+                result = objValue && objValue === othValue || equalFunc(objValue, othValue, customizer, isLoose, stackA, stackB);
+              }
+            }
+            if (!result) {
+              return false;
+            }
+            skipCtor || (skipCtor = key == 'constructor');
+          }
+          if (!skipCtor) {
+            var objCtor = object.constructor, othCtor = other.constructor;
+            if (objCtor != othCtor && ('constructor' in object && 'constructor' in other) && !(typeof objCtor == 'function' && objCtor instanceof objCtor && typeof othCtor == 'function' && othCtor instanceof othCtor)) {
+              return false;
+            }
+          }
+          return true;
+        }
+        function extremumBy(collection, iteratee, isMin) {
+          var exValue = isMin ? POSITIVE_INFINITY : NEGATIVE_INFINITY, computed = exValue, result = computed;
+          baseEach(collection, function (value, index, collection) {
+            var current = iteratee(value, index, collection);
+            if ((isMin ? current < computed : current > computed) || current === exValue && current === result) {
+              computed = current;
+              result = value;
+            }
+          });
+          return result;
+        }
+        function getCallback(func, thisArg, argCount) {
+          var result = lodash.callback || callback;
+          result = result === callback ? baseCallback : result;
+          return argCount ? result(func, thisArg, argCount) : result;
+        }
+        var getData = !metaMap ? noop : function (func) {
+            return metaMap.get(func);
+          };
+        var getFuncName = function () {
+            if (!support.funcNames) {
+              return constant('');
+            }
+            if (constant.name == 'constant') {
+              return baseProperty('name');
+            }
+            return function (func) {
+              var result = func.name, array = realNames[result], length = array ? array.length : 0;
+              while (length--) {
+                var data = array[length], otherFunc = data.func;
+                if (otherFunc == null || otherFunc == func) {
+                  return data.name;
+                }
+              }
+              return result;
+            };
+          }();
+        function getIndexOf(collection, target, fromIndex) {
+          var result = lodash.indexOf || indexOf;
+          result = result === indexOf ? baseIndexOf : result;
+          return collection ? result(collection, target, fromIndex) : result;
+        }
+        function getView(start, end, transforms) {
+          var index = -1, length = transforms ? transforms.length : 0;
+          while (++index < length) {
+            var data = transforms[index], size = data.size;
+            switch (data.type) {
+            case 'drop':
+              start += size;
+              break;
+            case 'dropRight':
+              end -= size;
+              break;
+            case 'take':
+              end = nativeMin(end, start + size);
+              break;
+            case 'takeRight':
+              start = nativeMax(start, end - size);
+              break;
+            }
+          }
+          return {
+            'start': start,
+            'end': end
+          };
+        }
+        function initCloneArray(array) {
+          var length = array.length, result = new array.constructor(length);
+          if (length && typeof array[0] == 'string' && hasOwnProperty.call(array, 'index')) {
+            result.index = array.index;
+            result.input = array.input;
+          }
+          return result;
+        }
+        function initCloneObject(object) {
+          var Ctor = object.constructor;
+          if (!(typeof Ctor == 'function' && Ctor instanceof Ctor)) {
+            Ctor = Object;
+          }
+          return new Ctor;
+        }
+        function initCloneByTag(object, tag, isDeep) {
+          var Ctor = object.constructor;
+          switch (tag) {
+          case arrayBufferTag:
+            return bufferClone(object);
+          case boolTag:
+          case dateTag:
+            return new Ctor(+object);
+          case float32Tag:
+          case float64Tag:
+          case int8Tag:
+          case int16Tag:
+          case int32Tag:
+          case uint8Tag:
+          case uint8ClampedTag:
+          case uint16Tag:
+          case uint32Tag:
+            var buffer = object.buffer;
+            return new Ctor(isDeep ? bufferClone(buffer) : buffer, object.byteOffset, object.length);
+          case numberTag:
+          case stringTag:
+            return new Ctor(object);
+          case regexpTag:
+            var result = new Ctor(object.source, reFlags.exec(object));
+            result.lastIndex = object.lastIndex;
+          }
+          return result;
+        }
+        function isIndex(value, length) {
+          value = +value;
+          length = length == null ? MAX_SAFE_INTEGER : length;
+          return value > -1 && value % 1 == 0 && value < length;
+        }
+        function isIterateeCall(value, index, object) {
+          if (!isObject(object)) {
+            return false;
+          }
+          var type = typeof index;
+          if (type == 'number') {
+            var length = object.length, prereq = isLength(length) && isIndex(index, length);
+          } else {
+            prereq = type == 'string' && index in object;
+          }
+          if (prereq) {
+            var other = object[index];
+            return value === value ? value === other : other !== other;
+          }
+          return false;
+        }
+        function isLaziable(func) {
+          var funcName = getFuncName(func);
+          return !!funcName && func === lodash[funcName] && funcName in LazyWrapper.prototype;
+        }
+        function isLength(value) {
+          return typeof value == 'number' && value > -1 && value % 1 == 0 && value <= MAX_SAFE_INTEGER;
+        }
+        function isStrictComparable(value) {
+          return value === value && (value === 0 ? 1 / value > 0 : !isObject(value));
+        }
+        function mergeData(data, source) {
+          var bitmask = data[1], srcBitmask = source[1], newBitmask = bitmask | srcBitmask, isCommon = newBitmask < ARY_FLAG;
+          var isCombo = srcBitmask == ARY_FLAG && bitmask == CURRY_FLAG || srcBitmask == ARY_FLAG && bitmask == REARG_FLAG && data[7].length <= source[8] || srcBitmask == (ARY_FLAG | REARG_FLAG) && bitmask == CURRY_FLAG;
+          if (!(isCommon || isCombo)) {
+            return data;
+          }
+          if (srcBitmask & BIND_FLAG) {
+            data[2] = source[2];
+            newBitmask |= bitmask & BIND_FLAG ? 0 : CURRY_BOUND_FLAG;
+          }
+          var value = source[3];
+          if (value) {
+            var partials = data[3];
+            data[3] = partials ? composeArgs(partials, value, source[4]) : arrayCopy(value);
+            data[4] = partials ? replaceHolders(data[3], PLACEHOLDER) : arrayCopy(source[4]);
+          }
+          value = source[5];
+          if (value) {
+            partials = data[5];
+            data[5] = partials ? composeArgsRight(partials, value, source[6]) : arrayCopy(value);
+            data[6] = partials ? replaceHolders(data[5], PLACEHOLDER) : arrayCopy(source[6]);
+          }
+          value = source[7];
+          if (value) {
+            data[7] = arrayCopy(value);
+          }
+          if (srcBitmask & ARY_FLAG) {
+            data[8] = data[8] == null ? source[8] : nativeMin(data[8], source[8]);
+          }
+          if (data[9] == null) {
+            data[9] = source[9];
+          }
+          data[0] = source[0];
+          data[1] = newBitmask;
+          return data;
+        }
+        function pickByArray(object, props) {
+          object = toObject(object);
+          var index = -1, length = props.length, result = {};
+          while (++index < length) {
+            var key = props[index];
+            if (key in object) {
+              result[key] = object[key];
+            }
+          }
+          return result;
+        }
+        function pickByCallback(object, predicate) {
+          var result = {};
+          baseForIn(object, function (value, key, object) {
+            if (predicate(value, key, object)) {
+              result[key] = value;
+            }
+          });
+          return result;
+        }
+        function reorder(array, indexes) {
+          var arrLength = array.length, length = nativeMin(indexes.length, arrLength), oldArray = arrayCopy(array);
+          while (length--) {
+            var index = indexes[length];
+            array[length] = isIndex(index, arrLength) ? oldArray[index] : undefined;
+          }
+          return array;
+        }
+        var setData = function () {
+            var count = 0, lastCalled = 0;
+            return function (key, value) {
+              var stamp = now(), remaining = HOT_SPAN - (stamp - lastCalled);
+              lastCalled = stamp;
+              if (remaining > 0) {
+                if (++count >= HOT_COUNT) {
+                  return key;
+                }
+              } else {
+                count = 0;
+              }
+              return baseSetData(key, value);
+            };
+          }();
+        function shimIsPlainObject(value) {
+          var Ctor, support = lodash.support;
+          if (!(isObjectLike(value) && objToString.call(value) == objectTag) || !hasOwnProperty.call(value, 'constructor') && (Ctor = value.constructor, typeof Ctor == 'function' && !(Ctor instanceof Ctor))) {
+            return false;
+          }
+          var result;
+          baseForIn(value, function (subValue, key) {
+            result = key;
+          });
+          return typeof result == 'undefined' || hasOwnProperty.call(value, result);
+        }
+        function shimKeys(object) {
+          var props = keysIn(object), propsLength = props.length, length = propsLength && object.length, support = lodash.support;
+          var allowIndexes = length && isLength(length) && (isArray(object) || support.nonEnumArgs && isArguments(object));
+          var index = -1, result = [];
+          while (++index < propsLength) {
+            var key = props[index];
+            if (allowIndexes && isIndex(key, length) || hasOwnProperty.call(object, key)) {
+              result.push(key);
+            }
+          }
+          return result;
+        }
+        function toIterable(value) {
+          if (value == null) {
+            return [];
+          }
+          if (!isLength(value.length)) {
+            return values(value);
+          }
+          return isObject(value) ? value : Object(value);
+        }
+        function toObject(value) {
+          return isObject(value) ? value : Object(value);
+        }
+        function wrapperClone(wrapper) {
+          return wrapper instanceof LazyWrapper ? wrapper.clone() : new LodashWrapper(wrapper.__wrapped__, wrapper.__chain__, arrayCopy(wrapper.__actions__));
+        }
+        function chunk(array, size, guard) {
+          if (guard ? isIterateeCall(array, size, guard) : size == null) {
+            size = 1;
+          } else {
+            size = nativeMax(+size || 1, 1);
+          }
+          var index = 0, length = array ? array.length : 0, resIndex = -1, result = Array(ceil(length / size));
+          while (index < length) {
+            result[++resIndex] = baseSlice(array, index, index += size);
+          }
+          return result;
+        }
+        function compact(array) {
+          var index = -1, length = array ? array.length : 0, resIndex = -1, result = [];
+          while (++index < length) {
+            var value = array[index];
+            if (value) {
+              result[++resIndex] = value;
+            }
+          }
+          return result;
+        }
+        var difference = restParam(function (array, values) {
+            return isArray(array) || isArguments(array) ? baseDifference(array, baseFlatten(values, false, true)) : [];
+          });
+        function drop(array, n, guard) {
+          var length = array ? array.length : 0;
+          if (!length) {
+            return [];
+          }
+          if (guard ? isIterateeCall(array, n, guard) : n == null) {
+            n = 1;
+          }
+          return baseSlice(array, n < 0 ? 0 : n);
+        }
+        function dropRight(array, n, guard) {
+          var length = array ? array.length : 0;
+          if (!length) {
+            return [];
+          }
+          if (guard ? isIterateeCall(array, n, guard) : n == null) {
+            n = 1;
+          }
+          n = length - (+n || 0);
+          return baseSlice(array, 0, n < 0 ? 0 : n);
+        }
+        function dropRightWhile(array, predicate, thisArg) {
+          return array && array.length ? baseWhile(array, getCallback(predicate, thisArg, 3), true, true) : [];
+        }
+        function dropWhile(array, predicate, thisArg) {
+          return array && array.length ? baseWhile(array, getCallback(predicate, thisArg, 3), true) : [];
+        }
+        function fill(array, value, start, end) {
+          var length = array ? array.length : 0;
+          if (!length) {
+            return [];
+          }
+          if (start && typeof start != 'number' && isIterateeCall(array, value, start)) {
+            start = 0;
+            end = length;
+          }
+          return baseFill(array, value, start, end);
+        }
+        var findIndex = createFindIndex();
+        var findLastIndex = createFindIndex(true);
+        function first(array) {
+          return array ? array[0] : undefined;
+        }
+        function flatten(array, isDeep, guard) {
+          var length = array ? array.length : 0;
+          if (guard && isIterateeCall(array, isDeep, guard)) {
+            isDeep = false;
+          }
+          return length ? baseFlatten(array, isDeep) : [];
+        }
+        function flattenDeep(array) {
+          var length = array ? array.length : 0;
+          return length ? baseFlatten(array, true) : [];
+        }
+        function indexOf(array, value, fromIndex) {
+          var length = array ? array.length : 0;
+          if (!length) {
+            return -1;
+          }
+          if (typeof fromIndex == 'number') {
+            fromIndex = fromIndex < 0 ? nativeMax(length + fromIndex, 0) : fromIndex;
+          } else if (fromIndex) {
+            var index = binaryIndex(array, value), other = array[index];
+            if (value === value ? value === other : other !== other) {
+              return index;
+            }
+            return -1;
+          }
+          return baseIndexOf(array, value, fromIndex || 0);
+        }
+        function initial(array) {
+          return dropRight(array, 1);
+        }
+        function intersection() {
+          var args = [], argsIndex = -1, argsLength = arguments.length, caches = [], indexOf = getIndexOf(), isCommon = indexOf == baseIndexOf;
+          while (++argsIndex < argsLength) {
+            var value = arguments[argsIndex];
+            if (isArray(value) || isArguments(value)) {
+              args.push(value);
+              caches.push(isCommon && value.length >= 120 ? createCache(argsIndex && value) : null);
+            }
+          }
+          argsLength = args.length;
+          var array = args[0], index = -1, length = array ? array.length : 0, result = [], seen = caches[0];
+          outer:
+            while (++index < length) {
+              value = array[index];
+              if ((seen ? cacheIndexOf(seen, value) : indexOf(result, value, 0)) < 0) {
+                argsIndex = argsLength;
+                while (--argsIndex) {
+                  var cache = caches[argsIndex];
+                  if ((cache ? cacheIndexOf(cache, value) : indexOf(args[argsIndex], value, 0)) < 0) {
+                    continue outer;
+                  }
+                }
+                if (seen) {
+                  seen.push(value);
+                }
+                result.push(value);
+              }
+            }
+          return result;
+        }
+        function last(array) {
+          var length = array ? array.length : 0;
+          return length ? array[length - 1] : undefined;
+        }
+        function lastIndexOf(array, value, fromIndex) {
+          var length = array ? array.length : 0;
+          if (!length) {
+            return -1;
+          }
+          var index = length;
+          if (typeof fromIndex == 'number') {
+            index = (fromIndex < 0 ? nativeMax(length + fromIndex, 0) : nativeMin(fromIndex || 0, length - 1)) + 1;
+          } else if (fromIndex) {
+            index = binaryIndex(array, value, true) - 1;
+            var other = array[index];
+            if (value === value ? value === other : other !== other) {
+              return index;
+            }
+            return -1;
+          }
+          if (value !== value) {
+            return indexOfNaN(array, index, true);
+          }
+          while (index--) {
+            if (array[index] === value) {
+              return index;
+            }
+          }
+          return -1;
+        }
+        function pull() {
+          var args = arguments, array = args[0];
+          if (!(array && array.length)) {
+            return array;
+          }
+          var index = 0, indexOf = getIndexOf(), length = args.length;
+          while (++index < length) {
+            var fromIndex = 0, value = args[index];
+            while ((fromIndex = indexOf(array, value, fromIndex)) > -1) {
+              splice.call(array, fromIndex, 1);
+            }
+          }
+          return array;
+        }
+        var pullAt = restParam(function (array, indexes) {
+            array || (array = []);
+            indexes = baseFlatten(indexes);
+            var length = indexes.length, result = baseAt(array, indexes);
+            indexes.sort(baseCompareAscending);
+            while (length--) {
+              var index = parseFloat(indexes[length]);
+              if (index != previous && isIndex(index)) {
+                var previous = index;
+                splice.call(array, index, 1);
+              }
+            }
+            return result;
+          });
+        function remove(array, predicate, thisArg) {
+          var index = -1, length = array ? array.length : 0, result = [];
+          predicate = getCallback(predicate, thisArg, 3);
+          while (++index < length) {
+            var value = array[index];
+            if (predicate(value, index, array)) {
+              result.push(value);
+              splice.call(array, index--, 1);
+              length--;
+            }
+          }
+          return result;
+        }
+        function rest(array) {
+          return drop(array, 1);
+        }
+        function slice(array, start, end) {
+          var length = array ? array.length : 0;
+          if (!length) {
+            return [];
+          }
+          if (end && typeof end != 'number' && isIterateeCall(array, start, end)) {
+            start = 0;
+            end = length;
+          }
+          return baseSlice(array, start, end);
+        }
+        var sortedIndex = createSortedIndex();
+        var sortedLastIndex = createSortedIndex(true);
+        function take(array, n, guard) {
+          var length = array ? array.length : 0;
+          if (!length) {
+            return [];
+          }
+          if (guard ? isIterateeCall(array, n, guard) : n == null) {
+            n = 1;
+          }
+          return baseSlice(array, 0, n < 0 ? 0 : n);
+        }
+        function takeRight(array, n, guard) {
+          var length = array ? array.length : 0;
+          if (!length) {
+            return [];
+          }
+          if (guard ? isIterateeCall(array, n, guard) : n == null) {
+            n = 1;
+          }
+          n = length - (+n || 0);
+          return baseSlice(array, n < 0 ? 0 : n);
+        }
+        function takeRightWhile(array, predicate, thisArg) {
+          return array && array.length ? baseWhile(array, getCallback(predicate, thisArg, 3), false, true) : [];
+        }
+        function takeWhile(array, predicate, thisArg) {
+          return array && array.length ? baseWhile(array, getCallback(predicate, thisArg, 3)) : [];
+        }
+        var union = restParam(function (arrays) {
+            return baseUniq(baseFlatten(arrays, false, true));
+          });
+        function uniq(array, isSorted, iteratee, thisArg) {
+          var length = array ? array.length : 0;
+          if (!length) {
+            return [];
+          }
+          if (isSorted != null && typeof isSorted != 'boolean') {
+            thisArg = iteratee;
+            iteratee = isIterateeCall(array, isSorted, thisArg) ? null : isSorted;
+            isSorted = false;
+          }
+          var func = getCallback();
+          if (!(func === baseCallback && iteratee == null)) {
+            iteratee = func(iteratee, thisArg, 3);
+          }
+          return isSorted && getIndexOf() == baseIndexOf ? sortedUniq(array, iteratee) : baseUniq(array, iteratee);
+        }
+        function unzip(array) {
+          var index = -1, length = (array && array.length && arrayMax(arrayMap(array, getLength))) >>> 0, result = Array(length);
+          while (++index < length) {
+            result[index] = arrayMap(array, baseProperty(index));
+          }
+          return result;
+        }
+        var without = restParam(function (array, values) {
+            return isArray(array) || isArguments(array) ? baseDifference(array, values) : [];
+          });
+        function xor() {
+          var index = -1, length = arguments.length;
+          while (++index < length) {
+            var array = arguments[index];
+            if (isArray(array) || isArguments(array)) {
+              var result = result ? baseDifference(result, array).concat(baseDifference(array, result)) : array;
+            }
+          }
+          return result ? baseUniq(result) : [];
+        }
+        var zip = restParam(unzip);
+        function zipObject(props, values) {
+          var index = -1, length = props ? props.length : 0, result = {};
+          if (length && !values && !isArray(props[0])) {
+            values = [];
+          }
+          while (++index < length) {
+            var key = props[index];
+            if (values) {
+              result[key] = values[index];
+            } else if (key) {
+              result[key[0]] = key[1];
+            }
+          }
+          return result;
+        }
+        function chain(value) {
+          var result = lodash(value);
+          result.__chain__ = true;
+          return result;
+        }
+        function tap(value, interceptor, thisArg) {
+          interceptor.call(thisArg, value);
+          return value;
+        }
+        function thru(value, interceptor, thisArg) {
+          return interceptor.call(thisArg, value);
+        }
+        function wrapperChain() {
+          return chain(this);
+        }
+        function wrapperCommit() {
+          return new LodashWrapper(this.value(), this.__chain__);
+        }
+        function wrapperPlant(value) {
+          var result, parent = this;
+          while (parent instanceof baseLodash) {
+            var clone = wrapperClone(parent);
+            if (result) {
+              previous.__wrapped__ = clone;
+            } else {
+              result = clone;
+            }
+            var previous = clone;
+            parent = parent.__wrapped__;
+          }
+          previous.__wrapped__ = value;
+          return result;
+        }
+        function wrapperReverse() {
+          var value = this.__wrapped__;
+          if (value instanceof LazyWrapper) {
+            if (this.__actions__.length) {
+              value = new LazyWrapper(this);
+            }
+            return new LodashWrapper(value.reverse(), this.__chain__);
+          }
+          return this.thru(function (value) {
+            return value.reverse();
+          });
+        }
+        function wrapperToString() {
+          return this.value() + '';
+        }
+        function wrapperValue() {
+          return baseWrapperValue(this.__wrapped__, this.__actions__);
+        }
+        var at = restParam(function (collection, props) {
+            var length = collection ? collection.length : 0;
+            if (isLength(length)) {
+              collection = toIterable(collection);
+            }
+            return baseAt(collection, baseFlatten(props));
+          });
+        var countBy = createAggregator(function (result, value, key) {
+            hasOwnProperty.call(result, key) ? ++result[key] : result[key] = 1;
+          });
+        function every(collection, predicate, thisArg) {
+          var func = isArray(collection) ? arrayEvery : baseEvery;
+          if (thisArg && isIterateeCall(collection, predicate, thisArg)) {
+            predicate = null;
+          }
+          if (typeof predicate != 'function' || typeof thisArg != 'undefined') {
+            predicate = getCallback(predicate, thisArg, 3);
+          }
+          return func(collection, predicate);
+        }
+        function filter(collection, predicate, thisArg) {
+          var func = isArray(collection) ? arrayFilter : baseFilter;
+          predicate = getCallback(predicate, thisArg, 3);
+          return func(collection, predicate);
+        }
+        var find = createFind(baseEach);
+        var findLast = createFind(baseEachRight, true);
+        function findWhere(collection, source) {
+          return find(collection, baseMatches(source));
+        }
+        var forEach = createForEach(arrayEach, baseEach);
+        var forEachRight = createForEach(arrayEachRight, baseEachRight);
+        var groupBy = createAggregator(function (result, value, key) {
+            if (hasOwnProperty.call(result, key)) {
+              result[key].push(value);
+            } else {
+              result[key] = [value];
+            }
+          });
+        function includes(collection, target, fromIndex, guard) {
+          var length = collection ? collection.length : 0;
+          if (!isLength(length)) {
+            collection = values(collection);
+            length = collection.length;
+          }
+          if (!length) {
+            return false;
+          }
+          if (typeof fromIndex != 'number' || guard && isIterateeCall(target, fromIndex, guard)) {
+            fromIndex = 0;
+          } else {
+            fromIndex = fromIndex < 0 ? nativeMax(length + fromIndex, 0) : fromIndex || 0;
+          }
+          return typeof collection == 'string' || !isArray(collection) && isString(collection) ? fromIndex < length && collection.indexOf(target, fromIndex) > -1 : getIndexOf(collection, target, fromIndex) > -1;
+        }
+        var indexBy = createAggregator(function (result, value, key) {
+            result[key] = value;
+          });
+        var invoke = restParam(function (collection, methodName, args) {
+            var index = -1, isFunc = typeof methodName == 'function', length = collection ? collection.length : 0, result = isLength(length) ? Array(length) : [];
+            baseEach(collection, function (value) {
+              var func = isFunc ? methodName : value != null && value[methodName];
+              result[++index] = func ? func.apply(value, args) : undefined;
+            });
+            return result;
+          });
+        function map(collection, iteratee, thisArg) {
+          var func = isArray(collection) ? arrayMap : baseMap;
+          iteratee = getCallback(iteratee, thisArg, 3);
+          return func(collection, iteratee);
+        }
+        var partition = createAggregator(function (result, value, key) {
+            result[key ? 0 : 1].push(value);
+          }, function () {
+            return [
+              [],
+              []
+            ];
+          });
+        function pluck(collection, key) {
+          return map(collection, baseProperty(key));
+        }
+        var reduce = createReduce(arrayReduce, baseEach);
+        var reduceRight = createReduce(arrayReduceRight, baseEachRight);
+        function reject(collection, predicate, thisArg) {
+          var func = isArray(collection) ? arrayFilter : baseFilter;
+          predicate = getCallback(predicate, thisArg, 3);
+          return func(collection, function (value, index, collection) {
+            return !predicate(value, index, collection);
+          });
+        }
+        function sample(collection, n, guard) {
+          if (guard ? isIterateeCall(collection, n, guard) : n == null) {
+            collection = toIterable(collection);
+            var length = collection.length;
+            return length > 0 ? collection[baseRandom(0, length - 1)] : undefined;
+          }
+          var result = shuffle(collection);
+          result.length = nativeMin(n < 0 ? 0 : +n || 0, result.length);
+          return result;
+        }
+        function shuffle(collection) {
+          collection = toIterable(collection);
+          var index = -1, length = collection.length, result = Array(length);
+          while (++index < length) {
+            var rand = baseRandom(0, index);
+            if (index != rand) {
+              result[index] = result[rand];
+            }
+            result[rand] = collection[index];
+          }
+          return result;
+        }
+        function size(collection) {
+          var length = collection ? collection.length : 0;
+          return isLength(length) ? length : keys(collection).length;
+        }
+        function some(collection, predicate, thisArg) {
+          var func = isArray(collection) ? arraySome : baseSome;
+          if (thisArg && isIterateeCall(collection, predicate, thisArg)) {
+            predicate = null;
+          }
+          if (typeof predicate != 'function' || typeof thisArg != 'undefined') {
+            predicate = getCallback(predicate, thisArg, 3);
+          }
+          return func(collection, predicate);
+        }
+        function sortBy(collection, iteratee, thisArg) {
+          if (collection == null) {
+            return [];
+          }
+          var index = -1, length = collection.length, result = isLength(length) ? Array(length) : [];
+          if (thisArg && isIterateeCall(collection, iteratee, thisArg)) {
+            iteratee = null;
+          }
+          iteratee = getCallback(iteratee, thisArg, 3);
+          baseEach(collection, function (value, key, collection) {
+            result[++index] = {
+              'criteria': iteratee(value, key, collection),
+              'index': index,
+              'value': value
+            };
+          });
+          return baseSortBy(result, compareAscending);
+        }
+        function sortByAll() {
+          var args = arguments, collection = args[0], guard = args[3], index = 0, length = args.length - 1;
+          if (collection == null) {
+            return [];
+          }
+          var props = Array(length);
+          while (index < length) {
+            props[index] = args[++index];
+          }
+          if (guard && isIterateeCall(args[1], args[2], guard)) {
+            props = args[1];
+          }
+          return baseSortByOrder(collection, baseFlatten(props), []);
+        }
+        function sortByOrder(collection, props, orders, guard) {
+          if (collection == null) {
+            return [];
+          }
+          if (guard && isIterateeCall(props, orders, guard)) {
+            orders = null;
+          }
+          if (!isArray(props)) {
+            props = props == null ? [] : [props];
+          }
+          if (!isArray(orders)) {
+            orders = orders == null ? [] : [orders];
+          }
+          return baseSortByOrder(collection, props, orders);
+        }
+        function where(collection, source) {
+          return filter(collection, baseMatches(source));
+        }
+        var now = nativeNow || function () {
+            return new Date().getTime();
+          };
+        function after(n, func) {
+          if (typeof func != 'function') {
+            if (typeof n == 'function') {
+              var temp = n;
+              n = func;
+              func = temp;
+            } else {
+              throw new TypeError(FUNC_ERROR_TEXT);
+            }
+          }
+          n = nativeIsFinite(n = +n) ? n : 0;
+          return function () {
+            if (--n < 1) {
+              return func.apply(this, arguments);
+            }
+          };
+        }
+        function ary(func, n, guard) {
+          if (guard && isIterateeCall(func, n, guard)) {
+            n = null;
+          }
+          n = func && n == null ? func.length : nativeMax(+n || 0, 0);
+          return createWrapper(func, ARY_FLAG, null, null, null, null, n);
+        }
+        function before(n, func) {
+          var result;
+          if (typeof func != 'function') {
+            if (typeof n == 'function') {
+              var temp = n;
+              n = func;
+              func = temp;
+            } else {
+              throw new TypeError(FUNC_ERROR_TEXT);
+            }
+          }
+          return function () {
+            if (--n > 0) {
+              result = func.apply(this, arguments);
+            } else {
+              func = null;
+            }
+            return result;
+          };
+        }
+        var bind = restParam(function (func, thisArg, partials) {
+            var bitmask = BIND_FLAG;
+            if (partials.length) {
+              var holders = replaceHolders(partials, bind.placeholder);
+              bitmask |= PARTIAL_FLAG;
+            }
+            return createWrapper(func, bitmask, thisArg, partials, holders);
+          });
+        var bindAll = restParam(function (object, methodNames) {
+            methodNames = methodNames.length ? baseFlatten(methodNames) : functions(object);
+            var index = -1, length = methodNames.length;
+            while (++index < length) {
+              var key = methodNames[index];
+              object[key] = createWrapper(object[key], BIND_FLAG, object);
+            }
+            return object;
+          });
+        var bindKey = restParam(function (object, key, partials) {
+            var bitmask = BIND_FLAG | BIND_KEY_FLAG;
+            if (partials.length) {
+              var holders = replaceHolders(partials, bindKey.placeholder);
+              bitmask |= PARTIAL_FLAG;
+            }
+            return createWrapper(key, bitmask, object, partials, holders);
+          });
+        var curry = createCurry(CURRY_FLAG);
+        var curryRight = createCurry(CURRY_RIGHT_FLAG);
+        function debounce(func, wait, options) {
+          var args, maxTimeoutId, result, stamp, thisArg, timeoutId, trailingCall, lastCalled = 0, maxWait = false, trailing = true;
+          if (typeof func != 'function') {
+            throw new TypeError(FUNC_ERROR_TEXT);
+          }
+          wait = wait < 0 ? 0 : +wait || 0;
+          if (options === true) {
+            var leading = true;
+            trailing = false;
+          } else if (isObject(options)) {
+            leading = options.leading;
+            maxWait = 'maxWait' in options && nativeMax(+options.maxWait || 0, wait);
+            trailing = 'trailing' in options ? options.trailing : trailing;
+          }
+          function cancel() {
+            if (timeoutId) {
+              clearTimeout(timeoutId);
+            }
+            if (maxTimeoutId) {
+              clearTimeout(maxTimeoutId);
+            }
+            maxTimeoutId = timeoutId = trailingCall = undefined;
+          }
+          function delayed() {
+            var remaining = wait - (now() - stamp);
+            if (remaining <= 0 || remaining > wait) {
+              if (maxTimeoutId) {
+                clearTimeout(maxTimeoutId);
+              }
+              var isCalled = trailingCall;
+              maxTimeoutId = timeoutId = trailingCall = undefined;
+              if (isCalled) {
+                lastCalled = now();
+                result = func.apply(thisArg, args);
+                if (!timeoutId && !maxTimeoutId) {
+                  args = thisArg = null;
+                }
+              }
+            } else {
+              timeoutId = setTimeout(delayed, remaining);
+            }
+          }
+          function maxDelayed() {
+            if (timeoutId) {
+              clearTimeout(timeoutId);
+            }
+            maxTimeoutId = timeoutId = trailingCall = undefined;
+            if (trailing || maxWait !== wait) {
+              lastCalled = now();
+              result = func.apply(thisArg, args);
+              if (!timeoutId && !maxTimeoutId) {
+                args = thisArg = null;
+              }
+            }
+          }
+          function debounced() {
+            args = arguments;
+            stamp = now();
+            thisArg = this;
+            trailingCall = trailing && (timeoutId || !leading);
+            if (maxWait === false) {
+              var leadingCall = leading && !timeoutId;
+            } else {
+              if (!maxTimeoutId && !leading) {
+                lastCalled = stamp;
+              }
+              var remaining = maxWait - (stamp - lastCalled), isCalled = remaining <= 0 || remaining > maxWait;
+              if (isCalled) {
+                if (maxTimeoutId) {
+                  maxTimeoutId = clearTimeout(maxTimeoutId);
+                }
+                lastCalled = stamp;
+                result = func.apply(thisArg, args);
+              } else if (!maxTimeoutId) {
+                maxTimeoutId = setTimeout(maxDelayed, remaining);
+              }
+            }
+            if (isCalled && timeoutId) {
+              timeoutId = clearTimeout(timeoutId);
+            } else if (!timeoutId && wait !== maxWait) {
+              timeoutId = setTimeout(delayed, wait);
+            }
+            if (leadingCall) {
+              isCalled = true;
+              result = func.apply(thisArg, args);
+            }
+            if (isCalled && !timeoutId && !maxTimeoutId) {
+              args = thisArg = null;
+            }
+            return result;
+          }
+          debounced.cancel = cancel;
+          return debounced;
+        }
+        var defer = restParam(function (func, args) {
+            return baseDelay(func, 1, args);
+          });
+        var delay = restParam(function (func, wait, args) {
+            return baseDelay(func, wait, args);
+          });
+        var flow = createFlow();
+        var flowRight = createFlow(true);
+        function memoize(func, resolver) {
+          if (typeof func != 'function' || resolver && typeof resolver != 'function') {
+            throw new TypeError(FUNC_ERROR_TEXT);
+          }
+          var memoized = function () {
+            var args = arguments, cache = memoized.cache, key = resolver ? resolver.apply(this, args) : args[0];
+            if (cache.has(key)) {
+              return cache.get(key);
+            }
+            var result = func.apply(this, args);
+            cache.set(key, result);
+            return result;
+          };
+          memoized.cache = new memoize.Cache;
+          return memoized;
+        }
+        function negate(predicate) {
+          if (typeof predicate != 'function') {
+            throw new TypeError(FUNC_ERROR_TEXT);
+          }
+          return function () {
+            return !predicate.apply(this, arguments);
+          };
+        }
+        function once(func) {
+          return before(func, 2);
+        }
+        var partial = createPartial(PARTIAL_FLAG);
+        var partialRight = createPartial(PARTIAL_RIGHT_FLAG);
+        var rearg = restParam(function (func, indexes) {
+            return createWrapper(func, REARG_FLAG, null, null, null, baseFlatten(indexes));
+          });
+        function restParam(func, start) {
+          if (typeof func != 'function') {
+            throw new TypeError(FUNC_ERROR_TEXT);
+          }
+          start = nativeMax(typeof start == 'undefined' ? func.length - 1 : +start || 0, 0);
+          return function () {
+            var args = arguments, index = -1, length = nativeMax(args.length - start, 0), rest = Array(length);
+            while (++index < length) {
+              rest[index] = args[start + index];
+            }
+            switch (start) {
+            case 0:
+              return func.call(this, rest);
+            case 1:
+              return func.call(this, args[0], rest);
+            case 2:
+              return func.call(this, args[0], args[1], rest);
+            }
+            var otherArgs = Array(start + 1);
+            index = -1;
+            while (++index < start) {
+              otherArgs[index] = args[index];
+            }
+            otherArgs[start] = rest;
+            return func.apply(this, otherArgs);
+          };
+        }
+        function spread(func) {
+          if (typeof func != 'function') {
+            throw new TypeError(FUNC_ERROR_TEXT);
+          }
+          return function (array) {
+            return func.apply(this, array);
+          };
+        }
+        function throttle(func, wait, options) {
+          var leading = true, trailing = true;
+          if (typeof func != 'function') {
+            throw new TypeError(FUNC_ERROR_TEXT);
+          }
+          if (options === false) {
+            leading = false;
+          } else if (isObject(options)) {
+            leading = 'leading' in options ? !!options.leading : leading;
+            trailing = 'trailing' in options ? !!options.trailing : trailing;
+          }
+          debounceOptions.leading = leading;
+          debounceOptions.maxWait = +wait;
+          debounceOptions.trailing = trailing;
+          return debounce(func, wait, debounceOptions);
+        }
+        function wrap(value, wrapper) {
+          wrapper = wrapper == null ? identity : wrapper;
+          return createWrapper(wrapper, PARTIAL_FLAG, null, [value], []);
+        }
+        function clone(value, isDeep, customizer, thisArg) {
+          if (isDeep && typeof isDeep != 'boolean' && isIterateeCall(value, isDeep, customizer)) {
+            isDeep = false;
+          } else if (typeof isDeep == 'function') {
+            thisArg = customizer;
+            customizer = isDeep;
+            isDeep = false;
+          }
+          customizer = typeof customizer == 'function' && bindCallback(customizer, thisArg, 1);
+          return baseClone(value, isDeep, customizer);
+        }
+        function cloneDeep(value, customizer, thisArg) {
+          customizer = typeof customizer == 'function' && bindCallback(customizer, thisArg, 1);
+          return baseClone(value, true, customizer);
+        }
+        function isArguments(value) {
+          var length = isObjectLike(value) ? value.length : undefined;
+          return isLength(length) && objToString.call(value) == argsTag;
+        }
+        var isArray = nativeIsArray || function (value) {
+            return isObjectLike(value) && isLength(value.length) && objToString.call(value) == arrayTag;
+          };
+        function isBoolean(value) {
+          return value === true || value === false || isObjectLike(value) && objToString.call(value) == boolTag;
+        }
+        function isDate(value) {
+          return isObjectLike(value) && objToString.call(value) == dateTag;
+        }
+        function isElement(value) {
+          return !!value && value.nodeType === 1 && isObjectLike(value) && objToString.call(value).indexOf('Element') > -1;
+        }
+        if (!support.dom) {
+          isElement = function (value) {
+            return !!value && value.nodeType === 1 && isObjectLike(value) && !isPlainObject(value);
+          };
+        }
+        function isEmpty(value) {
+          if (value == null) {
+            return true;
+          }
+          var length = value.length;
+          if (isLength(length) && (isArray(value) || isString(value) || isArguments(value) || isObjectLike(value) && isFunction(value.splice))) {
+            return !length;
+          }
+          return !keys(value).length;
+        }
+        function isEqual(value, other, customizer, thisArg) {
+          customizer = typeof customizer == 'function' && bindCallback(customizer, thisArg, 3);
+          if (!customizer && isStrictComparable(value) && isStrictComparable(other)) {
+            return value === other;
+          }
+          var result = customizer ? customizer(value, other) : undefined;
+          return typeof result == 'undefined' ? baseIsEqual(value, other, customizer) : !!result;
+        }
+        function isError(value) {
+          return isObjectLike(value) && typeof value.message == 'string' && objToString.call(value) == errorTag;
+        }
+        var isFinite = nativeNumIsFinite || function (value) {
+            return typeof value == 'number' && nativeIsFinite(value);
+          };
+        var isFunction = !(baseIsFunction(/x/) || Uint8Array && !baseIsFunction(Uint8Array)) ? baseIsFunction : function (value) {
+            return objToString.call(value) == funcTag;
+          };
+        function isObject(value) {
+          var type = typeof value;
+          return type == 'function' || !!value && type == 'object';
+        }
+        function isMatch(object, source, customizer, thisArg) {
+          var props = keys(source), length = props.length;
+          if (!length) {
+            return true;
+          }
+          if (object == null) {
+            return false;
+          }
+          customizer = typeof customizer == 'function' && bindCallback(customizer, thisArg, 3);
+          if (!customizer && length == 1) {
+            var key = props[0], value = source[key];
+            if (isStrictComparable(value)) {
+              return value === object[key] && (typeof value != 'undefined' || key in toObject(object));
+            }
+          }
+          var values = Array(length), strictCompareFlags = Array(length);
+          while (length--) {
+            value = values[length] = source[props[length]];
+            strictCompareFlags[length] = isStrictComparable(value);
+          }
+          return baseIsMatch(toObject(object), props, values, strictCompareFlags, customizer);
+        }
+        function isNaN(value) {
+          return isNumber(value) && value != +value;
+        }
+        function isNative(value) {
+          if (value == null) {
+            return false;
+          }
+          if (objToString.call(value) == funcTag) {
+            return reNative.test(fnToString.call(value));
+          }
+          return isObjectLike(value) && reHostCtor.test(value);
+        }
+        function isNull(value) {
+          return value === null;
+        }
+        function isNumber(value) {
+          return typeof value == 'number' || isObjectLike(value) && objToString.call(value) == numberTag;
+        }
+        var isPlainObject = !getPrototypeOf ? shimIsPlainObject : function (value) {
+            if (!(value && objToString.call(value) == objectTag)) {
+              return false;
+            }
+            var valueOf = value.valueOf, objProto = isNative(valueOf) && (objProto = getPrototypeOf(valueOf)) && getPrototypeOf(objProto);
+            return objProto ? value == objProto || getPrototypeOf(value) == objProto : shimIsPlainObject(value);
+          };
+        function isRegExp(value) {
+          return isObjectLike(value) && objToString.call(value) == regexpTag || false;
+        }
+        function isString(value) {
+          return typeof value == 'string' || isObjectLike(value) && objToString.call(value) == stringTag;
+        }
+        function isTypedArray(value) {
+          return isObjectLike(value) && isLength(value.length) && !!typedArrayTags[objToString.call(value)];
+        }
+        function isUndefined(value) {
+          return typeof value == 'undefined';
+        }
+        function toArray(value) {
+          var length = value ? value.length : 0;
+          if (!isLength(length)) {
+            return values(value);
+          }
+          if (!length) {
+            return [];
+          }
+          return arrayCopy(value);
+        }
+        function toPlainObject(value) {
+          return baseCopy(value, keysIn(value));
+        }
+        var assign = createAssigner(baseAssign);
+        function create(prototype, properties, guard) {
+          var result = baseCreate(prototype);
+          if (guard && isIterateeCall(prototype, properties, guard)) {
+            properties = null;
+          }
+          return properties ? baseCopy(properties, result, keys(properties)) : result;
+        }
+        var defaults = restParam(function (args) {
+            var object = args[0];
+            if (object == null) {
+              return object;
+            }
+            args.push(assignDefaults);
+            return assign.apply(undefined, args);
+          });
+        var findKey = createFindKey(baseForOwn);
+        var findLastKey = createFindKey(baseForOwnRight);
+        var forIn = createForIn(baseFor);
+        var forInRight = createForIn(baseForRight);
+        var forOwn = createForOwn(baseForOwn);
+        var forOwnRight = createForOwn(baseForOwnRight);
+        function functions(object) {
+          return baseFunctions(object, keysIn(object));
+        }
+        function has(object, key) {
+          return object ? hasOwnProperty.call(object, key) : false;
+        }
+        function invert(object, multiValue, guard) {
+          if (guard && isIterateeCall(object, multiValue, guard)) {
+            multiValue = null;
+          }
+          var index = -1, props = keys(object), length = props.length, result = {};
+          while (++index < length) {
+            var key = props[index], value = object[key];
+            if (multiValue) {
+              if (hasOwnProperty.call(result, value)) {
+                result[value].push(key);
+              } else {
+                result[value] = [key];
+              }
+            } else {
+              result[value] = key;
+            }
+          }
+          return result;
+        }
+        var keys = !nativeKeys ? shimKeys : function (object) {
+            if (object) {
+              var Ctor = object.constructor, length = object.length;
+            }
+            if (typeof Ctor == 'function' && Ctor.prototype === object || typeof object != 'function' && (length && isLength(length))) {
+              return shimKeys(object);
+            }
+            return isObject(object) ? nativeKeys(object) : [];
+          };
+        function keysIn(object) {
+          if (object == null) {
+            return [];
+          }
+          if (!isObject(object)) {
+            object = Object(object);
+          }
+          var length = object.length;
+          length = length && isLength(length) && (isArray(object) || support.nonEnumArgs && isArguments(object)) && length || 0;
+          var Ctor = object.constructor, index = -1, isProto = typeof Ctor == 'function' && Ctor.prototype === object, result = Array(length), skipIndexes = length > 0;
+          while (++index < length) {
+            result[index] = index + '';
+          }
+          for (var key in object) {
+            if (!(skipIndexes && isIndex(key, length)) && !(key == 'constructor' && (isProto || !hasOwnProperty.call(object, key)))) {
+              result.push(key);
+            }
+          }
+          return result;
+        }
+        function mapValues(object, iteratee, thisArg) {
+          var result = {};
+          iteratee = getCallback(iteratee, thisArg, 3);
+          baseForOwn(object, function (value, key, object) {
+            result[key] = iteratee(value, key, object);
+          });
+          return result;
+        }
+        var merge = createAssigner(baseMerge);
+        var omit = restParam(function (object, props) {
+            if (object == null) {
+              return {};
+            }
+            if (typeof props[0] != 'function') {
+              var props = arrayMap(baseFlatten(props), String);
+              return pickByArray(object, baseDifference(keysIn(object), props));
+            }
+            var predicate = bindCallback(props[0], props[1], 3);
+            return pickByCallback(object, function (value, key, object) {
+              return !predicate(value, key, object);
+            });
+          });
+        function pairs(object) {
+          var index = -1, props = keys(object), length = props.length, result = Array(length);
+          while (++index < length) {
+            var key = props[index];
+            result[index] = [
+              key,
+              object[key]
+            ];
+          }
+          return result;
+        }
+        var pick = restParam(function (object, props) {
+            if (object == null) {
+              return {};
+            }
+            return typeof props[0] == 'function' ? pickByCallback(object, bindCallback(props[0], props[1], 3)) : pickByArray(object, baseFlatten(props));
+          });
+        function result(object, key, defaultValue) {
+          var value = object == null ? undefined : object[key];
+          if (typeof value == 'undefined') {
+            value = defaultValue;
+          }
+          return isFunction(value) ? value.call(object) : value;
+        }
+        function transform(object, iteratee, accumulator, thisArg) {
+          var isArr = isArray(object) || isTypedArray(object);
+          iteratee = getCallback(iteratee, thisArg, 4);
+          if (accumulator == null) {
+            if (isArr || isObject(object)) {
+              var Ctor = object.constructor;
+              if (isArr) {
+                accumulator = isArray(object) ? new Ctor : [];
+              } else {
+                accumulator = baseCreate(isFunction(Ctor) && Ctor.prototype);
+              }
+            } else {
+              accumulator = {};
+            }
+          }
+          (isArr ? arrayEach : baseForOwn)(object, function (value, index, object) {
+            return iteratee(accumulator, value, index, object);
+          });
+          return accumulator;
+        }
+        function values(object) {
+          return baseValues(object, keys(object));
+        }
+        function valuesIn(object) {
+          return baseValues(object, keysIn(object));
+        }
+        function inRange(value, start, end) {
+          start = +start || 0;
+          if (typeof end === 'undefined') {
+            end = start;
+            start = 0;
+          } else {
+            end = +end || 0;
+          }
+          return value >= start && value < end;
+        }
+        function random(min, max, floating) {
+          if (floating && isIterateeCall(min, max, floating)) {
+            max = floating = null;
+          }
+          var noMin = min == null, noMax = max == null;
+          if (floating == null) {
+            if (noMax && typeof min == 'boolean') {
+              floating = min;
+              min = 1;
+            } else if (typeof max == 'boolean') {
+              floating = max;
+              noMax = true;
+            }
+          }
+          if (noMin && noMax) {
+            max = 1;
+            noMax = false;
+          }
+          min = +min || 0;
+          if (noMax) {
+            max = min;
+            min = 0;
+          } else {
+            max = +max || 0;
+          }
+          if (floating || min % 1 || max % 1) {
+            var rand = nativeRandom();
+            return nativeMin(min + rand * (max - min + parseFloat('1e-' + ((rand + '').length - 1))), max);
+          }
+          return baseRandom(min, max);
+        }
+        var camelCase = createCompounder(function (result, word, index) {
+            word = word.toLowerCase();
+            return result + (index ? word.charAt(0).toUpperCase() + word.slice(1) : word);
+          });
+        function capitalize(string) {
+          string = baseToString(string);
+          return string && string.charAt(0).toUpperCase() + string.slice(1);
+        }
+        function deburr(string) {
+          string = baseToString(string);
+          return string && string.replace(reLatin1, deburrLetter).replace(reComboMarks, '');
+        }
+        function endsWith(string, target, position) {
+          string = baseToString(string);
+          target = target + '';
+          var length = string.length;
+          position = typeof position == 'undefined' ? length : nativeMin(position < 0 ? 0 : +position || 0, length);
+          position -= target.length;
+          return position >= 0 && string.indexOf(target, position) == position;
+        }
+        function escape(string) {
+          string = baseToString(string);
+          return string && reHasUnescapedHtml.test(string) ? string.replace(reUnescapedHtml, escapeHtmlChar) : string;
+        }
+        function escapeRegExp(string) {
+          string = baseToString(string);
+          return string && reHasRegExpChars.test(string) ? string.replace(reRegExpChars, '\\$&') : string;
+        }
+        var kebabCase = createCompounder(function (result, word, index) {
+            return result + (index ? '-' : '') + word.toLowerCase();
+          });
+        function pad(string, length, chars) {
+          string = baseToString(string);
+          length = +length;
+          var strLength = string.length;
+          if (strLength >= length || !nativeIsFinite(length)) {
+            return string;
+          }
+          var mid = (length - strLength) / 2, leftLength = floor(mid), rightLength = ceil(mid);
+          chars = createPadding('', rightLength, chars);
+          return chars.slice(0, leftLength) + string + chars;
+        }
+        var padLeft = createPadDir();
+        var padRight = createPadDir(true);
+        function parseInt(string, radix, guard) {
+          if (guard && isIterateeCall(string, radix, guard)) {
+            radix = 0;
+          }
+          return nativeParseInt(string, radix);
+        }
+        if (nativeParseInt(whitespace + '08') != 8) {
+          parseInt = function (string, radix, guard) {
+            if (guard ? isIterateeCall(string, radix, guard) : radix == null) {
+              radix = 0;
+            } else if (radix) {
+              radix = +radix;
+            }
+            string = trim(string);
+            return nativeParseInt(string, radix || (reHexPrefix.test(string) ? 16 : 10));
+          };
+        }
+        function repeat(string, n) {
+          var result = '';
+          string = baseToString(string);
+          n = +n;
+          if (n < 1 || !string || !nativeIsFinite(n)) {
+            return result;
+          }
+          do {
+            if (n % 2) {
+              result += string;
+            }
+            n = floor(n / 2);
+            string += string;
+          } while (n);
+          return result;
+        }
+        var snakeCase = createCompounder(function (result, word, index) {
+            return result + (index ? '_' : '') + word.toLowerCase();
+          });
+        var startCase = createCompounder(function (result, word, index) {
+            return result + (index ? ' ' : '') + (word.charAt(0).toUpperCase() + word.slice(1));
+          });
+        function startsWith(string, target, position) {
+          string = baseToString(string);
+          position = position == null ? 0 : nativeMin(position < 0 ? 0 : +position || 0, string.length);
+          return string.lastIndexOf(target, position) == position;
+        }
+        function template(string, options, otherOptions) {
+          var settings = lodash.templateSettings;
+          if (otherOptions && isIterateeCall(string, options, otherOptions)) {
+            options = otherOptions = null;
+          }
+          string = baseToString(string);
+          options = baseAssign(baseAssign({}, otherOptions || options), settings, assignOwnDefaults);
+          var imports = baseAssign(baseAssign({}, options.imports), settings.imports, assignOwnDefaults), importsKeys = keys(imports), importsValues = baseValues(imports, importsKeys);
+          var isEscaping, isEvaluating, index = 0, interpolate = options.interpolate || reNoMatch, source = "__p += '";
+          var reDelimiters = RegExp((options.escape || reNoMatch).source + '|' + interpolate.source + '|' + (interpolate === reInterpolate ? reEsTemplate : reNoMatch).source + '|' + (options.evaluate || reNoMatch).source + '|$', 'g');
+          var sourceURL = '//# sourceURL=' + ('sourceURL' in options ? options.sourceURL : 'lodash.templateSources[' + ++templateCounter + ']') + '\n';
+          string.replace(reDelimiters, function (match, escapeValue, interpolateValue, esTemplateValue, evaluateValue, offset) {
+            interpolateValue || (interpolateValue = esTemplateValue);
+            source += string.slice(index, offset).replace(reUnescapedString, escapeStringChar);
+            if (escapeValue) {
+              isEscaping = true;
+              source += "' +\n__e(" + escapeValue + ") +\n'";
+            }
+            if (evaluateValue) {
+              isEvaluating = true;
+              source += "';\n" + evaluateValue + ";\n__p += '";
+            }
+            if (interpolateValue) {
+              source += "' +\n((__t = (" + interpolateValue + ")) == null ? '' : __t) +\n'";
+            }
+            index = offset + match.length;
+            return match;
+          });
+          source += "';\n";
+          var variable = options.variable;
+          if (!variable) {
+            source = 'with (obj) {\n' + source + '\n}\n';
+          }
+          source = (isEvaluating ? source.replace(reEmptyStringLeading, '') : source).replace(reEmptyStringMiddle, '$1').replace(reEmptyStringTrailing, '$1;');
+          source = 'function(' + (variable || 'obj') + ') {\n' + (variable ? '' : 'obj || (obj = {});\n') + "var __t, __p = ''" + (isEscaping ? ', __e = _.escape' : '') + (isEvaluating ? ', __j = Array.prototype.join;\n' + "function print() { __p += __j.call(arguments, '') }\n" : ';\n') + source + 'return __p\n}';
+          var result = attempt(function () {
+              return Function(importsKeys, sourceURL + 'return ' + source).apply(undefined, importsValues);
+            });
+          result.source = source;
+          if (isError(result)) {
+            throw result;
+          }
+          return result;
+        }
+        function trim(string, chars, guard) {
+          var value = string;
+          string = baseToString(string);
+          if (!string) {
+            return string;
+          }
+          if (guard ? isIterateeCall(value, chars, guard) : chars == null) {
+            return string.slice(trimmedLeftIndex(string), trimmedRightIndex(string) + 1);
+          }
+          chars = chars + '';
+          return string.slice(charsLeftIndex(string, chars), charsRightIndex(string, chars) + 1);
+        }
+        function trimLeft(string, chars, guard) {
+          var value = string;
+          string = baseToString(string);
+          if (!string) {
+            return string;
+          }
+          if (guard ? isIterateeCall(value, chars, guard) : chars == null) {
+            return string.slice(trimmedLeftIndex(string));
+          }
+          return string.slice(charsLeftIndex(string, chars + ''));
+        }
+        function trimRight(string, chars, guard) {
+          var value = string;
+          string = baseToString(string);
+          if (!string) {
+            return string;
+          }
+          if (guard ? isIterateeCall(value, chars, guard) : chars == null) {
+            return string.slice(0, trimmedRightIndex(string) + 1);
+          }
+          return string.slice(0, charsRightIndex(string, chars + '') + 1);
+        }
+        function trunc(string, options, guard) {
+          if (guard && isIterateeCall(string, options, guard)) {
+            options = null;
+          }
+          var length = DEFAULT_TRUNC_LENGTH, omission = DEFAULT_TRUNC_OMISSION;
+          if (options != null) {
+            if (isObject(options)) {
+              var separator = 'separator' in options ? options.separator : separator;
+              length = 'length' in options ? +options.length || 0 : length;
+              omission = 'omission' in options ? baseToString(options.omission) : omission;
+            } else {
+              length = +options || 0;
+            }
+          }
+          string = baseToString(string);
+          if (length >= string.length) {
+            return string;
+          }
+          var end = length - omission.length;
+          if (end < 1) {
+            return omission;
+          }
+          var result = string.slice(0, end);
+          if (separator == null) {
+            return result + omission;
+          }
+          if (isRegExp(separator)) {
+            if (string.slice(end).search(separator)) {
+              var match, newEnd, substring = string.slice(0, end);
+              if (!separator.global) {
+                separator = RegExp(separator.source, (reFlags.exec(separator) || '') + 'g');
+              }
+              separator.lastIndex = 0;
+              while (match = separator.exec(substring)) {
+                newEnd = match.index;
+              }
+              result = result.slice(0, newEnd == null ? end : newEnd);
+            }
+          } else if (string.indexOf(separator, end) != end) {
+            var index = result.lastIndexOf(separator);
+            if (index > -1) {
+              result = result.slice(0, index);
+            }
+          }
+          return result + omission;
+        }
+        function unescape(string) {
+          string = baseToString(string);
+          return string && reHasEscapedHtml.test(string) ? string.replace(reEscapedHtml, unescapeHtmlChar) : string;
+        }
+        function words(string, pattern, guard) {
+          if (guard && isIterateeCall(string, pattern, guard)) {
+            pattern = null;
+          }
+          string = baseToString(string);
+          return string.match(pattern || reWords) || [];
+        }
+        var attempt = restParam(function (func, args) {
+            try {
+              return func.apply(undefined, args);
+            } catch (e) {
+              return isError(e) ? e : new Error(e);
+            }
+          });
+        function callback(func, thisArg, guard) {
+          if (guard && isIterateeCall(func, thisArg, guard)) {
+            thisArg = null;
+          }
+          return isObjectLike(func) ? matches(func) : baseCallback(func, thisArg);
+        }
+        function constant(value) {
+          return function () {
+            return value;
+          };
+        }
+        function identity(value) {
+          return value;
+        }
+        function matches(source) {
+          return baseMatches(baseClone(source, true));
+        }
+        function matchesProperty(key, value) {
+          return baseMatchesProperty(key + '', baseClone(value, true));
+        }
+        function mixin(object, source, options) {
+          if (options == null) {
+            var isObj = isObject(source), props = isObj && keys(source), methodNames = props && props.length && baseFunctions(source, props);
+            if (!(methodNames ? methodNames.length : isObj)) {
+              methodNames = false;
+              options = source;
+              source = object;
+              object = this;
+            }
+          }
+          if (!methodNames) {
+            methodNames = baseFunctions(source, keys(source));
+          }
+          var chain = true, index = -1, isFunc = isFunction(object), length = methodNames.length;
+          if (options === false) {
+            chain = false;
+          } else if (isObject(options) && 'chain' in options) {
+            chain = options.chain;
+          }
+          while (++index < length) {
+            var methodName = methodNames[index], func = source[methodName];
+            object[methodName] = func;
+            if (isFunc) {
+              object.prototype[methodName] = function (func) {
+                return function () {
+                  var chainAll = this.__chain__;
+                  if (chain || chainAll) {
+                    var result = object(this.__wrapped__), actions = result.__actions__ = arrayCopy(this.__actions__);
+                    actions.push({
+                      'func': func,
+                      'args': arguments,
+                      'thisArg': object
+                    });
+                    result.__chain__ = chainAll;
+                    return result;
+                  }
+                  var args = [this.value()];
+                  push.apply(args, arguments);
+                  return func.apply(object, args);
+                };
+              }(func);
+            }
+          }
+          return object;
+        }
+        function noConflict() {
+          context._ = oldDash;
+          return this;
+        }
+        function noop() {
+        }
+        function property(key) {
+          return baseProperty(key + '');
+        }
+        function propertyOf(object) {
+          return function (key) {
+            return object == null ? undefined : object[key];
+          };
+        }
+        function range(start, end, step) {
+          if (step && isIterateeCall(start, end, step)) {
+            end = step = null;
+          }
+          start = +start || 0;
+          step = step == null ? 1 : +step || 0;
+          if (end == null) {
+            end = start;
+            start = 0;
+          } else {
+            end = +end || 0;
+          }
+          var index = -1, length = nativeMax(ceil((end - start) / (step || 1)), 0), result = Array(length);
+          while (++index < length) {
+            result[index] = start;
+            start += step;
+          }
+          return result;
+        }
+        function times(n, iteratee, thisArg) {
+          n = +n;
+          if (n < 1 || !nativeIsFinite(n)) {
+            return [];
+          }
+          var index = -1, result = Array(nativeMin(n, MAX_ARRAY_LENGTH));
+          iteratee = bindCallback(iteratee, thisArg, 1);
+          while (++index < n) {
+            if (index < MAX_ARRAY_LENGTH) {
+              result[index] = iteratee(index);
+            } else {
+              iteratee(index);
+            }
+          }
+          return result;
+        }
+        function uniqueId(prefix) {
+          var id = ++idCounter;
+          return baseToString(prefix) + id;
+        }
+        function add(augend, addend) {
+          return augend + addend;
+        }
+        var max = createExtremum(arrayMax);
+        var min = createExtremum(arrayMin, true);
+        function sum(collection, iteratee, thisArg) {
+          if (thisArg && isIterateeCall(collection, iteratee, thisArg)) {
+            iteratee = null;
+          }
+          var func = getCallback(), noIteratee = iteratee == null;
+          if (!(func === baseCallback && noIteratee)) {
+            noIteratee = false;
+            iteratee = func(iteratee, thisArg, 3);
+          }
+          return noIteratee ? arraySum(isArray(collection) ? collection : toIterable(collection)) : baseSum(collection, iteratee);
+        }
+        lodash.prototype = baseLodash.prototype;
+        LodashWrapper.prototype = baseCreate(baseLodash.prototype);
+        LodashWrapper.prototype.constructor = LodashWrapper;
+        LazyWrapper.prototype = baseCreate(baseLodash.prototype);
+        LazyWrapper.prototype.constructor = LazyWrapper;
+        MapCache.prototype['delete'] = mapDelete;
+        MapCache.prototype.get = mapGet;
+        MapCache.prototype.has = mapHas;
+        MapCache.prototype.set = mapSet;
+        SetCache.prototype.push = cachePush;
+        memoize.Cache = MapCache;
+        lodash.after = after;
+        lodash.ary = ary;
+        lodash.assign = assign;
+        lodash.at = at;
+        lodash.before = before;
+        lodash.bind = bind;
+        lodash.bindAll = bindAll;
+        lodash.bindKey = bindKey;
+        lodash.callback = callback;
+        lodash.chain = chain;
+        lodash.chunk = chunk;
+        lodash.compact = compact;
+        lodash.constant = constant;
+        lodash.countBy = countBy;
+        lodash.create = create;
+        lodash.curry = curry;
+        lodash.curryRight = curryRight;
+        lodash.debounce = debounce;
+        lodash.defaults = defaults;
+        lodash.defer = defer;
+        lodash.delay = delay;
+        lodash.difference = difference;
+        lodash.drop = drop;
+        lodash.dropRight = dropRight;
+        lodash.dropRightWhile = dropRightWhile;
+        lodash.dropWhile = dropWhile;
+        lodash.fill = fill;
+        lodash.filter = filter;
+        lodash.flatten = flatten;
+        lodash.flattenDeep = flattenDeep;
+        lodash.flow = flow;
+        lodash.flowRight = flowRight;
+        lodash.forEach = forEach;
+        lodash.forEachRight = forEachRight;
+        lodash.forIn = forIn;
+        lodash.forInRight = forInRight;
+        lodash.forOwn = forOwn;
+        lodash.forOwnRight = forOwnRight;
+        lodash.functions = functions;
+        lodash.groupBy = groupBy;
+        lodash.indexBy = indexBy;
+        lodash.initial = initial;
+        lodash.intersection = intersection;
+        lodash.invert = invert;
+        lodash.invoke = invoke;
+        lodash.keys = keys;
+        lodash.keysIn = keysIn;
+        lodash.map = map;
+        lodash.mapValues = mapValues;
+        lodash.matches = matches;
+        lodash.matchesProperty = matchesProperty;
+        lodash.memoize = memoize;
+        lodash.merge = merge;
+        lodash.mixin = mixin;
+        lodash.negate = negate;
+        lodash.omit = omit;
+        lodash.once = once;
+        lodash.pairs = pairs;
+        lodash.partial = partial;
+        lodash.partialRight = partialRight;
+        lodash.partition = partition;
+        lodash.pick = pick;
+        lodash.pluck = pluck;
+        lodash.property = property;
+        lodash.propertyOf = propertyOf;
+        lodash.pull = pull;
+        lodash.pullAt = pullAt;
+        lodash.range = range;
+        lodash.rearg = rearg;
+        lodash.reject = reject;
+        lodash.remove = remove;
+        lodash.rest = rest;
+        lodash.restParam = restParam;
+        lodash.shuffle = shuffle;
+        lodash.slice = slice;
+        lodash.sortBy = sortBy;
+        lodash.sortByAll = sortByAll;
+        lodash.sortByOrder = sortByOrder;
+        lodash.spread = spread;
+        lodash.take = take;
+        lodash.takeRight = takeRight;
+        lodash.takeRightWhile = takeRightWhile;
+        lodash.takeWhile = takeWhile;
+        lodash.tap = tap;
+        lodash.throttle = throttle;
+        lodash.thru = thru;
+        lodash.times = times;
+        lodash.toArray = toArray;
+        lodash.toPlainObject = toPlainObject;
+        lodash.transform = transform;
+        lodash.union = union;
+        lodash.uniq = uniq;
+        lodash.unzip = unzip;
+        lodash.values = values;
+        lodash.valuesIn = valuesIn;
+        lodash.where = where;
+        lodash.without = without;
+        lodash.wrap = wrap;
+        lodash.xor = xor;
+        lodash.zip = zip;
+        lodash.zipObject = zipObject;
+        lodash.backflow = flowRight;
+        lodash.collect = map;
+        lodash.compose = flowRight;
+        lodash.each = forEach;
+        lodash.eachRight = forEachRight;
+        lodash.extend = assign;
+        lodash.iteratee = callback;
+        lodash.methods = functions;
+        lodash.object = zipObject;
+        lodash.select = filter;
+        lodash.tail = rest;
+        lodash.unique = uniq;
+        mixin(lodash, lodash);
+        lodash.add = add;
+        lodash.attempt = attempt;
+        lodash.camelCase = camelCase;
+        lodash.capitalize = capitalize;
+        lodash.clone = clone;
+        lodash.cloneDeep = cloneDeep;
+        lodash.deburr = deburr;
+        lodash.endsWith = endsWith;
+        lodash.escape = escape;
+        lodash.escapeRegExp = escapeRegExp;
+        lodash.every = every;
+        lodash.find = find;
+        lodash.findIndex = findIndex;
+        lodash.findKey = findKey;
+        lodash.findLast = findLast;
+        lodash.findLastIndex = findLastIndex;
+        lodash.findLastKey = findLastKey;
+        lodash.findWhere = findWhere;
+        lodash.first = first;
+        lodash.has = has;
+        lodash.identity = identity;
+        lodash.includes = includes;
+        lodash.indexOf = indexOf;
+        lodash.inRange = inRange;
+        lodash.isArguments = isArguments;
+        lodash.isArray = isArray;
+        lodash.isBoolean = isBoolean;
+        lodash.isDate = isDate;
+        lodash.isElement = isElement;
+        lodash.isEmpty = isEmpty;
+        lodash.isEqual = isEqual;
+        lodash.isError = isError;
+        lodash.isFinite = isFinite;
+        lodash.isFunction = isFunction;
+        lodash.isMatch = isMatch;
+        lodash.isNaN = isNaN;
+        lodash.isNative = isNative;
+        lodash.isNull = isNull;
+        lodash.isNumber = isNumber;
+        lodash.isObject = isObject;
+        lodash.isPlainObject = isPlainObject;
+        lodash.isRegExp = isRegExp;
+        lodash.isString = isString;
+        lodash.isTypedArray = isTypedArray;
+        lodash.isUndefined = isUndefined;
+        lodash.kebabCase = kebabCase;
+        lodash.last = last;
+        lodash.lastIndexOf = lastIndexOf;
+        lodash.max = max;
+        lodash.min = min;
+        lodash.noConflict = noConflict;
+        lodash.noop = noop;
+        lodash.now = now;
+        lodash.pad = pad;
+        lodash.padLeft = padLeft;
+        lodash.padRight = padRight;
+        lodash.parseInt = parseInt;
+        lodash.random = random;
+        lodash.reduce = reduce;
+        lodash.reduceRight = reduceRight;
+        lodash.repeat = repeat;
+        lodash.result = result;
+        lodash.runInContext = runInContext;
+        lodash.size = size;
+        lodash.snakeCase = snakeCase;
+        lodash.some = some;
+        lodash.sortedIndex = sortedIndex;
+        lodash.sortedLastIndex = sortedLastIndex;
+        lodash.startCase = startCase;
+        lodash.startsWith = startsWith;
+        lodash.sum = sum;
+        lodash.template = template;
+        lodash.trim = trim;
+        lodash.trimLeft = trimLeft;
+        lodash.trimRight = trimRight;
+        lodash.trunc = trunc;
+        lodash.unescape = unescape;
+        lodash.uniqueId = uniqueId;
+        lodash.words = words;
+        lodash.all = every;
+        lodash.any = some;
+        lodash.contains = includes;
+        lodash.detect = find;
+        lodash.foldl = reduce;
+        lodash.foldr = reduceRight;
+        lodash.head = first;
+        lodash.include = includes;
+        lodash.inject = reduce;
+        mixin(lodash, function () {
+          var source = {};
+          baseForOwn(lodash, function (func, methodName) {
+            if (!lodash.prototype[methodName]) {
+              source[methodName] = func;
+            }
+          });
+          return source;
+        }(), false);
+        lodash.sample = sample;
+        lodash.prototype.sample = function (n) {
+          if (!this.__chain__ && n == null) {
+            return sample(this.value());
+          }
+          return this.thru(function (value) {
+            return sample(value, n);
+          });
+        };
+        lodash.VERSION = VERSION;
+        arrayEach([
+          'bind',
+          'bindKey',
+          'curry',
+          'curryRight',
+          'partial',
+          'partialRight'
+        ], function (methodName) {
+          lodash[methodName].placeholder = lodash;
+        });
+        arrayEach([
+          'dropWhile',
+          'filter',
+          'map',
+          'takeWhile'
+        ], function (methodName, type) {
+          var isFilter = type != LAZY_MAP_FLAG, isDropWhile = type == LAZY_DROP_WHILE_FLAG;
+          LazyWrapper.prototype[methodName] = function (iteratee, thisArg) {
+            var filtered = this.__filtered__, result = filtered && isDropWhile ? new LazyWrapper(this) : this.clone(), iteratees = result.__iteratees__ || (result.__iteratees__ = []);
+            iteratees.push({
+              'done': false,
+              'count': 0,
+              'index': 0,
+              'iteratee': getCallback(iteratee, thisArg, 1),
+              'limit': -1,
+              'type': type
+            });
+            result.__filtered__ = filtered || isFilter;
+            return result;
+          };
+        });
+        arrayEach([
+          'drop',
+          'take'
+        ], function (methodName, index) {
+          var whileName = methodName + 'While';
+          LazyWrapper.prototype[methodName] = function (n) {
+            var filtered = this.__filtered__, result = filtered && !index ? this.dropWhile() : this.clone();
+            n = n == null ? 1 : nativeMax(floor(n) || 0, 0);
+            if (filtered) {
+              if (index) {
+                result.__takeCount__ = nativeMin(result.__takeCount__, n);
+              } else {
+                last(result.__iteratees__).limit = n;
+              }
+            } else {
+              var views = result.__views__ || (result.__views__ = []);
+              views.push({
+                'size': n,
+                'type': methodName + (result.__dir__ < 0 ? 'Right' : '')
+              });
+            }
+            return result;
+          };
+          LazyWrapper.prototype[methodName + 'Right'] = function (n) {
+            return this.reverse()[methodName](n).reverse();
+          };
+          LazyWrapper.prototype[methodName + 'RightWhile'] = function (predicate, thisArg) {
+            return this.reverse()[whileName](predicate, thisArg).reverse();
+          };
+        });
+        arrayEach([
+          'first',
+          'last'
+        ], function (methodName, index) {
+          var takeName = 'take' + (index ? 'Right' : '');
+          LazyWrapper.prototype[methodName] = function () {
+            return this[takeName](1).value()[0];
+          };
+        });
+        arrayEach([
+          'initial',
+          'rest'
+        ], function (methodName, index) {
+          var dropName = 'drop' + (index ? '' : 'Right');
+          LazyWrapper.prototype[methodName] = function () {
+            return this[dropName](1);
+          };
+        });
+        arrayEach([
+          'pluck',
+          'where'
+        ], function (methodName, index) {
+          var operationName = index ? 'filter' : 'map', createCallback = index ? baseMatches : baseProperty;
+          LazyWrapper.prototype[methodName] = function (value) {
+            return this[operationName](createCallback(value));
+          };
+        });
+        LazyWrapper.prototype.compact = function () {
+          return this.filter(identity);
+        };
+        LazyWrapper.prototype.reject = function (predicate, thisArg) {
+          predicate = getCallback(predicate, thisArg, 1);
+          return this.filter(function (value) {
+            return !predicate(value);
+          });
+        };
+        LazyWrapper.prototype.slice = function (start, end) {
+          start = start == null ? 0 : +start || 0;
+          var result = start < 0 ? this.takeRight(-start) : this.drop(start);
+          if (typeof end != 'undefined') {
+            end = +end || 0;
+            result = end < 0 ? result.dropRight(-end) : result.take(end - start);
+          }
+          return result;
+        };
+        LazyWrapper.prototype.toArray = function () {
+          return this.drop(0);
+        };
+        baseForOwn(LazyWrapper.prototype, function (func, methodName) {
+          var lodashFunc = lodash[methodName];
+          if (!lodashFunc) {
+            return;
+          }
+          var checkIteratee = /^(?:filter|map|reject)|While$/.test(methodName), retUnwrapped = /^(?:first|last)$/.test(methodName);
+          lodash.prototype[methodName] = function () {
+            var args = arguments, length = args.length, chainAll = this.__chain__, value = this.__wrapped__, isHybrid = !!this.__actions__.length, isLazy = value instanceof LazyWrapper, iteratee = args[0], useLazy = isLazy || isArray(value);
+            if (useLazy && checkIteratee && typeof iteratee == 'function' && iteratee.length != 1) {
+              isLazy = useLazy = false;
+            }
+            var onlyLazy = isLazy && !isHybrid;
+            if (retUnwrapped && !chainAll) {
+              return onlyLazy ? func.call(value) : lodashFunc.call(lodash, this.value());
+            }
+            var interceptor = function (value) {
+              var otherArgs = [value];
+              push.apply(otherArgs, args);
+              return lodashFunc.apply(lodash, otherArgs);
+            };
+            if (useLazy) {
+              var wrapper = onlyLazy ? value : new LazyWrapper(this), result = func.apply(wrapper, args);
+              if (!retUnwrapped && (isHybrid || result.__actions__)) {
+                var actions = result.__actions__ || (result.__actions__ = []);
+                actions.push({
+                  'func': thru,
+                  'args': [interceptor],
+                  'thisArg': lodash
+                });
+              }
+              return new LodashWrapper(result, chainAll);
+            }
+            return this.thru(interceptor);
+          };
+        });
+        arrayEach([
+          'concat',
+          'join',
+          'pop',
+          'push',
+          'replace',
+          'shift',
+          'sort',
+          'splice',
+          'split',
+          'unshift'
+        ], function (methodName) {
+          var func = (/^(?:replace|split)$/.test(methodName) ? stringProto : arrayProto)[methodName], chainName = /^(?:push|sort|unshift)$/.test(methodName) ? 'tap' : 'thru', retUnwrapped = /^(?:join|pop|replace|shift)$/.test(methodName);
+          lodash.prototype[methodName] = function () {
+            var args = arguments;
+            if (retUnwrapped && !this.__chain__) {
+              return func.apply(this.value(), args);
+            }
+            return this[chainName](function (value) {
+              return func.apply(value, args);
+            });
+          };
+        });
+        baseForOwn(LazyWrapper.prototype, function (func, methodName) {
+          var lodashFunc = lodash[methodName];
+          if (lodashFunc) {
+            var key = lodashFunc.name, names = realNames[key] || (realNames[key] = []);
+            names.push({
+              'name': methodName,
+              'func': lodashFunc
+            });
+          }
+        });
+        realNames[createHybridWrapper(null, BIND_KEY_FLAG).name] = [{
+            'name': 'wrapper',
+            'func': null
+          }];
+        LazyWrapper.prototype.clone = lazyClone;
+        LazyWrapper.prototype.reverse = lazyReverse;
+        LazyWrapper.prototype.value = lazyValue;
+        lodash.prototype.chain = wrapperChain;
+        lodash.prototype.commit = wrapperCommit;
+        lodash.prototype.plant = wrapperPlant;
+        lodash.prototype.reverse = wrapperReverse;
+        lodash.prototype.toString = wrapperToString;
+        lodash.prototype.run = lodash.prototype.toJSON = lodash.prototype.valueOf = lodash.prototype.value = wrapperValue;
+        lodash.prototype.collect = lodash.prototype.map;
+        lodash.prototype.head = lodash.prototype.first;
+        lodash.prototype.select = lodash.prototype.filter;
+        lodash.prototype.tail = lodash.prototype.rest;
+        return lodash;
+      }
+      var _ = runInContext();
+      if (typeof define == 'function' && typeof define.amd == 'object' && define.amd) {
+        root._ = _;
+        define(function () {
+          return _;
+        });
+      } else if (freeExports && freeModule) {
+        if (moduleExports) {
+          (freeModule.exports = _)._ = _;
+        } else {
+          freeExports._ = _;
+        }
+      } else {
+        root._ = _;
+      }
+    }.call(this));
+  });
   require.define('/src/js-nodes.coffee', function (module, exports, __dirname, __filename) {
     var ArrayExpression, AssignmentExpression, BinaryExpression, BlockStatement, CallExpression, createNode, ctor, difference, exports, FunctionDeclaration, FunctionExpression, GenSym, handleLists, handlePrimitives, Identifier, isStatement, Literal, LogicalExpression, MemberExpression, NewExpression, node, nodeData, Nodes, ObjectExpression, params, Program, SequenceExpression, SwitchCase, SwitchStatement, TryStatement, UnaryExpression, UpdateExpression, VariableDeclaration, VariableDeclaration;
     difference = require('/src/functional-helpers.coffee', module).difference;
@@ -14933,7 +12846,7 @@
     }
   });
   require.define('/src/nodes.coffee', function (module, exports, __dirname, __filename) {
-    var Annotations, ArrayInitialiser, AssignOp, Block, Bool, Class, CompoundAssignOp, ComputedProperty, concat, concatMap, Conditional, createNodes, difference, enumerableMethods, exports, ForOf, FunctionApplications, Functions, GenSym, handleLists, handlePrimitives, HeregExp, Identifier, Identifiers, map, MemberAccessOp, Mixin, NegatedConditional, NewOp, Nodes, nub, ObjectInitialiser, ObjectInitialiserMember, PostDecrementOp, PostIncrementOp, Primitives, Range, RegExp, RegExps, Slice, SoakedMemberAccessOp, StaticMemberAccessOps, Super, Switch, SwitchCase, This, union, While;
+    var _, Annotations, ArrayInitialiser, AssignOp, Block, Bool, Class, CompoundAssignOp, ComputedProperty, concat, concatMap, Conditional, createNodes, difference, enumerableMethods, exports, ForOf, FunctionApplications, Functions, GenSym, handleLists, handlePrimitives, HeregExp, Identifier, Identifiers, map, MemberAccessOp, Mixin, NegatedConditional, NewOp, Nodes, nub, ObjectInitialiser, ObjectInitialiserMember, PostDecrementOp, PostIncrementOp, Primitives, Range, RegExp, RegExps, Slice, SoakedMemberAccessOp, StaticMemberAccessOps, Super, Switch, SwitchCase, This, union, While;
     cache$ = require('/src/functional-helpers.coffee', module);
     map = cache$.map;
     concat = cache$.concat;
@@ -14942,8 +12855,7 @@
     nub = cache$.nub;
     union = cache$.union;
     exports = null != ('undefined' !== typeof module && null != module ? module.exports : void 0) ? 'undefined' !== typeof module && null != module ? module.exports : void 0 : this;
-    if (!('undefined' !== typeof Ember && null != Ember))
-      require('/src/ember-runtime.js', module);
+    _ = require('/node_modules/lodash/index.js', module);
     createNodes = function (subclasses, superclasses) {
       var className, specs;
       if (null == superclasses)
@@ -15565,11 +13477,33 @@
       });
     };
     SoakedMemberAccessOp.prototype.dependentKeys = MemberAccessOp.prototype.dependentKeys;
-    enumerableMethods = Ember.Set.create();
-    enumerableMethods.addObjects(Ember.Enumerable.keys());
-    enumerableMethods.addObjects(Ember.Array.keys());
-    enumerableMethods.addObjects(Ember.MutableArray.keys());
-    enumerableMethods.addObjects(Ember.MutableEnumerable.keys());
+    enumerableMethods = [
+      'nextObject',
+      'firstObject',
+      'lastObject',
+      'contains',
+      'forEach',
+      'getEach',
+      'setEach',
+      'map',
+      'mapProperty',
+      'filter',
+      'reject',
+      'filterProperty',
+      'rejectProperty',
+      'find',
+      'findProperty',
+      'every',
+      'everyProperty',
+      'some',
+      'someProperty',
+      'reduce',
+      'invoke',
+      'toArray',
+      'compact',
+      'without',
+      'uniq'
+    ];
     FunctionApplications.prototype.dependentKeys = function (scope) {
       var argument, res;
       if (null == scope)
@@ -15580,7 +13514,7 @@
           c.pop();
           return c;
         });
-        if (enumerableMethods.contains(this['function'].memberName))
+        if (_.contains(enumerableMethods, this['function'].memberName))
           res = res.map(function (c) {
             c.push('@each');
             return c;
@@ -15599,10 +13533,10 @@
       if (null == scope)
         scope = {};
       res = [];
-      newScope = Ember.copy(scope);
+      newScope = _.clone(scope);
       for (var i$ = 0, length$ = newScope.length; i$ < length$; ++i$) {
         key = newScope[i$];
-        newScope[key] = Ember.copy(newScope[key]);
+        newScope[key] = _.clone(newScope[key]);
       }
       this.statements.forEach(function (s) {
         return res = res.concat(s.dependentKeys(scope));
@@ -15625,7 +13559,7 @@
     Identifier.prototype.dependentKeys = function (scope) {
       if (null == scope)
         scope = {};
-      return Ember.copy(scope[this.data]) || [];
+      return _.clone(scope[this.data]) || [];
     };
     exports.NegatedConditional = function (super$) {
       extends$(NegatedConditional, super$);
@@ -37919,7 +35853,7 @@
     }();
   });
   require.define('/lib/nodes.js', function (module, exports, __dirname, __filename) {
-    var Annotations, ArrayInitialiser, AssignOp, Block, Bool, Class, CompoundAssignOp, ComputedProperty, concat, concatMap, Conditional, createNodes, difference, enumerableMethods, exports, ForOf, FunctionApplications, Functions, GenSym, handleLists, handlePrimitives, HeregExp, Identifier, Identifiers, map, MemberAccessOp, Mixin, NegatedConditional, NewOp, Nodes, nub, ObjectInitialiser, ObjectInitialiserMember, PostDecrementOp, PostIncrementOp, Primitives, Range, RegExp, RegExps, Slice, SoakedMemberAccessOp, StaticMemberAccessOps, Super, Switch, SwitchCase, This, union, While;
+    var _, Annotations, ArrayInitialiser, AssignOp, Block, Bool, Class, CompoundAssignOp, ComputedProperty, concat, concatMap, Conditional, createNodes, difference, enumerableMethods, exports, ForOf, FunctionApplications, Functions, GenSym, handleLists, handlePrimitives, HeregExp, Identifier, Identifiers, map, MemberAccessOp, Mixin, NegatedConditional, NewOp, Nodes, nub, ObjectInitialiser, ObjectInitialiserMember, PostDecrementOp, PostIncrementOp, Primitives, Range, RegExp, RegExps, Slice, SoakedMemberAccessOp, StaticMemberAccessOps, Super, Switch, SwitchCase, This, union, While;
     cache$ = require('/lib/functional-helpers.js', module);
     map = cache$.map;
     concat = cache$.concat;
@@ -37928,8 +35862,7 @@
     nub = cache$.nub;
     union = cache$.union;
     exports = null != ('undefined' !== typeof module && null != module ? module.exports : void 0) ? 'undefined' !== typeof module && null != module ? module.exports : void 0 : this;
-    if (!('undefined' !== typeof Ember && null != Ember))
-      require('/lib/ember-runtime.js', module);
+    _ = require('/node_modules/lodash/index.js', module);
     createNodes = function (subclasses, superclasses) {
       var className, specs;
       if (null == superclasses)
@@ -38553,11 +36486,33 @@
       });
     };
     SoakedMemberAccessOp.prototype.dependentKeys = MemberAccessOp.prototype.dependentKeys;
-    enumerableMethods = Ember.Set.create();
-    enumerableMethods.addObjects(Ember.Enumerable.keys());
-    enumerableMethods.addObjects(Ember.Array.keys());
-    enumerableMethods.addObjects(Ember.MutableArray.keys());
-    enumerableMethods.addObjects(Ember.MutableEnumerable.keys());
+    enumerableMethods = [
+      'nextObject',
+      'firstObject',
+      'lastObject',
+      'contains',
+      'forEach',
+      'getEach',
+      'setEach',
+      'map',
+      'mapProperty',
+      'filter',
+      'reject',
+      'filterProperty',
+      'rejectProperty',
+      'find',
+      'findProperty',
+      'every',
+      'everyProperty',
+      'some',
+      'someProperty',
+      'reduce',
+      'invoke',
+      'toArray',
+      'compact',
+      'without',
+      'uniq'
+    ];
     FunctionApplications.prototype.dependentKeys = function (scope) {
       var argument, res;
       if (null == scope)
@@ -38568,7 +36523,7 @@
           c.pop();
           return c;
         });
-        if (enumerableMethods.contains(this['function'].memberName))
+        if (_.contains(enumerableMethods, this['function'].memberName))
           res = res.map(function (c) {
             c.push('@each');
             return c;
@@ -38587,10 +36542,10 @@
       if (null == scope)
         scope = {};
       res = [];
-      newScope = Ember.copy(scope);
+      newScope = _.clone(scope);
       for (var i$ = 0, length$ = newScope.length; i$ < length$; ++i$) {
         key = newScope[i$];
-        newScope[key] = Ember.copy(newScope[key]);
+        newScope[key] = _.clone(newScope[key]);
       }
       this.statements.forEach(function (s) {
         return res = res.concat(s.dependentKeys(scope));
@@ -38613,7 +36568,7 @@
     Identifier.prototype.dependentKeys = function (scope) {
       if (null == scope)
         scope = {};
-      return Ember.copy(scope[this.data]) || [];
+      return _.clone(scope[this.data]) || [];
     };
     exports.NegatedConditional = function (super$) {
       extends$(NegatedConditional, super$);
@@ -38657,6091 +36612,6 @@
           return true;
       return false;
     }
-  });
-  require.define('/lib/ember-runtime.js', function (module, exports, __dirname, __filename) {
-    (function () {
-      if ('undefined' === typeof Ember) {
-        Ember = {};
-        if ('undefined' !== typeof window) {
-          window.Em = window.Ember = Em = Ember;
-        }
-      }
-      Ember.ENV = 'undefined' === typeof ENV ? {} : ENV;
-      if (!('MANDATORY_SETTER' in Ember.ENV)) {
-        Ember.ENV.MANDATORY_SETTER = true;
-      }
-      Ember.assert = function (desc, test) {
-        if (!test)
-          throw new Error('assertion failed: ' + desc);
-      };
-      Ember.warn = function (message, test) {
-        if (!test) {
-          Ember.Logger.warn('WARNING: ' + message);
-          if ('trace' in Ember.Logger)
-            Ember.Logger.trace();
-        }
-      };
-      Ember.debug = function (message) {
-        Ember.Logger.debug('DEBUG: ' + message);
-      };
-      Ember.deprecate = function (message, test) {
-        if (Ember && Ember.TESTING_DEPRECATION) {
-          return;
-        }
-        if (arguments.length === 1) {
-          test = false;
-        }
-        if (test) {
-          return;
-        }
-        if (Ember && Ember.ENV.RAISE_ON_DEPRECATION) {
-          throw new Error(message);
-        }
-        var error;
-        try {
-          __fail__.fail();
-        } catch (e) {
-          error = e;
-        }
-        if (Ember.LOG_STACKTRACE_ON_DEPRECATION && error.stack) {
-          var stack, stackStr = '';
-          if (error['arguments']) {
-            stack = error.stack.replace(/^\s+at\s+/gm, '').replace(/^([^\(]+?)([\n$])/gm, '{anonymous}($1)$2').replace(/^Object.<anonymous>\s*\(([^\)]+)\)/gm, '{anonymous}($1)').split('\n');
-            stack.shift();
-          } else {
-            stack = error.stack.replace(/(?:\n@:0)?\s+$/m, '').replace(/^\(/gm, '{anonymous}(').split('\n');
-          }
-          stackStr = '\n    ' + stack.slice(2).join('\n    ');
-          message = message + stackStr;
-        }
-        Ember.Logger.warn('DEPRECATION: ' + message);
-      };
-      Ember.deprecateFunc = function (message, func) {
-        return function () {
-          Ember.deprecate(message);
-          return func.apply(this, arguments);
-        };
-      };
-    }());
-    (function () {
-      var define, requireModule;
-      (function () {
-        var registry = {}, seen = {};
-        define = function (name, deps, callback) {
-          registry[name] = {
-            deps: deps,
-            callback: callback
-          };
-        };
-        requireModule = function (name) {
-          if (seen[name]) {
-            return seen[name];
-          }
-          seen[name] = {};
-          var mod = registry[name], deps = mod.deps, callback = mod.callback, reified = [], exports;
-          for (var i = 0, l = deps.length; i < l; i++) {
-            if (deps[i] === 'exports') {
-              reified.push(exports = {});
-            } else {
-              reified.push(requireModule(deps[i]));
-            }
-          }
-          var value = callback.apply(this, reified);
-          return seen[name] = exports || value;
-        };
-      }());
-      (function () {
-        if ('undefined' === typeof Ember) {
-          Ember = {};
-        }
-        var imports = Ember.imports = Ember.imports || this;
-        var exports = Ember.exports = Ember.exports || this;
-        var lookup = Ember.lookup = Ember.lookup || this;
-        exports.Em = exports.Ember = Em = Ember;
-        Ember.isNamespace = true;
-        Ember.toString = function () {
-          return 'Ember';
-        };
-        Ember.VERSION = '1.0.0-rc.2';
-        Ember.ENV = Ember.ENV || ('undefined' === typeof ENV ? {} : ENV);
-        Ember.config = Ember.config || {};
-        Ember.EXTEND_PROTOTYPES = Ember.ENV.EXTEND_PROTOTYPES;
-        if (typeof Ember.EXTEND_PROTOTYPES === 'undefined') {
-          Ember.EXTEND_PROTOTYPES = true;
-        }
-        Ember.LOG_STACKTRACE_ON_DEPRECATION = Ember.ENV.LOG_STACKTRACE_ON_DEPRECATION !== false;
-        Ember.SHIM_ES5 = Ember.ENV.SHIM_ES5 === false ? false : Ember.EXTEND_PROTOTYPES;
-        Ember.LOG_VERSION = Ember.ENV.LOG_VERSION === false ? false : true;
-        Ember.K = function () {
-          return this;
-        };
-        if ('undefined' === typeof Ember.assert) {
-          Ember.assert = Ember.K;
-        }
-        if ('undefined' === typeof Ember.warn) {
-          Ember.warn = Ember.K;
-        }
-        if ('undefined' === typeof Ember.debug) {
-          Ember.debug = Ember.K;
-        }
-        if ('undefined' === typeof Ember.deprecate) {
-          Ember.deprecate = Ember.K;
-        }
-        if ('undefined' === typeof Ember.deprecateFunc) {
-          Ember.deprecateFunc = function (_, func) {
-            return func;
-          };
-        }
-        Ember.uuid = 0;
-        function consoleMethod(name) {
-          if (imports.console && imports.console[name]) {
-            if (imports.console[name].apply) {
-              return function () {
-                imports.console[name].apply(imports.console, arguments);
-              };
-            } else {
-              return function () {
-                var message = Array.prototype.join.call(arguments, ', ');
-                imports.console[name](message);
-              };
-            }
-          }
-        }
-        Ember.Logger = {
-          log: consoleMethod('log') || Ember.K,
-          warn: consoleMethod('warn') || Ember.K,
-          error: consoleMethod('error') || Ember.K,
-          info: consoleMethod('info') || Ember.K,
-          debug: consoleMethod('debug') || consoleMethod('info') || Ember.K
-        };
-        Ember.onerror = null;
-        Ember.handleErrors = function (func, context) {
-          if ('function' === typeof Ember.onerror) {
-            try {
-              return func.call(context || this);
-            } catch (error) {
-              Ember.onerror(error);
-            }
-          } else {
-            return func.call(context || this);
-          }
-        };
-        Ember.merge = function (original, updates) {
-          for (var prop in updates) {
-            if (!updates.hasOwnProperty(prop)) {
-              continue;
-            }
-            original[prop] = updates[prop];
-          }
-          return original;
-        };
-        Ember.isNone = function (obj) {
-          return obj === null || obj === undefined;
-        };
-        Ember.none = Ember.deprecateFunc('Ember.none is deprecated. Please use Ember.isNone instead.', Ember.isNone);
-        Ember.isEmpty = function (obj) {
-          return obj === null || obj === undefined || obj.length === 0 && typeof obj !== 'function' || typeof obj === 'object' && Ember.get(obj, 'length') === 0;
-        };
-        Ember.empty = Ember.deprecateFunc('Ember.empty is deprecated. Please use Ember.isEmpty instead.', Ember.isEmpty);
-      }());
-      (function () {
-        var platform = Ember.platform = {};
-        Ember.create = Object.create;
-        if (!Ember.create || Ember.ENV.STUB_OBJECT_CREATE) {
-          var K = function () {
-          };
-          Ember.create = function (obj, props) {
-            K.prototype = obj;
-            obj = new K;
-            if (props) {
-              K.prototype = obj;
-              for (var prop in props) {
-                K.prototype[prop] = props[prop].value;
-              }
-              obj = new K;
-            }
-            K.prototype = null;
-            return obj;
-          };
-          Ember.create.isSimulated = true;
-        }
-        var defineProperty = Object.defineProperty;
-        var canRedefineProperties, canDefinePropertyOnDOM;
-        if (defineProperty) {
-          try {
-            defineProperty({}, 'a', {
-              get: function () {
-              }
-            });
-          } catch (e) {
-            defineProperty = null;
-          }
-        }
-        if (defineProperty) {
-          canRedefineProperties = function () {
-            var obj = {};
-            defineProperty(obj, 'a', {
-              configurable: true,
-              enumerable: true,
-              get: function () {
-              },
-              set: function () {
-              }
-            });
-            defineProperty(obj, 'a', {
-              configurable: true,
-              enumerable: true,
-              writable: true,
-              value: true
-            });
-            return obj.a === true;
-          }();
-          canDefinePropertyOnDOM = function () {
-            try {
-              defineProperty(document.createElement('div'), 'definePropertyOnDOM', {});
-              return true;
-            } catch (e) {
-            }
-            return false;
-          }();
-          if (!canRedefineProperties) {
-            defineProperty = null;
-          } else if (!canDefinePropertyOnDOM) {
-            defineProperty = function (obj, keyName, desc) {
-              var isNode;
-              if (typeof Node === 'object') {
-                isNode = obj instanceof Node;
-              } else {
-                isNode = typeof obj === 'object' && typeof obj.nodeType === 'number' && typeof obj.nodeName === 'string';
-              }
-              if (isNode) {
-                return obj[keyName] = desc.value;
-              } else {
-                return Object.defineProperty(obj, keyName, desc);
-              }
-            };
-          }
-        }
-        platform.defineProperty = defineProperty;
-        platform.hasPropertyAccessors = true;
-        if (!platform.defineProperty) {
-          platform.hasPropertyAccessors = false;
-          platform.defineProperty = function (obj, keyName, desc) {
-            if (!desc.get) {
-              obj[keyName] = desc.value;
-            }
-          };
-          platform.defineProperty.isSimulated = true;
-        }
-        if (Ember.ENV.MANDATORY_SETTER && !platform.hasPropertyAccessors) {
-          Ember.ENV.MANDATORY_SETTER = false;
-        }
-      }());
-      (function () {
-        var o_defineProperty = Ember.platform.defineProperty, o_create = Ember.create, GUID_KEY = '__ember' + +new Date, uuid = 0, numberCache = [], stringCache = {};
-        var MANDATORY_SETTER = Ember.ENV.MANDATORY_SETTER;
-        Ember.GUID_KEY = GUID_KEY;
-        var GUID_DESC = {
-            writable: false,
-            configurable: false,
-            enumerable: false,
-            value: null
-          };
-        Ember.generateGuid = function generateGuid(obj, prefix) {
-          if (!prefix)
-            prefix = 'ember';
-          var ret = prefix + uuid++;
-          if (obj) {
-            GUID_DESC.value = ret;
-            o_defineProperty(obj, GUID_KEY, GUID_DESC);
-          }
-          return ret;
-        };
-        Ember.guidFor = function guidFor(obj) {
-          if (obj === undefined)
-            return '(undefined)';
-          if (obj === null)
-            return '(null)';
-          var cache, ret;
-          var type = typeof obj;
-          switch (type) {
-          case 'number':
-            ret = numberCache[obj];
-            if (!ret)
-              ret = numberCache[obj] = 'nu' + obj;
-            return ret;
-          case 'string':
-            ret = stringCache[obj];
-            if (!ret)
-              ret = stringCache[obj] = 'st' + uuid++;
-            return ret;
-          case 'boolean':
-            return obj ? '(true)' : '(false)';
-          default:
-            if (obj[GUID_KEY])
-              return obj[GUID_KEY];
-            if (obj === Object)
-              return '(Object)';
-            if (obj === Array)
-              return '(Array)';
-            ret = 'ember' + uuid++;
-            GUID_DESC.value = ret;
-            o_defineProperty(obj, GUID_KEY, GUID_DESC);
-            return ret;
-          }
-        };
-        var META_DESC = {
-            writable: true,
-            configurable: false,
-            enumerable: false,
-            value: null
-          };
-        var META_KEY = Ember.GUID_KEY + '_meta';
-        Ember.META_KEY = META_KEY;
-        var EMPTY_META = {
-            descs: {},
-            watching: {}
-          };
-        if (MANDATORY_SETTER) {
-          EMPTY_META.values = {};
-        }
-        Ember.EMPTY_META = EMPTY_META;
-        if (Object.freeze)
-          Object.freeze(EMPTY_META);
-        var isDefinePropertySimulated = Ember.platform.defineProperty.isSimulated;
-        function Meta(obj) {
-          this.descs = {};
-          this.watching = {};
-          this.cache = {};
-          this.source = obj;
-        }
-        if (isDefinePropertySimulated) {
-          Meta.prototype.__preventPlainObject__ = true;
-          Meta.prototype.toJSON = function () {
-          };
-        }
-        Ember.meta = function meta(obj, writable) {
-          var ret = obj[META_KEY];
-          if (writable === false)
-            return ret || EMPTY_META;
-          if (!ret) {
-            if (!isDefinePropertySimulated)
-              o_defineProperty(obj, META_KEY, META_DESC);
-            ret = new Meta(obj);
-            if (MANDATORY_SETTER) {
-              ret.values = {};
-            }
-            obj[META_KEY] = ret;
-            ret.descs.constructor = null;
-          } else if (ret.source !== obj) {
-            if (!isDefinePropertySimulated)
-              o_defineProperty(obj, META_KEY, META_DESC);
-            ret = o_create(ret);
-            ret.descs = o_create(ret.descs);
-            ret.watching = o_create(ret.watching);
-            ret.cache = {};
-            ret.source = obj;
-            if (MANDATORY_SETTER) {
-              ret.values = o_create(ret.values);
-            }
-            obj[META_KEY] = ret;
-          }
-          return ret;
-        };
-        Ember.getMeta = function getMeta(obj, property) {
-          var meta = Ember.meta(obj, false);
-          return meta[property];
-        };
-        Ember.setMeta = function setMeta(obj, property, value) {
-          var meta = Ember.meta(obj, true);
-          meta[property] = value;
-          return value;
-        };
-        Ember.metaPath = function metaPath(obj, path, writable) {
-          var meta = Ember.meta(obj, writable), keyName, value;
-          for (var i = 0, l = path.length; i < l; i++) {
-            keyName = path[i];
-            value = meta[keyName];
-            if (!value) {
-              if (!writable) {
-                return undefined;
-              }
-              value = meta[keyName] = { __ember_source__: obj };
-            } else if (value.__ember_source__ !== obj) {
-              if (!writable) {
-                return undefined;
-              }
-              value = meta[keyName] = o_create(value);
-              value.__ember_source__ = obj;
-            }
-            meta = value;
-          }
-          return value;
-        };
-        Ember.wrap = function (func, superFunc) {
-          function K() {
-          }
-          function superWrapper() {
-            var ret, sup = this._super;
-            this._super = superFunc || K;
-            ret = func.apply(this, arguments);
-            this._super = sup;
-            return ret;
-          }
-          superWrapper.wrappedFunction = func;
-          superWrapper.__ember_observes__ = func.__ember_observes__;
-          superWrapper.__ember_observesBefore__ = func.__ember_observesBefore__;
-          return superWrapper;
-        };
-        Ember.isArray = function (obj) {
-          if (!obj || obj.setInterval) {
-            return false;
-          }
-          if (Array.isArray && Array.isArray(obj)) {
-            return true;
-          }
-          if (Ember.Array && Ember.Array.detect(obj)) {
-            return true;
-          }
-          if (obj.length !== undefined && 'object' === typeof obj) {
-            return true;
-          }
-          return false;
-        };
-        Ember.makeArray = function (obj) {
-          if (obj === null || obj === undefined) {
-            return [];
-          }
-          return Ember.isArray(obj) ? obj : [obj];
-        };
-        function canInvoke(obj, methodName) {
-          return !!(obj && typeof obj[methodName] === 'function');
-        }
-        Ember.canInvoke = canInvoke;
-        Ember.tryInvoke = function (obj, methodName, args) {
-          if (canInvoke(obj, methodName)) {
-            return obj[methodName].apply(obj, args || []);
-          }
-        };
-        var needsFinallyFix = function () {
-            var count = 0;
-            try {
-              try {
-              } finally {
-                count++;
-                throw new Error('needsFinallyFixTest');
-              }
-            } catch (e) {
-            }
-            return count !== 1;
-          }();
-        if (needsFinallyFix) {
-          Ember.tryFinally = function (tryable, finalizer, binding) {
-            var result, finalResult, finalError;
-            binding = binding || this;
-            try {
-              result = tryable.call(binding);
-            } finally {
-              try {
-                finalResult = finalizer.call(binding);
-              } catch (e) {
-                finalError = e;
-              }
-            }
-            if (finalError) {
-              throw finalError;
-            }
-            return finalResult === undefined ? result : finalResult;
-          };
-        } else {
-          Ember.tryFinally = function (tryable, finalizer, binding) {
-            var result, finalResult;
-            binding = binding || this;
-            try {
-              result = tryable.call(binding);
-            } finally {
-              finalResult = finalizer.call(binding);
-            }
-            return finalResult === undefined ? result : finalResult;
-          };
-        }
-        if (needsFinallyFix) {
-          Ember.tryCatchFinally = function (tryable, catchable, finalizer, binding) {
-            var result, finalResult, finalError, finalReturn;
-            binding = binding || this;
-            try {
-              result = tryable.call(binding);
-            } catch (error) {
-              result = catchable.call(binding, error);
-            } finally {
-              try {
-                finalResult = finalizer.call(binding);
-              } catch (e) {
-                finalError = e;
-              }
-            }
-            if (finalError) {
-              throw finalError;
-            }
-            return finalResult === undefined ? result : finalResult;
-          };
-        } else {
-          Ember.tryCatchFinally = function (tryable, catchable, finalizer, binding) {
-            var result, finalResult;
-            binding = binding || this;
-            try {
-              result = tryable.call(binding);
-            } catch (error) {
-              result = catchable.call(binding, error);
-            } finally {
-              finalResult = finalizer.call(binding);
-            }
-            return finalResult === undefined ? result : finalResult;
-          };
-        }
-      }());
-      (function () {
-        Ember.Instrumentation = {};
-        var subscribers = [], cache = {};
-        var populateListeners = function (name) {
-          var listeners = [], subscriber;
-          for (var i = 0, l = subscribers.length; i < l; i++) {
-            subscriber = subscribers[i];
-            if (subscriber.regex.test(name)) {
-              listeners.push(subscriber.object);
-            }
-          }
-          cache[name] = listeners;
-          return listeners;
-        };
-        var time = function () {
-            var perf = 'undefined' !== typeof window ? window.performance || {} : {};
-            var fn = perf.now || perf.mozNow || perf.webkitNow || perf.msNow || perf.oNow;
-            return fn ? fn.bind(perf) : function () {
-              return +new Date;
-            };
-          }();
-        Ember.Instrumentation.instrument = function (name, payload, callback, binding) {
-          var listeners = cache[name], timeName, ret;
-          if (Ember.STRUCTURED_PROFILE) {
-            timeName = name + ': ' + payload.object;
-            console.time(timeName);
-          }
-          if (!listeners) {
-            listeners = populateListeners(name);
-          }
-          if (listeners.length === 0) {
-            ret = callback.call(binding);
-            if (Ember.STRUCTURED_PROFILE) {
-              console.timeEnd(timeName);
-            }
-            return ret;
-          }
-          var beforeValues = [], listener, i, l;
-          function tryable() {
-            for (i = 0, l = listeners.length; i < l; i++) {
-              listener = listeners[i];
-              beforeValues[i] = listener.before(name, time(), payload);
-            }
-            return callback.call(binding);
-          }
-          function catchable(e) {
-            payload = payload || {};
-            payload.exception = e;
-          }
-          function finalizer() {
-            for (i = 0, l = listeners.length; i < l; i++) {
-              listener = listeners[i];
-              listener.after(name, time(), payload, beforeValues[i]);
-            }
-            if (Ember.STRUCTURED_PROFILE) {
-              console.timeEnd(timeName);
-            }
-          }
-          return Ember.tryCatchFinally(tryable, catchable, finalizer);
-        };
-        Ember.Instrumentation.subscribe = function (pattern, object) {
-          var paths = pattern.split('.'), path, regex = [];
-          for (var i = 0, l = paths.length; i < l; i++) {
-            path = paths[i];
-            if (path === '*') {
-              regex.push('[^\\.]*');
-            } else {
-              regex.push(path);
-            }
-          }
-          regex = regex.join('\\.');
-          regex = regex + '(\\..*)?';
-          var subscriber = {
-              pattern: pattern,
-              regex: new RegExp('^' + regex + '$'),
-              object: object
-            };
-          subscribers.push(subscriber);
-          cache = {};
-          return subscriber;
-        };
-        Ember.Instrumentation.unsubscribe = function (subscriber) {
-          var index;
-          for (var i = 0, l = subscribers.length; i < l; i++) {
-            if (subscribers[i] === subscriber) {
-              index = i;
-            }
-          }
-          subscribers.splice(index, 1);
-          cache = {};
-        };
-        Ember.Instrumentation.reset = function () {
-          subscribers = [];
-          cache = {};
-        };
-        Ember.instrument = Ember.Instrumentation.instrument;
-        Ember.subscribe = Ember.Instrumentation.subscribe;
-      }());
-      (function () {
-        var utils = Ember.EnumerableUtils = {
-            map: function (obj, callback, thisArg) {
-              return obj.map ? obj.map.call(obj, callback, thisArg) : Array.prototype.map.call(obj, callback, thisArg);
-            },
-            forEach: function (obj, callback, thisArg) {
-              return obj.forEach ? obj.forEach.call(obj, callback, thisArg) : Array.prototype.forEach.call(obj, callback, thisArg);
-            },
-            indexOf: function (obj, element, index) {
-              return obj.indexOf ? obj.indexOf.call(obj, element, index) : Array.prototype.indexOf.call(obj, element, index);
-            },
-            indexesOf: function (obj, elements) {
-              return elements === undefined ? [] : utils.map(elements, function (item) {
-                return utils.indexOf(obj, item);
-              });
-            },
-            addObject: function (array, item) {
-              var index = utils.indexOf(array, item);
-              if (index === -1) {
-                array.push(item);
-              }
-            },
-            removeObject: function (array, item) {
-              var index = utils.indexOf(array, item);
-              if (index !== -1) {
-                array.splice(index, 1);
-              }
-            },
-            replace: function (array, idx, amt, objects) {
-              if (array.replace) {
-                return array.replace(idx, amt, objects);
-              } else {
-                var args = Array.prototype.concat.apply([
-                    idx,
-                    amt
-                  ], objects);
-                return array.splice.apply(array, args);
-              }
-            },
-            intersection: function (array1, array2) {
-              var intersection = [];
-              array1.forEach(function (element) {
-                if (array2.indexOf(element) >= 0) {
-                  intersection.push(element);
-                }
-              });
-              return intersection;
-            }
-          };
-      }());
-      (function () {
-        var isNativeFunc = function (func) {
-          return func && Function.prototype.toString.call(func).indexOf('[native code]') > -1;
-        };
-        var arrayMap = isNativeFunc(Array.prototype.map) ? Array.prototype.map : function (fun) {
-            if (this === void 0 || this === null) {
-              throw new TypeError;
-            }
-            var t = Object(this);
-            var len = t.length >>> 0;
-            if (typeof fun !== 'function') {
-              throw new TypeError;
-            }
-            var res = new Array(len);
-            var thisp = arguments[1];
-            for (var i = 0; i < len; i++) {
-              if (i in t) {
-                res[i] = fun.call(thisp, t[i], i, t);
-              }
-            }
-            return res;
-          };
-        var arrayForEach = isNativeFunc(Array.prototype.forEach) ? Array.prototype.forEach : function (fun) {
-            if (this === void 0 || this === null) {
-              throw new TypeError;
-            }
-            var t = Object(this);
-            var len = t.length >>> 0;
-            if (typeof fun !== 'function') {
-              throw new TypeError;
-            }
-            var thisp = arguments[1];
-            for (var i = 0; i < len; i++) {
-              if (i in t) {
-                fun.call(thisp, t[i], i, t);
-              }
-            }
-          };
-        var arrayIndexOf = isNativeFunc(Array.prototype.indexOf) ? Array.prototype.indexOf : function (obj, fromIndex) {
-            if (fromIndex === null || fromIndex === undefined) {
-              fromIndex = 0;
-            } else if (fromIndex < 0) {
-              fromIndex = Math.max(0, this.length + fromIndex);
-            }
-            for (var i = fromIndex, j = this.length; i < j; i++) {
-              if (this[i] === obj) {
-                return i;
-              }
-            }
-            return -1;
-          };
-        Ember.ArrayPolyfills = {
-          map: arrayMap,
-          forEach: arrayForEach,
-          indexOf: arrayIndexOf
-        };
-        if (Ember.SHIM_ES5) {
-          if (!Array.prototype.map) {
-            Array.prototype.map = arrayMap;
-          }
-          if (!Array.prototype.forEach) {
-            Array.prototype.forEach = arrayForEach;
-          }
-          if (!Array.prototype.indexOf) {
-            Array.prototype.indexOf = arrayIndexOf;
-          }
-        }
-      }());
-      (function () {
-        var guidFor = Ember.guidFor, indexOf = Ember.ArrayPolyfills.indexOf;
-        var copy = function (obj) {
-          var output = {};
-          for (var prop in obj) {
-            if (obj.hasOwnProperty(prop)) {
-              output[prop] = obj[prop];
-            }
-          }
-          return output;
-        };
-        var copyMap = function (original, newObject) {
-          var keys = original.keys.copy(), values = copy(original.values);
-          newObject.keys = keys;
-          newObject.values = values;
-          return newObject;
-        };
-        var OrderedSet = Ember.OrderedSet = function () {
-            this.clear();
-          };
-        OrderedSet.create = function () {
-          return new OrderedSet;
-        };
-        OrderedSet.prototype = {
-          clear: function () {
-            this.presenceSet = {};
-            this.list = [];
-          },
-          add: function (obj) {
-            var guid = guidFor(obj), presenceSet = this.presenceSet, list = this.list;
-            if (guid in presenceSet) {
-              return;
-            }
-            presenceSet[guid] = true;
-            list.push(obj);
-          },
-          remove: function (obj) {
-            var guid = guidFor(obj), presenceSet = this.presenceSet, list = this.list;
-            delete presenceSet[guid];
-            var index = indexOf.call(list, obj);
-            if (index > -1) {
-              list.splice(index, 1);
-            }
-          },
-          isEmpty: function () {
-            return this.list.length === 0;
-          },
-          has: function (obj) {
-            var guid = guidFor(obj), presenceSet = this.presenceSet;
-            return guid in presenceSet;
-          },
-          forEach: function (fn, self) {
-            var list = this.list.slice();
-            for (var i = 0, j = list.length; i < j; i++) {
-              fn.call(self, list[i]);
-            }
-          },
-          toArray: function () {
-            return this.list.slice();
-          },
-          copy: function () {
-            var set = new OrderedSet;
-            set.presenceSet = copy(this.presenceSet);
-            set.list = this.list.slice();
-            return set;
-          }
-        };
-        var Map = Ember.Map = function () {
-            this.keys = Ember.OrderedSet.create();
-            this.values = {};
-          };
-        Map.create = function () {
-          return new Map;
-        };
-        Map.prototype = {
-          get: function (key) {
-            var values = this.values, guid = guidFor(key);
-            return values[guid];
-          },
-          set: function (key, value) {
-            var keys = this.keys, values = this.values, guid = guidFor(key);
-            keys.add(key);
-            values[guid] = value;
-          },
-          remove: function (key) {
-            var keys = this.keys, values = this.values, guid = guidFor(key), value;
-            if (values.hasOwnProperty(guid)) {
-              keys.remove(key);
-              value = values[guid];
-              delete values[guid];
-              return true;
-            } else {
-              return false;
-            }
-          },
-          has: function (key) {
-            var values = this.values, guid = guidFor(key);
-            return values.hasOwnProperty(guid);
-          },
-          forEach: function (callback, self) {
-            var keys = this.keys, values = this.values;
-            keys.forEach(function (key) {
-              var guid = guidFor(key);
-              callback.call(self, key, values[guid]);
-            });
-          },
-          copy: function () {
-            return copyMap(this, new Map);
-          }
-        };
-        var MapWithDefault = Ember.MapWithDefault = function (options) {
-            Map.call(this);
-            this.defaultValue = options.defaultValue;
-          };
-        MapWithDefault.create = function (options) {
-          if (options) {
-            return new MapWithDefault(options);
-          } else {
-            return new Map;
-          }
-        };
-        MapWithDefault.prototype = Ember.create(Map.prototype);
-        MapWithDefault.prototype.get = function (key) {
-          var hasValue = this.has(key);
-          if (hasValue) {
-            return Map.prototype.get.call(this, key);
-          } else {
-            var defaultValue = this.defaultValue(key);
-            this.set(key, defaultValue);
-            return defaultValue;
-          }
-        };
-        MapWithDefault.prototype.copy = function () {
-          return copyMap(this, new MapWithDefault({ defaultValue: this.defaultValue }));
-        };
-      }());
-      (function () {
-        var META_KEY = Ember.META_KEY, get;
-        var MANDATORY_SETTER = Ember.ENV.MANDATORY_SETTER;
-        var IS_GLOBAL_PATH = /^([A-Z$]|([0-9][A-Z$])).*[\.\*]/;
-        var HAS_THIS = /^this[\.\*]/;
-        var FIRST_KEY = /^([^\.\*]+)/;
-        get = function get(obj, keyName) {
-          if (keyName === '') {
-            return obj;
-          }
-          if (!keyName && 'string' === typeof obj) {
-            keyName = obj;
-            obj = null;
-          }
-          if (!obj || keyName.indexOf('.') !== -1) {
-            Ember.assert("Cannot call get with '" + keyName + "' on an undefined object.", obj !== undefined);
-            return getPath(obj, keyName);
-          }
-          Ember.assert('You need to provide an object and key to `get`.', !!obj && keyName);
-          var meta = obj[META_KEY], desc = meta && meta.descs[keyName], ret;
-          if (desc) {
-            return desc.get(obj, keyName);
-          } else {
-            if (MANDATORY_SETTER && meta && meta.watching[keyName] > 0) {
-              ret = meta.values[keyName];
-            } else {
-              ret = obj[keyName];
-            }
-            if (ret === undefined && 'object' === typeof obj && !(keyName in obj) && 'function' === typeof obj.unknownProperty) {
-              return obj.unknownProperty(keyName);
-            }
-            return ret;
-          }
-        };
-        if (Ember.config.overrideAccessors) {
-          Ember.get = get;
-          Ember.config.overrideAccessors();
-          get = Ember.get;
-        }
-        function firstKey(path) {
-          return path.match(FIRST_KEY)[0];
-        }
-        function normalizeTuple(target, path) {
-          var hasThis = HAS_THIS.test(path), isGlobal = !hasThis && IS_GLOBAL_PATH.test(path), key;
-          if (!target || isGlobal)
-            target = Ember.lookup;
-          if (hasThis)
-            path = path.slice(5);
-          if (target === Ember.lookup) {
-            key = firstKey(path);
-            target = get(target, key);
-            path = path.slice(key.length + 1);
-          }
-          if (!path || path.length === 0)
-            throw new Error('Invalid Path');
-          return [
-            target,
-            path
-          ];
-        }
-        var getPath = Ember._getPath = function (root, path) {
-            var hasThis, parts, tuple, idx, len;
-            if (root === null && path.indexOf('.') === -1) {
-              return get(Ember.lookup, path);
-            }
-            hasThis = HAS_THIS.test(path);
-            if (!root || hasThis) {
-              tuple = normalizeTuple(root, path);
-              root = tuple[0];
-              path = tuple[1];
-              tuple.length = 0;
-            }
-            parts = path.split('.');
-            len = parts.length;
-            for (idx = 0; root && idx < len; idx++) {
-              root = get(root, parts[idx], true);
-              if (root && root.isDestroyed) {
-                return undefined;
-              }
-            }
-            return root;
-          };
-        Ember.normalizeTuple = function (target, path) {
-          return normalizeTuple(target, path);
-        };
-        Ember.getWithDefault = function (root, key, defaultValue) {
-          var value = get(root, key);
-          if (value === undefined) {
-            return defaultValue;
-          }
-          return value;
-        };
-        Ember.get = get;
-        Ember.getPath = Ember.deprecateFunc('getPath is deprecated since get now supports paths', Ember.get);
-      }());
-      (function () {
-        var o_create = Ember.create, metaFor = Ember.meta, META_KEY = Ember.META_KEY;
-        function indexOf(array, target, method) {
-          var index = -1;
-          for (var i = 0, l = array.length; i < l; i++) {
-            if (target === array[i][0] && method === array[i][1]) {
-              index = i;
-              break;
-            }
-          }
-          return index;
-        }
-        function actionsFor(obj, eventName) {
-          var meta = metaFor(obj, true), actions;
-          if (!meta.listeners) {
-            meta.listeners = {};
-          }
-          if (!meta.hasOwnProperty('listeners')) {
-            meta.listeners = o_create(meta.listeners);
-          }
-          actions = meta.listeners[eventName];
-          if (actions && !meta.listeners.hasOwnProperty(eventName)) {
-            actions = meta.listeners[eventName] = meta.listeners[eventName].slice();
-          } else if (!actions) {
-            actions = meta.listeners[eventName] = [];
-          }
-          return actions;
-        }
-        function actionsUnion(obj, eventName, otherActions) {
-          var meta = obj[META_KEY], actions = meta && meta.listeners && meta.listeners[eventName];
-          if (!actions) {
-            return;
-          }
-          for (var i = actions.length - 1; i >= 0; i--) {
-            var target = actions[i][0], method = actions[i][1], once = actions[i][2], suspended = actions[i][3], actionIndex = indexOf(otherActions, target, method);
-            if (actionIndex === -1) {
-              otherActions.push([
-                target,
-                method,
-                once,
-                suspended
-              ]);
-            }
-          }
-        }
-        function actionsDiff(obj, eventName, otherActions) {
-          var meta = obj[META_KEY], actions = meta && meta.listeners && meta.listeners[eventName], diffActions = [];
-          if (!actions) {
-            return;
-          }
-          for (var i = actions.length - 1; i >= 0; i--) {
-            var target = actions[i][0], method = actions[i][1], once = actions[i][2], suspended = actions[i][3], actionIndex = indexOf(otherActions, target, method);
-            if (actionIndex !== -1) {
-              continue;
-            }
-            otherActions.push([
-              target,
-              method,
-              once,
-              suspended
-            ]);
-            diffActions.push([
-              target,
-              method,
-              once,
-              suspended
-            ]);
-          }
-          return diffActions;
-        }
-        function addListener(obj, eventName, target, method, once) {
-          Ember.assert('You must pass at least an object and event name to Ember.addListener', !!obj && !!eventName);
-          if (!method && 'function' === typeof target) {
-            method = target;
-            target = null;
-          }
-          var actions = actionsFor(obj, eventName), actionIndex = indexOf(actions, target, method);
-          if (actionIndex !== -1) {
-            return;
-          }
-          actions.push([
-            target,
-            method,
-            once,
-            undefined
-          ]);
-          if ('function' === typeof obj.didAddListener) {
-            obj.didAddListener(eventName, target, method);
-          }
-        }
-        function removeListener(obj, eventName, target, method) {
-          Ember.assert('You must pass at least an object and event name to Ember.removeListener', !!obj && !!eventName);
-          if (!method && 'function' === typeof target) {
-            method = target;
-            target = null;
-          }
-          function _removeListener(target, method, once) {
-            var actions = actionsFor(obj, eventName), actionIndex = indexOf(actions, target, method);
-            if (actionIndex === -1) {
-              return;
-            }
-            actions.splice(actionIndex, 1);
-            if ('function' === typeof obj.didRemoveListener) {
-              obj.didRemoveListener(eventName, target, method);
-            }
-          }
-          if (method) {
-            _removeListener(target, method);
-          } else {
-            var meta = obj[META_KEY], actions = meta && meta.listeners && meta.listeners[eventName];
-            if (!actions) {
-              return;
-            }
-            for (var i = actions.length - 1; i >= 0; i--) {
-              _removeListener(actions[i][0], actions[i][1]);
-            }
-          }
-        }
-        function suspendListener(obj, eventName, target, method, callback) {
-          if (!method && 'function' === typeof target) {
-            method = target;
-            target = null;
-          }
-          var actions = actionsFor(obj, eventName), actionIndex = indexOf(actions, target, method), action;
-          if (actionIndex !== -1) {
-            action = actions[actionIndex].slice();
-            action[3] = true;
-            actions[actionIndex] = action;
-          }
-          function tryable() {
-            return callback.call(target);
-          }
-          function finalizer() {
-            if (action) {
-              action[3] = undefined;
-            }
-          }
-          return Ember.tryFinally(tryable, finalizer);
-        }
-        function suspendListeners(obj, eventNames, target, method, callback) {
-          if (!method && 'function' === typeof target) {
-            method = target;
-            target = null;
-          }
-          var suspendedActions = [], eventName, actions, action, i, l;
-          for (i = 0, l = eventNames.length; i < l; i++) {
-            eventName = eventNames[i];
-            actions = actionsFor(obj, eventName);
-            var actionIndex = indexOf(actions, target, method);
-            if (actionIndex !== -1) {
-              action = actions[actionIndex].slice();
-              action[3] = true;
-              actions[actionIndex] = action;
-              suspendedActions.push(action);
-            }
-          }
-          function tryable() {
-            return callback.call(target);
-          }
-          function finalizer() {
-            for (i = 0, l = suspendedActions.length; i < l; i++) {
-              suspendedActions[i][3] = undefined;
-            }
-          }
-          return Ember.tryFinally(tryable, finalizer);
-        }
-        function watchedEvents(obj) {
-          var listeners = obj[META_KEY].listeners, ret = [];
-          if (listeners) {
-            for (var eventName in listeners) {
-              if (listeners[eventName]) {
-                ret.push(eventName);
-              }
-            }
-          }
-          return ret;
-        }
-        function sendEvent(obj, eventName, params, actions) {
-          if (obj !== Ember && 'function' === typeof obj.sendEvent) {
-            obj.sendEvent(eventName, params);
-          }
-          if (!actions) {
-            var meta = obj[META_KEY];
-            actions = meta && meta.listeners && meta.listeners[eventName];
-          }
-          if (!actions) {
-            return;
-          }
-          for (var i = actions.length - 1; i >= 0; i--) {
-            if (!actions[i] || actions[i][3] === true) {
-              continue;
-            }
-            var target = actions[i][0], method = actions[i][1], once = actions[i][2];
-            if (once) {
-              removeListener(obj, eventName, target, method);
-            }
-            if (!target) {
-              target = obj;
-            }
-            if ('string' === typeof method) {
-              method = target[method];
-            }
-            if (params) {
-              method.apply(target, params);
-            } else {
-              method.call(target);
-            }
-          }
-          return true;
-        }
-        function hasListeners(obj, eventName) {
-          var meta = obj[META_KEY], actions = meta && meta.listeners && meta.listeners[eventName];
-          return !!(actions && actions.length);
-        }
-        function listenersFor(obj, eventName) {
-          var ret = [];
-          var meta = obj[META_KEY], actions = meta && meta.listeners && meta.listeners[eventName];
-          if (!actions) {
-            return ret;
-          }
-          for (var i = 0, l = actions.length; i < l; i++) {
-            var target = actions[i][0], method = actions[i][1];
-            ret.push([
-              target,
-              method
-            ]);
-          }
-          return ret;
-        }
-        Ember.addListener = addListener;
-        Ember.removeListener = removeListener;
-        Ember._suspendListener = suspendListener;
-        Ember._suspendListeners = suspendListeners;
-        Ember.sendEvent = sendEvent;
-        Ember.hasListeners = hasListeners;
-        Ember.watchedEvents = watchedEvents;
-        Ember.listenersFor = listenersFor;
-        Ember.listenersDiff = actionsDiff;
-        Ember.listenersUnion = actionsUnion;
-      }());
-      (function () {
-        var guidFor = Ember.guidFor, sendEvent = Ember.sendEvent;
-        var ObserverSet = Ember._ObserverSet = function () {
-            this.clear();
-          };
-        ObserverSet.prototype.add = function (sender, keyName, eventName) {
-          var observerSet = this.observerSet, observers = this.observers, senderGuid = guidFor(sender), keySet = observerSet[senderGuid], index;
-          if (!keySet) {
-            observerSet[senderGuid] = keySet = {};
-          }
-          index = keySet[keyName];
-          if (index === undefined) {
-            index = observers.push({
-              sender: sender,
-              keyName: keyName,
-              eventName: eventName,
-              listeners: []
-            }) - 1;
-            keySet[keyName] = index;
-          }
-          return observers[index].listeners;
-        };
-        ObserverSet.prototype.flush = function () {
-          var observers = this.observers, i, len, observer, sender;
-          this.clear();
-          for (i = 0, len = observers.length; i < len; ++i) {
-            observer = observers[i];
-            sender = observer.sender;
-            if (sender.isDestroying || sender.isDestroyed) {
-              continue;
-            }
-            sendEvent(sender, observer.eventName, [
-              sender,
-              observer.keyName
-            ], observer.listeners);
-          }
-        };
-        ObserverSet.prototype.clear = function () {
-          this.observerSet = {};
-          this.observers = [];
-        };
-      }());
-      (function () {
-        var metaFor = Ember.meta, guidFor = Ember.guidFor, tryFinally = Ember.tryFinally, sendEvent = Ember.sendEvent, listenersUnion = Ember.listenersUnion, listenersDiff = Ember.listenersDiff, ObserverSet = Ember._ObserverSet, beforeObserverSet = new ObserverSet, observerSet = new ObserverSet, deferred = 0;
-        var propertyWillChange = Ember.propertyWillChange = function (obj, keyName) {
-            var m = metaFor(obj, false), watching = m.watching[keyName] > 0 || keyName === 'length', proto = m.proto, desc = m.descs[keyName];
-            if (!watching) {
-              return;
-            }
-            if (proto === obj) {
-              return;
-            }
-            if (desc && desc.willChange) {
-              desc.willChange(obj, keyName);
-            }
-            dependentKeysWillChange(obj, keyName, m);
-            chainsWillChange(obj, keyName, m);
-            notifyBeforeObservers(obj, keyName);
-          };
-        var propertyDidChange = Ember.propertyDidChange = function (obj, keyName) {
-            var m = metaFor(obj, false), watching = m.watching[keyName] > 0 || keyName === 'length', proto = m.proto, desc = m.descs[keyName];
-            if (proto === obj) {
-              return;
-            }
-            if (desc && desc.didChange) {
-              desc.didChange(obj, keyName);
-            }
-            if (!watching && keyName !== 'length') {
-              return;
-            }
-            dependentKeysDidChange(obj, keyName, m);
-            chainsDidChange(obj, keyName, m);
-            notifyObservers(obj, keyName);
-          };
-        var WILL_SEEN, DID_SEEN;
-        function dependentKeysWillChange(obj, depKey, meta) {
-          if (obj.isDestroying) {
-            return;
-          }
-          var seen = WILL_SEEN, top = !seen;
-          if (top) {
-            seen = WILL_SEEN = {};
-          }
-          iterDeps(propertyWillChange, obj, depKey, seen, meta);
-          if (top) {
-            WILL_SEEN = null;
-          }
-        }
-        function dependentKeysDidChange(obj, depKey, meta) {
-          if (obj.isDestroying) {
-            return;
-          }
-          var seen = DID_SEEN, top = !seen;
-          if (top) {
-            seen = DID_SEEN = {};
-          }
-          iterDeps(propertyDidChange, obj, depKey, seen, meta);
-          if (top) {
-            DID_SEEN = null;
-          }
-        }
-        function iterDeps(method, obj, depKey, seen, meta) {
-          var guid = guidFor(obj);
-          if (!seen[guid])
-            seen[guid] = {};
-          if (seen[guid][depKey])
-            return;
-          seen[guid][depKey] = true;
-          var deps = meta.deps;
-          deps = deps && deps[depKey];
-          if (deps) {
-            for (var key in deps) {
-              var desc = meta.descs[key];
-              if (desc && desc._suspended === obj)
-                continue;
-              method(obj, key);
-            }
-          }
-        }
-        var chainsWillChange = function (obj, keyName, m, arg) {
-          if (!m.hasOwnProperty('chainWatchers')) {
-            return;
-          }
-          var nodes = m.chainWatchers;
-          nodes = nodes[keyName];
-          if (!nodes) {
-            return;
-          }
-          for (var i = 0, l = nodes.length; i < l; i++) {
-            nodes[i].willChange(arg);
-          }
-        };
-        var chainsDidChange = function (obj, keyName, m, arg) {
-          if (!m.hasOwnProperty('chainWatchers')) {
-            return;
-          }
-          var nodes = m.chainWatchers;
-          nodes = nodes[keyName];
-          if (!nodes) {
-            return;
-          }
-          for (var i = nodes.length - 1; i >= 0; i--) {
-            nodes[i].didChange(arg);
-          }
-        };
-        Ember.overrideChains = function (obj, keyName, m) {
-          chainsDidChange(obj, keyName, m, true);
-        };
-        var beginPropertyChanges = Ember.beginPropertyChanges = function () {
-            deferred++;
-          };
-        var endPropertyChanges = Ember.endPropertyChanges = function () {
-            deferred--;
-            if (deferred <= 0) {
-              beforeObserverSet.clear();
-              observerSet.flush();
-            }
-          };
-        var changeProperties = Ember.changeProperties = function (cb, binding) {
-            beginPropertyChanges();
-            tryFinally(cb, endPropertyChanges, binding);
-          };
-        var notifyBeforeObservers = function (obj, keyName) {
-          if (obj.isDestroying) {
-            return;
-          }
-          var eventName = keyName + ':before', listeners, diff;
-          if (deferred) {
-            listeners = beforeObserverSet.add(obj, keyName, eventName);
-            diff = listenersDiff(obj, eventName, listeners);
-            sendEvent(obj, eventName, [
-              obj,
-              keyName
-            ], diff);
-          } else {
-            sendEvent(obj, eventName, [
-              obj,
-              keyName
-            ]);
-          }
-        };
-        var notifyObservers = function (obj, keyName) {
-          if (obj.isDestroying) {
-            return;
-          }
-          var eventName = keyName + ':change', listeners;
-          if (deferred) {
-            listeners = observerSet.add(obj, keyName, eventName);
-            listenersUnion(obj, eventName, listeners);
-          } else {
-            sendEvent(obj, eventName, [
-              obj,
-              keyName
-            ]);
-          }
-        };
-      }());
-      (function () {
-        var META_KEY = Ember.META_KEY, MANDATORY_SETTER = Ember.ENV.MANDATORY_SETTER, IS_GLOBAL = /^([A-Z$]|([0-9][A-Z$]))/, propertyWillChange = Ember.propertyWillChange, propertyDidChange = Ember.propertyDidChange, getPath = Ember._getPath;
-        var set = function set(obj, keyName, value, tolerant) {
-          if (typeof obj === 'string') {
-            Ember.assert("Path '" + obj + "' must be global if no obj is given.", IS_GLOBAL.test(obj));
-            value = keyName;
-            keyName = obj;
-            obj = null;
-          }
-          if (!obj || keyName.indexOf('.') !== -1) {
-            return setPath(obj, keyName, value, tolerant);
-          }
-          Ember.assert('You need to provide an object and key to `set`.', !!obj && keyName !== undefined);
-          Ember.assert('calling set on destroyed object', !obj.isDestroyed);
-          var meta = obj[META_KEY], desc = meta && meta.descs[keyName], isUnknown, currentValue;
-          if (desc) {
-            desc.set(obj, keyName, value);
-          } else {
-            isUnknown = 'object' === typeof obj && !(keyName in obj);
-            if (isUnknown && 'function' === typeof obj.setUnknownProperty) {
-              obj.setUnknownProperty(keyName, value);
-            } else if (meta && meta.watching[keyName] > 0) {
-              if (MANDATORY_SETTER) {
-                currentValue = meta.values[keyName];
-              } else {
-                currentValue = obj[keyName];
-              }
-              if (value !== currentValue) {
-                Ember.propertyWillChange(obj, keyName);
-                if (MANDATORY_SETTER) {
-                  if (currentValue === undefined && !(keyName in obj)) {
-                    Ember.defineProperty(obj, keyName, null, value);
-                  } else {
-                    meta.values[keyName] = value;
-                  }
-                } else {
-                  obj[keyName] = value;
-                }
-                Ember.propertyDidChange(obj, keyName);
-              }
-            } else {
-              obj[keyName] = value;
-            }
-          }
-          return value;
-        };
-        if (Ember.config.overrideAccessors) {
-          Ember.set = set;
-          Ember.config.overrideAccessors();
-          set = Ember.set;
-        }
-        function setPath(root, path, value, tolerant) {
-          var keyName;
-          keyName = path.slice(path.lastIndexOf('.') + 1);
-          path = path.slice(0, path.length - (keyName.length + 1));
-          if (path !== 'this') {
-            root = getPath(root, path);
-          }
-          if (!keyName || keyName.length === 0) {
-            throw new Error('You passed an empty path');
-          }
-          if (!root) {
-            if (tolerant) {
-              return;
-            } else {
-              throw new Error('Object in path ' + path + ' could not be found or was destroyed.');
-            }
-          }
-          return set(root, keyName, value);
-        }
-        Ember.set = set;
-        Ember.setPath = Ember.deprecateFunc('setPath is deprecated since set now supports paths', Ember.set);
-        Ember.trySet = function (root, path, value) {
-          return set(root, path, value, true);
-        };
-        Ember.trySetPath = Ember.deprecateFunc('trySetPath has been renamed to trySet', Ember.trySet);
-      }());
-      (function () {
-        var META_KEY = Ember.META_KEY, metaFor = Ember.meta, objectDefineProperty = Ember.platform.defineProperty;
-        var MANDATORY_SETTER = Ember.ENV.MANDATORY_SETTER;
-        var Descriptor = Ember.Descriptor = function () {
-          };
-        var MANDATORY_SETTER_FUNCTION = Ember.MANDATORY_SETTER_FUNCTION = function (value) {
-            Ember.assert('You must use Ember.set() to access this property (of ' + this + ')', false);
-          };
-        var DEFAULT_GETTER_FUNCTION = Ember.DEFAULT_GETTER_FUNCTION = function (name) {
-            return function () {
-              var meta = this[META_KEY];
-              return meta && meta.values[name];
-            };
-          };
-        Ember.defineProperty = function (obj, keyName, desc, data, meta) {
-          var descs, existingDesc, watching, value;
-          if (!meta)
-            meta = metaFor(obj);
-          descs = meta.descs;
-          existingDesc = meta.descs[keyName];
-          watching = meta.watching[keyName] > 0;
-          if (existingDesc instanceof Ember.Descriptor) {
-            existingDesc.teardown(obj, keyName);
-          }
-          if (desc instanceof Ember.Descriptor) {
-            value = desc;
-            descs[keyName] = desc;
-            if (MANDATORY_SETTER && watching) {
-              objectDefineProperty(obj, keyName, {
-                configurable: true,
-                enumerable: true,
-                writable: true,
-                value: undefined
-              });
-            } else {
-              obj[keyName] = undefined;
-            }
-            desc.setup(obj, keyName);
-          } else {
-            descs[keyName] = undefined;
-            if (desc == null) {
-              value = data;
-              if (MANDATORY_SETTER && watching) {
-                meta.values[keyName] = data;
-                objectDefineProperty(obj, keyName, {
-                  configurable: true,
-                  enumerable: true,
-                  set: MANDATORY_SETTER_FUNCTION,
-                  get: DEFAULT_GETTER_FUNCTION(keyName)
-                });
-              } else {
-                obj[keyName] = data;
-              }
-            } else {
-              value = desc;
-              objectDefineProperty(obj, keyName, desc);
-            }
-          }
-          if (watching) {
-            Ember.overrideChains(obj, keyName, meta);
-          }
-          if (obj.didDefineProperty) {
-            obj.didDefineProperty(obj, keyName, value);
-          }
-          return this;
-        };
-      }());
-      (function () {
-        var changeProperties = Ember.changeProperties, set = Ember.set;
-        Ember.setProperties = function (self, hash) {
-          changeProperties(function () {
-            for (var prop in hash) {
-              if (hash.hasOwnProperty(prop)) {
-                set(self, prop, hash[prop]);
-              }
-            }
-          });
-          return self;
-        };
-      }());
-      (function () {
-        var metaFor = Ember.meta, isArray = Ember.isArray, MANDATORY_SETTER = Ember.ENV.MANDATORY_SETTER, o_defineProperty = Ember.platform.defineProperty;
-        Ember.watchKey = function (obj, keyName) {
-          if (keyName === 'length' && isArray(obj)) {
-            return this;
-          }
-          var m = metaFor(obj), watching = m.watching, desc;
-          if (!watching[keyName]) {
-            watching[keyName] = 1;
-            desc = m.descs[keyName];
-            if (desc && desc.willWatch) {
-              desc.willWatch(obj, keyName);
-            }
-            if ('function' === typeof obj.willWatchProperty) {
-              obj.willWatchProperty(keyName);
-            }
-            if (MANDATORY_SETTER && keyName in obj) {
-              m.values[keyName] = obj[keyName];
-              o_defineProperty(obj, keyName, {
-                configurable: true,
-                enumerable: true,
-                set: Ember.MANDATORY_SETTER_FUNCTION,
-                get: Ember.DEFAULT_GETTER_FUNCTION(keyName)
-              });
-            }
-          } else {
-            watching[keyName] = (watching[keyName] || 0) + 1;
-          }
-        };
-        Ember.unwatchKey = function (obj, keyName) {
-          var m = metaFor(obj), watching = m.watching, desc;
-          if (watching[keyName] === 1) {
-            watching[keyName] = 0;
-            desc = m.descs[keyName];
-            if (desc && desc.didUnwatch) {
-              desc.didUnwatch(obj, keyName);
-            }
-            if ('function' === typeof obj.didUnwatchProperty) {
-              obj.didUnwatchProperty(keyName);
-            }
-            if (MANDATORY_SETTER && keyName in obj) {
-              o_defineProperty(obj, keyName, {
-                configurable: true,
-                enumerable: true,
-                writable: true,
-                value: m.values[keyName]
-              });
-              delete m.values[keyName];
-            }
-          } else if (watching[keyName] > 1) {
-            watching[keyName]--;
-          }
-          return this;
-        };
-      }());
-      (function () {
-        var metaFor = Ember.meta, get = Ember.get, normalizeTuple = Ember.normalizeTuple, forEach = Ember.ArrayPolyfills.forEach, warn = Ember.warn, watchKey = Ember.watchKey, unwatchKey = Ember.unwatchKey, propertyWillChange = Ember.propertyWillChange, propertyDidChange = Ember.propertyDidChange, FIRST_KEY = /^([^\.\*]+)/;
-        function firstKey(path) {
-          return path.match(FIRST_KEY)[0];
-        }
-        var pendingQueue = [];
-        Ember.flushPendingChains = function () {
-          if (pendingQueue.length === 0) {
-            return;
-          }
-          var queue = pendingQueue;
-          pendingQueue = [];
-          forEach.call(queue, function (q) {
-            q[0].add(q[1]);
-          });
-          warn('Watching an undefined global, Ember expects watched globals to be setup by the time the run loop is flushed, check for typos', pendingQueue.length === 0);
-        };
-        function addChainWatcher(obj, keyName, node) {
-          if (!obj || 'object' !== typeof obj) {
-            return;
-          }
-          var m = metaFor(obj), nodes = m.chainWatchers;
-          if (!m.hasOwnProperty('chainWatchers')) {
-            nodes = m.chainWatchers = {};
-          }
-          if (!nodes[keyName]) {
-            nodes[keyName] = [];
-          }
-          nodes[keyName].push(node);
-          watchKey(obj, keyName);
-        }
-        var removeChainWatcher = Ember.removeChainWatcher = function (obj, keyName, node) {
-            if (!obj || 'object' !== typeof obj) {
-              return;
-            }
-            var m = metaFor(obj, false);
-            if (!m.hasOwnProperty('chainWatchers')) {
-              return;
-            }
-            var nodes = m.chainWatchers;
-            if (nodes[keyName]) {
-              nodes = nodes[keyName];
-              for (var i = 0, l = nodes.length; i < l; i++) {
-                if (nodes[i] === node) {
-                  nodes.splice(i, 1);
-                }
-              }
-            }
-            unwatchKey(obj, keyName);
-          };
-        function isProto(pvalue) {
-          return metaFor(pvalue, false).proto === pvalue;
-        }
-        var ChainNode = Ember._ChainNode = function (parent, key, value) {
-            var obj;
-            this._parent = parent;
-            this._key = key;
-            this._watching = value === undefined;
-            this._value = value;
-            this._paths = {};
-            if (this._watching) {
-              this._object = parent.value();
-              if (this._object) {
-                addChainWatcher(this._object, this._key, this);
-              }
-            }
-            if (this._parent && this._parent._key === '@each') {
-              this.value();
-            }
-          };
-        var ChainNodePrototype = ChainNode.prototype;
-        ChainNodePrototype.value = function () {
-          if (this._value === undefined && this._watching) {
-            var obj = this._parent.value();
-            this._value = obj && !isProto(obj) ? get(obj, this._key) : undefined;
-          }
-          return this._value;
-        };
-        ChainNodePrototype.destroy = function () {
-          if (this._watching) {
-            var obj = this._object;
-            if (obj) {
-              removeChainWatcher(obj, this._key, this);
-            }
-            this._watching = false;
-          }
-        };
-        ChainNodePrototype.copy = function (obj) {
-          var ret = new ChainNode(null, null, obj), paths = this._paths, path;
-          for (path in paths) {
-            if (paths[path] <= 0) {
-              continue;
-            }
-            ret.add(path);
-          }
-          return ret;
-        };
-        ChainNodePrototype.add = function (path) {
-          var obj, tuple, key, src, paths;
-          paths = this._paths;
-          paths[path] = (paths[path] || 0) + 1;
-          obj = this.value();
-          tuple = normalizeTuple(obj, path);
-          if (tuple[0] && tuple[0] === obj) {
-            path = tuple[1];
-            key = firstKey(path);
-            path = path.slice(key.length + 1);
-          } else if (!tuple[0]) {
-            pendingQueue.push([
-              this,
-              path
-            ]);
-            tuple.length = 0;
-            return;
-          } else {
-            src = tuple[0];
-            key = path.slice(0, 0 - (tuple[1].length + 1));
-            path = tuple[1];
-          }
-          tuple.length = 0;
-          this.chain(key, path, src);
-        };
-        ChainNodePrototype.remove = function (path) {
-          var obj, tuple, key, src, paths;
-          paths = this._paths;
-          if (paths[path] > 0) {
-            paths[path]--;
-          }
-          obj = this.value();
-          tuple = normalizeTuple(obj, path);
-          if (tuple[0] === obj) {
-            path = tuple[1];
-            key = firstKey(path);
-            path = path.slice(key.length + 1);
-          } else {
-            src = tuple[0];
-            key = path.slice(0, 0 - (tuple[1].length + 1));
-            path = tuple[1];
-          }
-          tuple.length = 0;
-          this.unchain(key, path);
-        };
-        ChainNodePrototype.count = 0;
-        ChainNodePrototype.chain = function (key, path, src) {
-          var chains = this._chains, node;
-          if (!chains) {
-            chains = this._chains = {};
-          }
-          node = chains[key];
-          if (!node) {
-            node = chains[key] = new ChainNode(this, key, src);
-          }
-          node.count++;
-          if (path && path.length > 0) {
-            key = firstKey(path);
-            path = path.slice(key.length + 1);
-            node.chain(key, path);
-          }
-        };
-        ChainNodePrototype.unchain = function (key, path) {
-          var chains = this._chains, node = chains[key];
-          if (path && path.length > 1) {
-            key = firstKey(path);
-            path = path.slice(key.length + 1);
-            node.unchain(key, path);
-          }
-          node.count--;
-          if (node.count <= 0) {
-            delete chains[node._key];
-            node.destroy();
-          }
-        };
-        ChainNodePrototype.willChange = function () {
-          var chains = this._chains;
-          if (chains) {
-            for (var key in chains) {
-              if (!chains.hasOwnProperty(key)) {
-                continue;
-              }
-              chains[key].willChange();
-            }
-          }
-          if (this._parent) {
-            this._parent.chainWillChange(this, this._key, 1);
-          }
-        };
-        ChainNodePrototype.chainWillChange = function (chain, path, depth) {
-          if (this._key) {
-            path = this._key + '.' + path;
-          }
-          if (this._parent) {
-            this._parent.chainWillChange(this, path, depth + 1);
-          } else {
-            if (depth > 1) {
-              propertyWillChange(this.value(), path);
-            }
-            path = 'this.' + path;
-            if (this._paths[path] > 0) {
-              propertyWillChange(this.value(), path);
-            }
-          }
-        };
-        ChainNodePrototype.chainDidChange = function (chain, path, depth) {
-          if (this._key) {
-            path = this._key + '.' + path;
-          }
-          if (this._parent) {
-            this._parent.chainDidChange(this, path, depth + 1);
-          } else {
-            if (depth > 1) {
-              propertyDidChange(this.value(), path);
-            }
-            path = 'this.' + path;
-            if (this._paths[path] > 0) {
-              propertyDidChange(this.value(), path);
-            }
-          }
-        };
-        ChainNodePrototype.didChange = function (suppressEvent) {
-          if (this._watching) {
-            var obj = this._parent.value();
-            if (obj !== this._object) {
-              removeChainWatcher(this._object, this._key, this);
-              this._object = obj;
-              addChainWatcher(obj, this._key, this);
-            }
-            this._value = undefined;
-            if (this._parent && this._parent._key === '@each')
-              this.value();
-          }
-          var chains = this._chains;
-          if (chains) {
-            for (var key in chains) {
-              if (!chains.hasOwnProperty(key)) {
-                continue;
-              }
-              chains[key].didChange(suppressEvent);
-            }
-          }
-          if (suppressEvent) {
-            return;
-          }
-          if (this._parent) {
-            this._parent.chainDidChange(this, this._key, 1);
-          }
-        };
-        Ember.finishChains = function (obj) {
-          var m = metaFor(obj, false), chains = m.chains;
-          if (chains) {
-            if (chains.value() !== obj) {
-              m.chains = chains = chains.copy(obj);
-            }
-            chains.didChange(true);
-          }
-        };
-      }());
-      (function () {
-        var metaFor = Ember.meta, isArray = Ember.isArray, ChainNode = Ember._ChainNode;
-        function chainsFor(obj) {
-          var m = metaFor(obj), ret = m.chains;
-          if (!ret) {
-            ret = m.chains = new ChainNode(null, null, obj);
-          } else if (ret.value() !== obj) {
-            ret = m.chains = ret.copy(obj);
-          }
-          return ret;
-        }
-        Ember.watchPath = function (obj, keyPath) {
-          if (keyPath === 'length' && isArray(obj)) {
-            return;
-          }
-          var m = metaFor(obj), watching = m.watching;
-          if (!watching[keyPath]) {
-            watching[keyPath] = 1;
-            chainsFor(obj).add(keyPath);
-          } else {
-            watching[keyPath] = (watching[keyPath] || 0) + 1;
-          }
-        };
-        Ember.unwatchPath = function (obj, keyPath) {
-          var m = metaFor(obj), watching = m.watching, desc;
-          if (watching[keyPath] === 1) {
-            watching[keyPath] = 0;
-            chainsFor(obj).remove(keyPath);
-          } else if (watching[keyPath] > 1) {
-            watching[keyPath]--;
-          }
-          return this;
-        };
-      }());
-      (function () {
-        var metaFor = Ember.meta, GUID_KEY = Ember.GUID_KEY, META_KEY = Ember.META_KEY, removeChainWatcher = Ember.removeChainWatcher, watchKey = Ember.watchKey, unwatchKey = Ember.unwatchKey, watchPath = Ember.watchPath, unwatchPath = Ember.unwatchPath, isArray = Ember.isArray, generateGuid = Ember.generateGuid, IS_PATH = /[\.\*]/;
-        function isKeyName(path) {
-          return path === '*' || !IS_PATH.test(path);
-        }
-        Ember.watch = function (obj, keyPath) {
-          if (keyPath === 'length' && isArray(obj)) {
-            return;
-          }
-          if (isKeyName(keyPath)) {
-            watchKey(obj, keyPath);
-          } else {
-            watchPath(obj, keyPath);
-          }
-        };
-        Ember.isWatching = function isWatching(obj, key) {
-          var meta = obj[META_KEY];
-          return (meta && meta.watching[key]) > 0;
-        };
-        Ember.watch.flushPending = Ember.flushPendingChains;
-        Ember.unwatch = function (obj, keyPath) {
-          if (keyPath === 'length' && isArray(obj)) {
-            return this;
-          }
-          if (isKeyName(keyPath)) {
-            unwatchKey(obj, keyPath);
-          } else {
-            unwatchPath(obj, keyPath);
-          }
-        };
-        Ember.rewatch = function (obj) {
-          var m = metaFor(obj, false), chains = m.chains;
-          if (GUID_KEY in obj && !obj.hasOwnProperty(GUID_KEY)) {
-            generateGuid(obj, 'ember');
-          }
-          if (chains && chains.value() !== obj) {
-            m.chains = chains.copy(obj);
-          }
-          return this;
-        };
-        var NODE_STACK = [];
-        Ember.destroy = function (obj) {
-          var meta = obj[META_KEY], node, nodes, key, nodeObject;
-          if (meta) {
-            obj[META_KEY] = null;
-            node = meta.chains;
-            if (node) {
-              NODE_STACK.push(node);
-              while (NODE_STACK.length > 0) {
-                node = NODE_STACK.pop();
-                nodes = node._chains;
-                if (nodes) {
-                  for (key in nodes) {
-                    if (nodes.hasOwnProperty(key)) {
-                      NODE_STACK.push(nodes[key]);
-                    }
-                  }
-                }
-                if (node._watching) {
-                  nodeObject = node._object;
-                  if (nodeObject) {
-                    removeChainWatcher(nodeObject, node._key, node);
-                  }
-                }
-              }
-            }
-          }
-        };
-      }());
-      (function () {
-        Ember.warn("The CP_DEFAULT_CACHEABLE flag has been removed and computed properties are always cached by default. Use `volatile` if you don't want caching.", Ember.ENV.CP_DEFAULT_CACHEABLE !== false);
-        var get = Ember.get, set = Ember.set, metaFor = Ember.meta, a_slice = [].slice, o_create = Ember.create, META_KEY = Ember.META_KEY, watch = Ember.watch, unwatch = Ember.unwatch;
-        function keysForDep(obj, depsMeta, depKey) {
-          var keys = depsMeta[depKey];
-          if (!keys) {
-            keys = depsMeta[depKey] = {};
-          } else if (!depsMeta.hasOwnProperty(depKey)) {
-            keys = depsMeta[depKey] = o_create(keys);
-          }
-          return keys;
-        }
-        function metaForDeps(obj, meta) {
-          return keysForDep(obj, meta, 'deps');
-        }
-        function addDependentKeys(desc, obj, keyName, meta) {
-          var depKeys = desc._dependentKeys, depsMeta, idx, len, depKey, keys;
-          if (!depKeys)
-            return;
-          depsMeta = metaForDeps(obj, meta);
-          for (idx = 0, len = depKeys.length; idx < len; idx++) {
-            depKey = depKeys[idx];
-            keys = keysForDep(obj, depsMeta, depKey);
-            keys[keyName] = (keys[keyName] || 0) + 1;
-            watch(obj, depKey);
-          }
-        }
-        function removeDependentKeys(desc, obj, keyName, meta) {
-          var depKeys = desc._dependentKeys, depsMeta, idx, len, depKey, keys;
-          if (!depKeys)
-            return;
-          depsMeta = metaForDeps(obj, meta);
-          for (idx = 0, len = depKeys.length; idx < len; idx++) {
-            depKey = depKeys[idx];
-            keys = keysForDep(obj, depsMeta, depKey);
-            keys[keyName] = (keys[keyName] || 0) - 1;
-            unwatch(obj, depKey);
-          }
-        }
-        function ComputedProperty(func, opts) {
-          this.func = func;
-          this._cacheable = opts && opts.cacheable !== undefined ? opts.cacheable : true;
-          this._dependentKeys = opts && opts.dependentKeys;
-          this._readOnly = opts && (opts.readOnly !== undefined || !!opts.readOnly);
-        }
-        Ember.ComputedProperty = ComputedProperty;
-        ComputedProperty.prototype = new Ember.Descriptor;
-        var ComputedPropertyPrototype = ComputedProperty.prototype;
-        ComputedPropertyPrototype.cacheable = function (aFlag) {
-          this._cacheable = aFlag !== false;
-          return this;
-        };
-        ComputedPropertyPrototype.volatile = function () {
-          return this.cacheable(false);
-        };
-        ComputedPropertyPrototype.readOnly = function (readOnly) {
-          this._readOnly = readOnly === undefined || !!readOnly;
-          return this;
-        };
-        ComputedPropertyPrototype.property = function () {
-          var args = [];
-          for (var i = 0, l = arguments.length; i < l; i++) {
-            args.push(arguments[i]);
-          }
-          this._dependentKeys = args;
-          return this;
-        };
-        ComputedPropertyPrototype.meta = function (meta) {
-          if (arguments.length === 0) {
-            return this._meta || {};
-          } else {
-            this._meta = meta;
-            return this;
-          }
-        };
-        ComputedPropertyPrototype.willWatch = function (obj, keyName) {
-          var meta = obj[META_KEY];
-          Ember.assert('watch should have setup meta to be writable', meta.source === obj);
-          if (!(keyName in meta.cache)) {
-            addDependentKeys(this, obj, keyName, meta);
-          }
-        };
-        ComputedPropertyPrototype.didUnwatch = function (obj, keyName) {
-          var meta = obj[META_KEY];
-          Ember.assert('unwatch should have setup meta to be writable', meta.source === obj);
-          if (!(keyName in meta.cache)) {
-            removeDependentKeys(this, obj, keyName, meta);
-          }
-        };
-        ComputedPropertyPrototype.didChange = function (obj, keyName) {
-          if (this._cacheable && this._suspended !== obj) {
-            var meta = metaFor(obj);
-            if (keyName in meta.cache) {
-              delete meta.cache[keyName];
-              if (!meta.watching[keyName]) {
-                removeDependentKeys(this, obj, keyName, meta);
-              }
-            }
-          }
-        };
-        ComputedPropertyPrototype.get = function (obj, keyName) {
-          var ret, cache, meta;
-          if (this._cacheable) {
-            meta = metaFor(obj);
-            cache = meta.cache;
-            if (keyName in cache) {
-              return cache[keyName];
-            }
-            ret = cache[keyName] = this.func.call(obj, keyName);
-            if (!meta.watching[keyName]) {
-              addDependentKeys(this, obj, keyName, meta);
-            }
-          } else {
-            ret = this.func.call(obj, keyName);
-          }
-          return ret;
-        };
-        ComputedPropertyPrototype.set = function (obj, keyName, value) {
-          var cacheable = this._cacheable, func = this.func, meta = metaFor(obj, cacheable), watched = meta.watching[keyName], oldSuspended = this._suspended, hadCachedValue = false, cache = meta.cache, cachedValue, ret;
-          if (this._readOnly) {
-            throw new Error('Cannot Set: ' + keyName + ' on: ' + obj.toString());
-          }
-          this._suspended = obj;
-          try {
-            if (cacheable && cache.hasOwnProperty(keyName)) {
-              cachedValue = cache[keyName];
-              hadCachedValue = true;
-            }
-            if (func.wrappedFunction) {
-              func = func.wrappedFunction;
-            }
-            if (func.length === 3) {
-              ret = func.call(obj, keyName, value, cachedValue);
-            } else if (func.length === 2) {
-              ret = func.call(obj, keyName, value);
-            } else {
-              Ember.defineProperty(obj, keyName, null, cachedValue);
-              Ember.set(obj, keyName, value);
-              return;
-            }
-            if (hadCachedValue && cachedValue === ret) {
-              return;
-            }
-            if (watched) {
-              Ember.propertyWillChange(obj, keyName);
-            }
-            if (hadCachedValue) {
-              delete cache[keyName];
-            }
-            if (cacheable) {
-              if (!watched && !hadCachedValue) {
-                addDependentKeys(this, obj, keyName, meta);
-              }
-              cache[keyName] = ret;
-            }
-            if (watched) {
-              Ember.propertyDidChange(obj, keyName);
-            }
-          } finally {
-            this._suspended = oldSuspended;
-          }
-          return ret;
-        };
-        ComputedPropertyPrototype.setup = function (obj, keyName) {
-          var meta = obj[META_KEY];
-          if (meta && meta.watching[keyName]) {
-            addDependentKeys(this, obj, keyName, metaFor(obj));
-          }
-        };
-        ComputedPropertyPrototype.teardown = function (obj, keyName) {
-          var meta = metaFor(obj);
-          if (meta.watching[keyName] || keyName in meta.cache) {
-            removeDependentKeys(this, obj, keyName, meta);
-          }
-          if (this._cacheable) {
-            delete meta.cache[keyName];
-          }
-          return null;
-        };
-        Ember.computed = function (func) {
-          var args;
-          if (arguments.length > 1) {
-            args = a_slice.call(arguments, 0, -1);
-            func = a_slice.call(arguments, -1)[0];
-          }
-          if (typeof func !== 'function') {
-            throw new Error('Computed Property declared without a property function');
-          }
-          var cp = new ComputedProperty(func);
-          if (args) {
-            cp.property.apply(cp, args);
-          }
-          return cp;
-        };
-        Ember.cacheFor = function cacheFor(obj, key) {
-          var cache = metaFor(obj, false).cache;
-          if (cache && key in cache) {
-            return cache[key];
-          }
-        };
-        function getProperties(self, propertyNames) {
-          var ret = {};
-          for (var i = 0; i < propertyNames.length; i++) {
-            ret[propertyNames[i]] = get(self, propertyNames[i]);
-          }
-          return ret;
-        }
-        function registerComputed(name, macro) {
-          Ember.computed[name] = function (dependentKey) {
-            var args = a_slice.call(arguments);
-            return Ember.computed(dependentKey, function () {
-              return macro.apply(this, args);
-            });
-          };
-        }
-        function registerComputedWithProperties(name, macro) {
-          Ember.computed[name] = function () {
-            var properties = a_slice.call(arguments);
-            var computed = Ember.computed(function () {
-                return macro.apply(this, [getProperties(this, properties)]);
-              });
-            return computed.property.apply(computed, properties);
-          };
-        }
-        registerComputed('empty', function (dependentKey) {
-          return Ember.isEmpty(get(this, dependentKey));
-        });
-        registerComputed('notEmpty', function (dependentKey) {
-          return !Ember.isEmpty(get(this, dependentKey));
-        });
-        registerComputed('none', function (dependentKey) {
-          return Ember.isNone(get(this, dependentKey));
-        });
-        registerComputed('not', function (dependentKey) {
-          return !get(this, dependentKey);
-        });
-        registerComputed('bool', function (dependentKey) {
-          return !!get(this, dependentKey);
-        });
-        registerComputed('match', function (dependentKey, regexp) {
-          var value = get(this, dependentKey);
-          return typeof value === 'string' ? !!value.match(regexp) : false;
-        });
-        registerComputed('equal', function (dependentKey, value) {
-          return get(this, dependentKey) === value;
-        });
-        registerComputed('gt', function (dependentKey, value) {
-          return get(this, dependentKey) > value;
-        });
-        registerComputed('gte', function (dependentKey, value) {
-          return get(this, dependentKey) >= value;
-        });
-        registerComputed('lt', function (dependentKey, value) {
-          return get(this, dependentKey) < value;
-        });
-        registerComputed('lte', function (dependentKey, value) {
-          return get(this, dependentKey) <= value;
-        });
-        registerComputedWithProperties('and', function (properties) {
-          for (var key in properties) {
-            if (properties.hasOwnProperty(key) && !properties[key]) {
-              return false;
-            }
-          }
-          return true;
-        });
-        registerComputedWithProperties('or', function (properties) {
-          for (var key in properties) {
-            if (properties.hasOwnProperty(key) && properties[key]) {
-              return true;
-            }
-          }
-          return false;
-        });
-        registerComputedWithProperties('any', function (properties) {
-          for (var key in properties) {
-            if (properties.hasOwnProperty(key) && properties[key]) {
-              return properties[key];
-            }
-          }
-          return null;
-        });
-        registerComputedWithProperties('map', function (properties) {
-          var res = [];
-          for (var key in properties) {
-            if (properties.hasOwnProperty(key)) {
-              if (Ember.isNone(properties[key])) {
-                res.push(null);
-              } else {
-                res.push(properties[key]);
-              }
-            }
-          }
-          return res;
-        });
-        Ember.computed.alias = function (dependentKey) {
-          return Ember.computed(dependentKey, function (key, value) {
-            if (arguments.length > 1) {
-              set(this, dependentKey, value);
-              return value;
-            } else {
-              return get(this, dependentKey);
-            }
-          });
-        };
-        Ember.computed.defaultTo = function (defaultPath) {
-          return Ember.computed(function (key, newValue, cachedValue) {
-            var result;
-            if (arguments.length === 1) {
-              return cachedValue != null ? cachedValue : get(this, defaultPath);
-            }
-            return newValue != null ? newValue : get(this, defaultPath);
-          });
-        };
-      }());
-      (function () {
-        var AFTER_OBSERVERS = ':change';
-        var BEFORE_OBSERVERS = ':before';
-        var guidFor = Ember.guidFor;
-        function changeEvent(keyName) {
-          return keyName + AFTER_OBSERVERS;
-        }
-        function beforeEvent(keyName) {
-          return keyName + BEFORE_OBSERVERS;
-        }
-        Ember.addObserver = function (obj, path, target, method) {
-          Ember.addListener(obj, changeEvent(path), target, method);
-          Ember.watch(obj, path);
-          return this;
-        };
-        Ember.observersFor = function (obj, path) {
-          return Ember.listenersFor(obj, changeEvent(path));
-        };
-        Ember.removeObserver = function (obj, path, target, method) {
-          Ember.unwatch(obj, path);
-          Ember.removeListener(obj, changeEvent(path), target, method);
-          return this;
-        };
-        Ember.addBeforeObserver = function (obj, path, target, method) {
-          Ember.addListener(obj, beforeEvent(path), target, method);
-          Ember.watch(obj, path);
-          return this;
-        };
-        Ember._suspendBeforeObserver = function (obj, path, target, method, callback) {
-          return Ember._suspendListener(obj, beforeEvent(path), target, method, callback);
-        };
-        Ember._suspendObserver = function (obj, path, target, method, callback) {
-          return Ember._suspendListener(obj, changeEvent(path), target, method, callback);
-        };
-        var map = Ember.ArrayPolyfills.map;
-        Ember._suspendBeforeObservers = function (obj, paths, target, method, callback) {
-          var events = map.call(paths, beforeEvent);
-          return Ember._suspendListeners(obj, events, target, method, callback);
-        };
-        Ember._suspendObservers = function (obj, paths, target, method, callback) {
-          var events = map.call(paths, changeEvent);
-          return Ember._suspendListeners(obj, events, target, method, callback);
-        };
-        Ember.beforeObserversFor = function (obj, path) {
-          return Ember.listenersFor(obj, beforeEvent(path));
-        };
-        Ember.removeBeforeObserver = function (obj, path, target, method) {
-          Ember.unwatch(obj, path);
-          Ember.removeListener(obj, beforeEvent(path), target, method);
-          return this;
-        };
-      }());
-      (function () {
-        var slice = [].slice, forEach = Ember.ArrayPolyfills.forEach;
-        function invoke(target, method, args, ignore) {
-          if (method === undefined) {
-            method = target;
-            target = undefined;
-          }
-          if ('string' === typeof method) {
-            method = target[method];
-          }
-          if (args && ignore > 0) {
-            args = args.length > ignore ? slice.call(args, ignore) : null;
-          }
-          return Ember.handleErrors(function () {
-            return method.apply(target || this, args || []);
-          }, this);
-        }
-        var timerMark;
-        var RunLoop = function (prev) {
-          this._prev = prev || null;
-          this.onceTimers = {};
-        };
-        RunLoop.prototype = {
-          end: function () {
-            this.flush();
-          },
-          prev: function () {
-            return this._prev;
-          },
-          schedule: function (queueName, target, method) {
-            var queues = this._queues, queue;
-            if (!queues) {
-              queues = this._queues = {};
-            }
-            queue = queues[queueName];
-            if (!queue) {
-              queue = queues[queueName] = [];
-            }
-            var args = arguments.length > 3 ? slice.call(arguments, 3) : null;
-            queue.push({
-              target: target,
-              method: method,
-              args: args
-            });
-            return this;
-          },
-          flush: function (queueName) {
-            var queueNames, idx, len, queue, log;
-            if (!this._queues) {
-              return this;
-            }
-            function iter(item) {
-              invoke(item.target, item.method, item.args);
-            }
-            function tryable() {
-              forEach.call(queue, iter);
-            }
-            Ember.watch.flushPending();
-            if (queueName) {
-              while (this._queues && (queue = this._queues[queueName])) {
-                this._queues[queueName] = null;
-                if (queueName === 'sync') {
-                  log = Ember.LOG_BINDINGS;
-                  if (log) {
-                    Ember.Logger.log('Begin: Flush Sync Queue');
-                  }
-                  Ember.beginPropertyChanges();
-                  Ember.tryFinally(tryable, Ember.endPropertyChanges);
-                  if (log) {
-                    Ember.Logger.log('End: Flush Sync Queue');
-                  }
-                } else {
-                  forEach.call(queue, iter);
-                }
-              }
-            } else {
-              queueNames = Ember.run.queues;
-              len = queueNames.length;
-              idx = 0;
-              outerloop:
-                while (idx < len) {
-                  queueName = queueNames[idx];
-                  queue = this._queues && this._queues[queueName];
-                  delete this._queues[queueName];
-                  if (queue) {
-                    if (queueName === 'sync') {
-                      log = Ember.LOG_BINDINGS;
-                      if (log) {
-                        Ember.Logger.log('Begin: Flush Sync Queue');
-                      }
-                      Ember.beginPropertyChanges();
-                      Ember.tryFinally(tryable, Ember.endPropertyChanges);
-                      if (log) {
-                        Ember.Logger.log('End: Flush Sync Queue');
-                      }
-                    } else {
-                      forEach.call(queue, iter);
-                    }
-                  }
-                  for (var i = 0; i <= idx; i++) {
-                    if (this._queues && this._queues[queueNames[i]]) {
-                      idx = i;
-                      continue outerloop;
-                    }
-                  }
-                  idx++;
-                }
-            }
-            timerMark = null;
-            return this;
-          }
-        };
-        Ember.RunLoop = RunLoop;
-        Ember.run = function (target, method) {
-          var args = arguments;
-          run.begin();
-          function tryable() {
-            if (target || method) {
-              return invoke(target, method, args, 2);
-            }
-          }
-          return Ember.tryFinally(tryable, run.end);
-        };
-        var run = Ember.run;
-        Ember.run.begin = function () {
-          run.currentRunLoop = new RunLoop(run.currentRunLoop);
-        };
-        Ember.run.end = function () {
-          Ember.assert('must have a current run loop', run.currentRunLoop);
-          function tryable() {
-            run.currentRunLoop.end();
-          }
-          function finalizer() {
-            run.currentRunLoop = run.currentRunLoop.prev();
-          }
-          Ember.tryFinally(tryable, finalizer);
-        };
-        Ember.run.queues = [
-          'sync',
-          'actions',
-          'destroy'
-        ];
-        Ember.run.schedule = function (queue, target, method) {
-          var loop = run.autorun();
-          loop.schedule.apply(loop, arguments);
-        };
-        var scheduledAutorun;
-        function autorun() {
-          scheduledAutorun = null;
-          if (run.currentRunLoop) {
-            run.end();
-          }
-        }
-        Ember.run.hasScheduledTimers = function () {
-          return !!(scheduledAutorun || scheduledLater);
-        };
-        Ember.run.cancelTimers = function () {
-          if (scheduledAutorun) {
-            clearTimeout(scheduledAutorun);
-            scheduledAutorun = null;
-          }
-          if (scheduledLater) {
-            clearTimeout(scheduledLater);
-            scheduledLater = null;
-          }
-          timers = {};
-        };
-        Ember.run.autorun = function () {
-          if (!run.currentRunLoop) {
-            Ember.assert("You have turned on testing mode, which disabled the run-loop's autorun. You will need to wrap any code with asynchronous side-effects in an Ember.run", !Ember.testing);
-            run.begin();
-            if (!scheduledAutorun) {
-              scheduledAutorun = setTimeout(autorun, 1);
-            }
-          }
-          return run.currentRunLoop;
-        };
-        Ember.run.sync = function () {
-          run.autorun();
-          run.currentRunLoop.flush('sync');
-        };
-        var timers = {};
-        var scheduledLater, scheduledLaterExpires;
-        function invokeLaterTimers() {
-          scheduledLater = null;
-          run(function () {
-            var now = +new Date, earliest = -1;
-            for (var key in timers) {
-              if (!timers.hasOwnProperty(key)) {
-                continue;
-              }
-              var timer = timers[key];
-              if (timer && timer.expires) {
-                if (now >= timer.expires) {
-                  delete timers[key];
-                  invoke(timer.target, timer.method, timer.args, 2);
-                } else {
-                  if (earliest < 0 || timer.expires < earliest) {
-                    earliest = timer.expires;
-                  }
-                }
-              }
-            }
-            if (earliest > 0) {
-              scheduledLater = setTimeout(invokeLaterTimers, earliest - now);
-              scheduledLaterExpires = earliest;
-            }
-          });
-        }
-        Ember.run.later = function (target, method) {
-          var args, expires, timer, guid, wait;
-          if (arguments.length === 2 && 'function' === typeof target) {
-            wait = method;
-            method = target;
-            target = undefined;
-            args = [
-              target,
-              method
-            ];
-          } else {
-            args = slice.call(arguments);
-            wait = args.pop();
-          }
-          expires = +new Date + wait;
-          timer = {
-            target: target,
-            method: method,
-            expires: expires,
-            args: args
-          };
-          guid = Ember.guidFor(timer);
-          timers[guid] = timer;
-          if (scheduledLater && expires < scheduledLaterExpires) {
-            clearTimeout(scheduledLater);
-            scheduledLater = null;
-          }
-          if (!scheduledLater) {
-            scheduledLater = setTimeout(invokeLaterTimers, wait);
-            scheduledLaterExpires = expires;
-          }
-          return guid;
-        };
-        function invokeOnceTimer(guid, onceTimers) {
-          if (onceTimers[this.tguid]) {
-            delete onceTimers[this.tguid][this.mguid];
-          }
-          if (timers[guid]) {
-            invoke(this.target, this.method, this.args);
-          }
-          delete timers[guid];
-        }
-        function scheduleOnce(queue, target, method, args) {
-          var tguid = Ember.guidFor(target), mguid = Ember.guidFor(method), onceTimers = run.autorun().onceTimers, guid = onceTimers[tguid] && onceTimers[tguid][mguid], timer;
-          if (guid && timers[guid]) {
-            timers[guid].args = args;
-          } else {
-            timer = {
-              target: target,
-              method: method,
-              args: args,
-              tguid: tguid,
-              mguid: mguid
-            };
-            guid = Ember.guidFor(timer);
-            timers[guid] = timer;
-            if (!onceTimers[tguid]) {
-              onceTimers[tguid] = {};
-            }
-            onceTimers[tguid][mguid] = guid;
-            run.schedule(queue, timer, invokeOnceTimer, guid, onceTimers);
-          }
-          return guid;
-        }
-        Ember.run.once = function (target, method) {
-          return scheduleOnce('actions', target, method, slice.call(arguments, 2));
-        };
-        Ember.run.scheduleOnce = function (queue, target, method, args) {
-          return scheduleOnce(queue, target, method, slice.call(arguments, 3));
-        };
-        Ember.run.next = function () {
-          var args = slice.call(arguments);
-          args.push(1);
-          return run.later.apply(this, args);
-        };
-        Ember.run.cancel = function (timer) {
-          delete timers[timer];
-        };
-      }());
-      (function () {
-        Ember.LOG_BINDINGS = false || !!Ember.ENV.LOG_BINDINGS;
-        var get = Ember.get, set = Ember.set, guidFor = Ember.guidFor, IS_GLOBAL = /^([A-Z$]|([0-9][A-Z$]))/;
-        var isGlobalPath = Ember.isGlobalPath = function (path) {
-            return IS_GLOBAL.test(path);
-          };
-        function getWithGlobals(obj, path) {
-          return get(isGlobalPath(path) ? Ember.lookup : obj, path);
-        }
-        var Binding = function (toPath, fromPath) {
-          this._direction = 'fwd';
-          this._from = fromPath;
-          this._to = toPath;
-          this._directionMap = Ember.Map.create();
-        };
-        Binding.prototype = {
-          copy: function () {
-            var copy = new Binding(this._to, this._from);
-            if (this._oneWay) {
-              copy._oneWay = true;
-            }
-            return copy;
-          },
-          from: function (path) {
-            this._from = path;
-            return this;
-          },
-          to: function (path) {
-            this._to = path;
-            return this;
-          },
-          oneWay: function () {
-            this._oneWay = true;
-            return this;
-          },
-          toString: function () {
-            var oneWay = this._oneWay ? '[oneWay]' : '';
-            return 'Ember.Binding<' + guidFor(this) + '>(' + this._from + ' -> ' + this._to + ')' + oneWay;
-          },
-          connect: function (obj) {
-            Ember.assert('Must pass a valid object to Ember.Binding.connect()', !!obj);
-            var fromPath = this._from, toPath = this._to;
-            Ember.trySet(obj, toPath, getWithGlobals(obj, fromPath));
-            Ember.addObserver(obj, fromPath, this, this.fromDidChange);
-            if (!this._oneWay) {
-              Ember.addObserver(obj, toPath, this, this.toDidChange);
-            }
-            this._readyToSync = true;
-            return this;
-          },
-          disconnect: function (obj) {
-            Ember.assert('Must pass a valid object to Ember.Binding.disconnect()', !!obj);
-            var twoWay = !this._oneWay;
-            Ember.removeObserver(obj, this._from, this, this.fromDidChange);
-            if (twoWay) {
-              Ember.removeObserver(obj, this._to, this, this.toDidChange);
-            }
-            this._readyToSync = false;
-            return this;
-          },
-          fromDidChange: function (target) {
-            this._scheduleSync(target, 'fwd');
-          },
-          toDidChange: function (target) {
-            this._scheduleSync(target, 'back');
-          },
-          _scheduleSync: function (obj, dir) {
-            var directionMap = this._directionMap;
-            var existingDir = directionMap.get(obj);
-            if (!existingDir) {
-              Ember.run.schedule('sync', this, this._sync, obj);
-              directionMap.set(obj, dir);
-            }
-            if (existingDir === 'back' && dir === 'fwd') {
-              directionMap.set(obj, 'fwd');
-            }
-          },
-          _sync: function (obj) {
-            var log = Ember.LOG_BINDINGS;
-            if (obj.isDestroyed || !this._readyToSync) {
-              return;
-            }
-            var directionMap = this._directionMap;
-            var direction = directionMap.get(obj);
-            var fromPath = this._from, toPath = this._to;
-            directionMap.remove(obj);
-            if (direction === 'fwd') {
-              var fromValue = getWithGlobals(obj, this._from);
-              if (log) {
-                Ember.Logger.log(' ', this.toString(), '->', fromValue, obj);
-              }
-              if (this._oneWay) {
-                Ember.trySet(obj, toPath, fromValue);
-              } else {
-                Ember._suspendObserver(obj, toPath, this, this.toDidChange, function () {
-                  Ember.trySet(obj, toPath, fromValue);
-                });
-              }
-            } else if (direction === 'back') {
-              var toValue = get(obj, this._to);
-              if (log) {
-                Ember.Logger.log(' ', this.toString(), '<-', toValue, obj);
-              }
-              Ember._suspendObserver(obj, fromPath, this, this.fromDidChange, function () {
-                Ember.trySet(Ember.isGlobalPath(fromPath) ? Ember.lookup : obj, fromPath, toValue);
-              });
-            }
-          }
-        };
-        function mixinProperties(to, from) {
-          for (var key in from) {
-            if (from.hasOwnProperty(key)) {
-              to[key] = from[key];
-            }
-          }
-        }
-        mixinProperties(Binding, {
-          from: function () {
-            var C = this, binding = new C;
-            return binding.from.apply(binding, arguments);
-          },
-          to: function () {
-            var C = this, binding = new C;
-            return binding.to.apply(binding, arguments);
-          },
-          oneWay: function (from, flag) {
-            var C = this, binding = new C(null, from);
-            return binding.oneWay(flag);
-          }
-        });
-        Ember.Binding = Binding;
-        Ember.bind = function (obj, to, from) {
-          return new Ember.Binding(to, from).connect(obj);
-        };
-        Ember.oneWay = function (obj, to, from) {
-          return new Ember.Binding(to, from).oneWay().connect(obj);
-        };
-      }());
-      (function () {
-        var Mixin, REQUIRED, Alias, a_map = Ember.ArrayPolyfills.map, a_indexOf = Ember.ArrayPolyfills.indexOf, a_forEach = Ember.ArrayPolyfills.forEach, a_slice = [].slice, o_create = Ember.create, defineProperty = Ember.defineProperty, guidFor = Ember.guidFor;
-        function mixinsMeta(obj) {
-          var m = Ember.meta(obj, true), ret = m.mixins;
-          if (!ret) {
-            ret = m.mixins = {};
-          } else if (!m.hasOwnProperty('mixins')) {
-            ret = m.mixins = o_create(ret);
-          }
-          return ret;
-        }
-        function initMixin(mixin, args) {
-          if (args && args.length > 0) {
-            mixin.mixins = a_map.call(args, function (x) {
-              if (x instanceof Mixin) {
-                return x;
-              }
-              var mixin = new Mixin;
-              mixin.properties = x;
-              return mixin;
-            });
-          }
-          return mixin;
-        }
-        function isMethod(obj) {
-          return 'function' === typeof obj && obj.isMethod !== false && obj !== Boolean && obj !== Object && obj !== Number && obj !== Array && obj !== Date && obj !== String;
-        }
-        var CONTINUE = {};
-        function mixinProperties(mixinsMeta, mixin) {
-          var guid;
-          if (mixin instanceof Mixin) {
-            guid = guidFor(mixin);
-            if (mixinsMeta[guid]) {
-              return CONTINUE;
-            }
-            mixinsMeta[guid] = mixin;
-            return mixin.properties;
-          } else {
-            return mixin;
-          }
-        }
-        function concatenatedProperties(props, values, base) {
-          var concats;
-          concats = values.concatenatedProperties || base.concatenatedProperties;
-          if (props.concatenatedProperties) {
-            concats = concats ? concats.concat(props.concatenatedProperties) : props.concatenatedProperties;
-          }
-          return concats;
-        }
-        function giveDescriptorSuper(meta, key, property, values, descs) {
-          var superProperty;
-          if (values[key] === undefined) {
-            superProperty = descs[key];
-          }
-          superProperty = superProperty || meta.descs[key];
-          if (!superProperty || !(superProperty instanceof Ember.ComputedProperty)) {
-            return property;
-          }
-          property = o_create(property);
-          property.func = Ember.wrap(property.func, superProperty.func);
-          return property;
-        }
-        function giveMethodSuper(obj, key, method, values, descs) {
-          var superMethod;
-          if (descs[key] === undefined) {
-            superMethod = values[key];
-          }
-          superMethod = superMethod || obj[key];
-          if ('function' !== typeof superMethod) {
-            return method;
-          }
-          return Ember.wrap(method, superMethod);
-        }
-        function applyConcatenatedProperties(obj, key, value, values) {
-          var baseValue = values[key] || obj[key];
-          if (baseValue) {
-            if ('function' === typeof baseValue.concat) {
-              return baseValue.concat(value);
-            } else {
-              return Ember.makeArray(baseValue).concat(value);
-            }
-          } else {
-            return Ember.makeArray(value);
-          }
-        }
-        function addNormalizedProperty(base, key, value, meta, descs, values, concats) {
-          if (value instanceof Ember.Descriptor) {
-            if (value === REQUIRED && descs[key]) {
-              return CONTINUE;
-            }
-            if (value.func) {
-              value = giveDescriptorSuper(meta, key, value, values, descs);
-            }
-            descs[key] = value;
-            values[key] = undefined;
-          } else {
-            if (isMethod(value)) {
-              value = giveMethodSuper(base, key, value, values, descs);
-            } else if (concats && a_indexOf.call(concats, key) >= 0 || key === 'concatenatedProperties') {
-              value = applyConcatenatedProperties(base, key, value, values);
-            }
-            descs[key] = undefined;
-            values[key] = value;
-          }
-        }
-        function mergeMixins(mixins, m, descs, values, base, keys) {
-          var mixin, props, key, concats, meta;
-          function removeKeys(keyName) {
-            delete descs[keyName];
-            delete values[keyName];
-          }
-          for (var i = 0, l = mixins.length; i < l; i++) {
-            mixin = mixins[i];
-            Ember.assert('Expected hash or Mixin instance, got ' + Object.prototype.toString.call(mixin), typeof mixin === 'object' && mixin !== null && Object.prototype.toString.call(mixin) !== '[object Array]');
-            props = mixinProperties(m, mixin);
-            if (props === CONTINUE) {
-              continue;
-            }
-            if (props) {
-              meta = Ember.meta(base);
-              concats = concatenatedProperties(props, values, base);
-              for (key in props) {
-                if (!props.hasOwnProperty(key)) {
-                  continue;
-                }
-                keys.push(key);
-                addNormalizedProperty(base, key, props[key], meta, descs, values, concats);
-              }
-              if (props.hasOwnProperty('toString')) {
-                base.toString = props.toString;
-              }
-            } else if (mixin.mixins) {
-              mergeMixins(mixin.mixins, m, descs, values, base, keys);
-              if (mixin._without) {
-                a_forEach.call(mixin._without, removeKeys);
-              }
-            }
-          }
-        }
-        function writableReq(obj) {
-          var m = Ember.meta(obj), req = m.required;
-          if (!req || !m.hasOwnProperty('required')) {
-            req = m.required = req ? o_create(req) : {};
-          }
-          return req;
-        }
-        var IS_BINDING = Ember.IS_BINDING = /^.+Binding$/;
-        function detectBinding(obj, key, value, m) {
-          if (IS_BINDING.test(key)) {
-            var bindings = m.bindings;
-            if (!bindings) {
-              bindings = m.bindings = {};
-            } else if (!m.hasOwnProperty('bindings')) {
-              bindings = m.bindings = o_create(m.bindings);
-            }
-            bindings[key] = value;
-          }
-        }
-        function connectBindings(obj, m) {
-          var bindings = m.bindings, key, binding, to;
-          if (bindings) {
-            for (key in bindings) {
-              binding = bindings[key];
-              if (binding) {
-                to = key.slice(0, -7);
-                if (binding instanceof Ember.Binding) {
-                  binding = binding.copy();
-                  binding.to(to);
-                } else {
-                  binding = new Ember.Binding(to, binding);
-                }
-                binding.connect(obj);
-                obj[key] = binding;
-              }
-            }
-            m.bindings = {};
-          }
-        }
-        function finishPartial(obj, m) {
-          connectBindings(obj, m || Ember.meta(obj));
-          return obj;
-        }
-        function followAlias(obj, desc, m, descs, values) {
-          var altKey = desc.methodName, value;
-          if (descs[altKey] || values[altKey]) {
-            value = values[altKey];
-            desc = descs[altKey];
-          } else if (m.descs[altKey]) {
-            desc = m.descs[altKey];
-            value = undefined;
-          } else {
-            desc = undefined;
-            value = obj[altKey];
-          }
-          return {
-            desc: desc,
-            value: value
-          };
-        }
-        function updateObservers(obj, key, observer, observerKey, method) {
-          if ('function' !== typeof observer) {
-            return;
-          }
-          var paths = observer[observerKey];
-          if (paths) {
-            for (var i = 0, l = paths.length; i < l; i++) {
-              Ember[method](obj, paths[i], null, key);
-            }
-          }
-        }
-        function replaceObservers(obj, key, observer) {
-          var prevObserver = obj[key];
-          updateObservers(obj, key, prevObserver, '__ember_observesBefore__', 'removeBeforeObserver');
-          updateObservers(obj, key, prevObserver, '__ember_observes__', 'removeObserver');
-          updateObservers(obj, key, observer, '__ember_observesBefore__', 'addBeforeObserver');
-          updateObservers(obj, key, observer, '__ember_observes__', 'addObserver');
-        }
-        function applyMixin(obj, mixins, partial) {
-          var descs = {}, values = {}, m = Ember.meta(obj), key, value, desc, keys = [];
-          mergeMixins(mixins, mixinsMeta(obj), descs, values, obj, keys);
-          for (var i = 0, l = keys.length; i < l; i++) {
-            key = keys[i];
-            if (key === 'constructor' || !values.hasOwnProperty(key)) {
-              continue;
-            }
-            desc = descs[key];
-            value = values[key];
-            if (desc === REQUIRED) {
-              continue;
-            }
-            while (desc && desc instanceof Alias) {
-              var followed = followAlias(obj, desc, m, descs, values);
-              desc = followed.desc;
-              value = followed.value;
-            }
-            if (desc === undefined && value === undefined) {
-              continue;
-            }
-            replaceObservers(obj, key, value);
-            detectBinding(obj, key, value, m);
-            defineProperty(obj, key, desc, value, m);
-          }
-          if (!partial) {
-            finishPartial(obj, m);
-          }
-          return obj;
-        }
-        Ember.mixin = function (obj) {
-          var args = a_slice.call(arguments, 1);
-          applyMixin(obj, args, false);
-          return obj;
-        };
-        Ember.Mixin = function () {
-          return initMixin(this, arguments);
-        };
-        Mixin = Ember.Mixin;
-        Mixin.prototype = {
-          properties: null,
-          mixins: null,
-          ownerConstructor: null
-        };
-        Mixin._apply = applyMixin;
-        Mixin.applyPartial = function (obj) {
-          var args = a_slice.call(arguments, 1);
-          return applyMixin(obj, args, true);
-        };
-        Mixin.finishPartial = finishPartial;
-        Ember.anyUnprocessedMixins = false;
-        Mixin.create = function () {
-          Ember.anyUnprocessedMixins = true;
-          var M = this;
-          return initMixin(new M, arguments);
-        };
-        var MixinPrototype = Mixin.prototype;
-        MixinPrototype.reopen = function () {
-          var mixin, tmp;
-          if (this.properties) {
-            mixin = Mixin.create();
-            mixin.properties = this.properties;
-            delete this.properties;
-            this.mixins = [mixin];
-          } else if (!this.mixins) {
-            this.mixins = [];
-          }
-          var len = arguments.length, mixins = this.mixins, idx;
-          for (idx = 0; idx < len; idx++) {
-            mixin = arguments[idx];
-            Ember.assert('Expected hash or Mixin instance, got ' + Object.prototype.toString.call(mixin), typeof mixin === 'object' && mixin !== null && Object.prototype.toString.call(mixin) !== '[object Array]');
-            if (mixin instanceof Mixin) {
-              mixins.push(mixin);
-            } else {
-              tmp = Mixin.create();
-              tmp.properties = mixin;
-              mixins.push(tmp);
-            }
-          }
-          return this;
-        };
-        MixinPrototype.apply = function (obj) {
-          return applyMixin(obj, [this], false);
-        };
-        MixinPrototype.applyPartial = function (obj) {
-          return applyMixin(obj, [this], true);
-        };
-        function _detect(curMixin, targetMixin, seen) {
-          var guid = guidFor(curMixin);
-          if (seen[guid]) {
-            return false;
-          }
-          seen[guid] = true;
-          if (curMixin === targetMixin) {
-            return true;
-          }
-          var mixins = curMixin.mixins, loc = mixins ? mixins.length : 0;
-          while (--loc >= 0) {
-            if (_detect(mixins[loc], targetMixin, seen)) {
-              return true;
-            }
-          }
-          return false;
-        }
-        MixinPrototype.detect = function (obj) {
-          if (!obj) {
-            return false;
-          }
-          if (obj instanceof Mixin) {
-            return _detect(obj, this, {});
-          }
-          var mixins = Ember.meta(obj, false).mixins;
-          if (mixins) {
-            return !!mixins[guidFor(this)];
-          }
-          return false;
-        };
-        MixinPrototype.without = function () {
-          var ret = new Mixin(this);
-          ret._without = a_slice.call(arguments);
-          return ret;
-        };
-        function _keys(ret, mixin, seen) {
-          if (seen[guidFor(mixin)]) {
-            return;
-          }
-          seen[guidFor(mixin)] = true;
-          if (mixin.properties) {
-            var props = mixin.properties;
-            for (var key in props) {
-              if (props.hasOwnProperty(key)) {
-                ret[key] = true;
-              }
-            }
-          } else if (mixin.mixins) {
-            a_forEach.call(mixin.mixins, function (x) {
-              _keys(ret, x, seen);
-            });
-          }
-        }
-        MixinPrototype.keys = function () {
-          var keys = {}, seen = {}, ret = [];
-          _keys(keys, this, seen);
-          for (var key in keys) {
-            if (keys.hasOwnProperty(key)) {
-              ret.push(key);
-            }
-          }
-          return ret;
-        };
-        Mixin.mixins = function (obj) {
-          var mixins = Ember.meta(obj, false).mixins, ret = [];
-          if (!mixins) {
-            return ret;
-          }
-          for (var key in mixins) {
-            var mixin = mixins[key];
-            if (!mixin.properties) {
-              ret.push(mixin);
-            }
-          }
-          return ret;
-        };
-        REQUIRED = new Ember.Descriptor;
-        REQUIRED.toString = function () {
-          return '(Required Property)';
-        };
-        Ember.required = function () {
-          return REQUIRED;
-        };
-        Alias = function (methodName) {
-          this.methodName = methodName;
-        };
-        Alias.prototype = new Ember.Descriptor;
-        Ember.alias = function (methodName) {
-          return new Alias(methodName);
-        };
-        Ember.deprecateFunc('Ember.alias is deprecated. Please use Ember.aliasMethod or Ember.computed.alias instead.', Ember.alias);
-        Ember.aliasMethod = function (methodName) {
-          return new Alias(methodName);
-        };
-        Ember.observer = function (func) {
-          var paths = a_slice.call(arguments, 1);
-          func.__ember_observes__ = paths;
-          return func;
-        };
-        Ember.immediateObserver = function () {
-          for (var i = 0, l = arguments.length; i < l; i++) {
-            var arg = arguments[i];
-            Ember.assert('Immediate observers must observe internal properties only, not properties on other objects.', typeof arg !== 'string' || arg.indexOf('.') === -1);
-          }
-          return Ember.observer.apply(this, arguments);
-        };
-        Ember.beforeObserver = function (func) {
-          var paths = a_slice.call(arguments, 1);
-          func.__ember_observesBefore__ = paths;
-          return func;
-        };
-      }());
-      (function () {
-      }());
-      (function () {
-        define('rsvp', [], function () {
-          'use strict';
-          var browserGlobal = typeof window !== 'undefined' ? window : {};
-          var MutationObserver = browserGlobal.MutationObserver || browserGlobal.WebKitMutationObserver;
-          var RSVP, async;
-          if (typeof process !== 'undefined' && {}.toString.call(process) === '[object process]') {
-            async = function (callback, binding) {
-              process.nextTick(function () {
-                callback.call(binding);
-              });
-            };
-          } else if (MutationObserver) {
-            var queue = [];
-            var observer = new MutationObserver(function () {
-                var toProcess = queue.slice();
-                queue = [];
-                toProcess.forEach(function (tuple) {
-                  var callback = tuple[0], binding = tuple[1];
-                  callback.call(binding);
-                });
-              });
-            var element = document.createElement('div');
-            observer.observe(element, { attributes: true });
-            window.addEventListener('unload', function () {
-              observer.disconnect();
-              observer = null;
-            });
-            async = function (callback, binding) {
-              queue.push([
-                callback,
-                binding
-              ]);
-              element.setAttribute('drainQueue', 'drainQueue');
-            };
-          } else {
-            async = function (callback, binding) {
-              setTimeout(function () {
-                callback.call(binding);
-              }, 1);
-            };
-          }
-          var Event = function (type, options) {
-            this.type = type;
-            for (var option in options) {
-              if (!options.hasOwnProperty(option)) {
-                continue;
-              }
-              this[option] = options[option];
-            }
-          };
-          var indexOf = function (callbacks, callback) {
-            for (var i = 0, l = callbacks.length; i < l; i++) {
-              if (callbacks[i][0] === callback) {
-                return i;
-              }
-            }
-            return -1;
-          };
-          var callbacksFor = function (object) {
-            var callbacks = object._promiseCallbacks;
-            if (!callbacks) {
-              callbacks = object._promiseCallbacks = {};
-            }
-            return callbacks;
-          };
-          var EventTarget = {
-              mixin: function (object) {
-                object.on = this.on;
-                object.off = this.off;
-                object.trigger = this.trigger;
-                return object;
-              },
-              on: function (eventNames, callback, binding) {
-                var allCallbacks = callbacksFor(this), callbacks, eventName;
-                eventNames = eventNames.split(/\s+/);
-                binding = binding || this;
-                while (eventName = eventNames.shift()) {
-                  callbacks = allCallbacks[eventName];
-                  if (!callbacks) {
-                    callbacks = allCallbacks[eventName] = [];
-                  }
-                  if (indexOf(callbacks, callback) === -1) {
-                    callbacks.push([
-                      callback,
-                      binding
-                    ]);
-                  }
-                }
-              },
-              off: function (eventNames, callback) {
-                var allCallbacks = callbacksFor(this), callbacks, eventName, index;
-                eventNames = eventNames.split(/\s+/);
-                while (eventName = eventNames.shift()) {
-                  if (!callback) {
-                    allCallbacks[eventName] = [];
-                    continue;
-                  }
-                  callbacks = allCallbacks[eventName];
-                  index = indexOf(callbacks, callback);
-                  if (index !== -1) {
-                    callbacks.splice(index, 1);
-                  }
-                }
-              },
-              trigger: function (eventName, options) {
-                var allCallbacks = callbacksFor(this), callbacks, callbackTuple, callback, binding, event;
-                if (callbacks = allCallbacks[eventName]) {
-                  for (var i = 0; i < callbacks.length; i++) {
-                    callbackTuple = callbacks[i];
-                    callback = callbackTuple[0];
-                    binding = callbackTuple[1];
-                    if (typeof options !== 'object') {
-                      options = { detail: options };
-                    }
-                    event = new Event(eventName, options);
-                    callback.call(binding, event);
-                  }
-                }
-              }
-            };
-          var Promise = function () {
-            this.on('promise:resolved', function (event) {
-              this.trigger('success', { detail: event.detail });
-            }, this);
-            this.on('promise:failed', function (event) {
-              this.trigger('error', { detail: event.detail });
-            }, this);
-          };
-          var noop = function () {
-          };
-          var invokeCallback = function (type, promise, callback, event) {
-            var hasCallback = typeof callback === 'function', value, error, succeeded, failed;
-            if (hasCallback) {
-              try {
-                value = callback(event.detail);
-                succeeded = true;
-              } catch (e) {
-                failed = true;
-                error = e;
-              }
-            } else {
-              value = event.detail;
-              succeeded = true;
-            }
-            if (value && typeof value.then === 'function') {
-              value.then(function (value) {
-                promise.resolve(value);
-              }, function (error) {
-                promise.reject(error);
-              });
-            } else if (hasCallback && succeeded) {
-              promise.resolve(value);
-            } else if (failed) {
-              promise.reject(error);
-            } else {
-              promise[type](value);
-            }
-          };
-          Promise.prototype = {
-            then: function (done, fail) {
-              var thenPromise = new Promise;
-              if (this.isResolved) {
-                RSVP.async(function () {
-                  invokeCallback('resolve', thenPromise, done, { detail: this.resolvedValue });
-                }, this);
-              }
-              if (this.isRejected) {
-                RSVP.async(function () {
-                  invokeCallback('reject', thenPromise, fail, { detail: this.rejectedValue });
-                }, this);
-              }
-              this.on('promise:resolved', function (event) {
-                invokeCallback('resolve', thenPromise, done, event);
-              });
-              this.on('promise:failed', function (event) {
-                invokeCallback('reject', thenPromise, fail, event);
-              });
-              return thenPromise;
-            },
-            resolve: function (value) {
-              resolve(this, value);
-              this.resolve = noop;
-              this.reject = noop;
-            },
-            reject: function (value) {
-              reject(this, value);
-              this.resolve = noop;
-              this.reject = noop;
-            }
-          };
-          function resolve(promise, value) {
-            RSVP.async(function () {
-              promise.trigger('promise:resolved', { detail: value });
-              promise.isResolved = true;
-              promise.resolvedValue = value;
-            });
-          }
-          function reject(promise, value) {
-            RSVP.async(function () {
-              promise.trigger('promise:failed', { detail: value });
-              promise.isRejected = true;
-              promise.rejectedValue = value;
-            });
-          }
-          function all(promises) {
-            var i, results = [];
-            var allPromise = new Promise;
-            var remaining = promises.length;
-            if (remaining === 0) {
-              allPromise.resolve([]);
-            }
-            var resolver = function (index) {
-              return function (value) {
-                resolve(index, value);
-              };
-            };
-            var resolve = function (index, value) {
-              results[index] = value;
-              if (--remaining === 0) {
-                allPromise.resolve(results);
-              }
-            };
-            var reject = function (error) {
-              allPromise.reject(error);
-            };
-            for (i = 0; i < remaining; i++) {
-              promises[i].then(resolver(i), reject);
-            }
-            return allPromise;
-          }
-          EventTarget.mixin(Promise.prototype);
-          RSVP = {
-            async: async,
-            Promise: Promise,
-            Event: Event,
-            EventTarget: EventTarget,
-            all: all,
-            raiseOnUncaughtExceptions: true
-          };
-          return RSVP;
-        });
-      }());
-      (function () {
-        define('container', [], function () {
-          function InheritingDict(parent) {
-            this.parent = parent;
-            this.dict = {};
-          }
-          InheritingDict.prototype = {
-            get: function (key) {
-              var dict = this.dict;
-              if (dict.hasOwnProperty(key)) {
-                return dict[key];
-              }
-              if (this.parent) {
-                return this.parent.get(key);
-              }
-            },
-            set: function (key, value) {
-              this.dict[key] = value;
-            },
-            has: function (key) {
-              var dict = this.dict;
-              if (dict.hasOwnProperty(key)) {
-                return true;
-              }
-              if (this.parent) {
-                return this.parent.has(key);
-              }
-              return false;
-            },
-            eachLocal: function (callback, binding) {
-              var dict = this.dict;
-              for (var prop in dict) {
-                if (dict.hasOwnProperty(prop)) {
-                  callback.call(binding, prop, dict[prop]);
-                }
-              }
-            }
-          };
-          function Container(parent) {
-            this.parent = parent;
-            this.children = [];
-            this.resolver = parent && parent.resolver || function () {
-            };
-            this.registry = new InheritingDict(parent && parent.registry);
-            this.cache = new InheritingDict(parent && parent.cache);
-            this.typeInjections = new InheritingDict(parent && parent.typeInjections);
-            this.injections = {};
-            this._options = new InheritingDict(parent && parent._options);
-            this._typeOptions = new InheritingDict(parent && parent._typeOptions);
-          }
-          Container.prototype = {
-            child: function () {
-              var container = new Container(this);
-              this.children.push(container);
-              return container;
-            },
-            set: function (object, key, value) {
-              object[key] = value;
-            },
-            register: function (type, name, factory, options) {
-              var fullName;
-              if (type.indexOf(':') !== -1) {
-                options = factory;
-                factory = name;
-                fullName = type;
-              } else {
-                Ember.deprecate('register("' + type + '", "' + name + '") is now deprecated in-favour of register("' + type + ':' + name + '");', false);
-                fullName = type + ':' + name;
-              }
-              var normalizedName = this.normalize(fullName);
-              this.registry.set(normalizedName, factory);
-              this._options.set(normalizedName, options || {});
-            },
-            resolve: function (fullName) {
-              return this.resolver(fullName) || this.registry.get(fullName);
-            },
-            normalize: function (fullName) {
-              return fullName;
-            },
-            lookup: function (fullName, options) {
-              fullName = this.normalize(fullName);
-              options = options || {};
-              if (this.cache.has(fullName) && options.singleton !== false) {
-                return this.cache.get(fullName);
-              }
-              var value = instantiate(this, fullName);
-              if (!value) {
-                return;
-              }
-              if (isSingleton(this, fullName) && options.singleton !== false) {
-                this.cache.set(fullName, value);
-              }
-              return value;
-            },
-            has: function (fullName) {
-              if (this.cache.has(fullName)) {
-                return true;
-              }
-              return !!factoryFor(this, fullName);
-            },
-            optionsForType: function (type, options) {
-              if (this.parent) {
-                illegalChildOperation('optionsForType');
-              }
-              this._typeOptions.set(type, options);
-            },
-            options: function (type, options) {
-              this.optionsForType(type, options);
-            },
-            typeInjection: function (type, property, fullName) {
-              if (this.parent) {
-                illegalChildOperation('typeInjection');
-              }
-              var injections = this.typeInjections.get(type);
-              if (!injections) {
-                injections = [];
-                this.typeInjections.set(type, injections);
-              }
-              injections.push({
-                property: property,
-                fullName: fullName
-              });
-            },
-            injection: function (factoryName, property, injectionName) {
-              if (this.parent) {
-                illegalChildOperation('injection');
-              }
-              if (factoryName.indexOf(':') === -1) {
-                return this.typeInjection(factoryName, property, injectionName);
-              }
-              var injections = this.injections[factoryName] = this.injections[factoryName] || [];
-              injections.push({
-                property: property,
-                fullName: injectionName
-              });
-            },
-            destroy: function () {
-              this.isDestroyed = true;
-              for (var i = 0, l = this.children.length; i < l; i++) {
-                this.children[i].destroy();
-              }
-              this.children = [];
-              eachDestroyable(this, function (item) {
-                item.isDestroying = true;
-              });
-              eachDestroyable(this, function (item) {
-                item.destroy();
-              });
-              delete this.parent;
-              this.isDestroyed = true;
-            },
-            reset: function () {
-              for (var i = 0, l = this.children.length; i < l; i++) {
-                resetCache(this.children[i]);
-              }
-              resetCache(this);
-            }
-          };
-          function illegalChildOperation(operation) {
-            throw new Error(operation + ' is not currently supported on child containers');
-          }
-          function isSingleton(container, fullName) {
-            var singleton = option(container, fullName, 'singleton');
-            return singleton !== false;
-          }
-          function buildInjections(container, injections) {
-            var hash = {};
-            if (!injections) {
-              return hash;
-            }
-            var injection, lookup;
-            for (var i = 0, l = injections.length; i < l; i++) {
-              injection = injections[i];
-              lookup = container.lookup(injection.fullName);
-              hash[injection.property] = lookup;
-            }
-            return hash;
-          }
-          function option(container, fullName, optionName) {
-            var options = container._options.get(fullName);
-            if (options && options[optionName] !== undefined) {
-              return options[optionName];
-            }
-            var type = fullName.split(':')[0];
-            options = container._typeOptions.get(type);
-            if (options) {
-              return options[optionName];
-            }
-          }
-          function factoryFor(container, fullName) {
-            var name = container.normalize(fullName);
-            return container.resolve(name);
-          }
-          function instantiate(container, fullName) {
-            var factory = factoryFor(container, fullName);
-            var splitName = fullName.split(':'), type = splitName[0], name = splitName[1], value;
-            if (option(container, fullName, 'instantiate') === false) {
-              return factory;
-            }
-            if (factory) {
-              var injections = [];
-              injections = injections.concat(container.typeInjections.get(type) || []);
-              injections = injections.concat(container.injections[fullName] || []);
-              var hash = buildInjections(container, injections);
-              hash.container = container;
-              hash._debugContainerKey = fullName;
-              value = factory.create(hash);
-              return value;
-            }
-          }
-          function eachDestroyable(container, callback) {
-            container.cache.eachLocal(function (key, value) {
-              if (option(container, key, 'instantiate') === false) {
-                return;
-              }
-              callback(value);
-            });
-          }
-          function resetCache(container) {
-            container.cache.eachLocal(function (key, value) {
-              if (option(container, key, 'instantiate') === false) {
-                return;
-              }
-              value.destroy();
-            });
-            container.cache.dict = {};
-          }
-          return Container;
-        });
-      }());
-      (function () {
-        var indexOf = Ember.EnumerableUtils.indexOf;
-        var TYPE_MAP = {};
-        var t = 'Boolean Number String Function Array Date RegExp Object'.split(' ');
-        Ember.ArrayPolyfills.forEach.call(t, function (name) {
-          TYPE_MAP['[object ' + name + ']'] = name.toLowerCase();
-        });
-        var toString = Object.prototype.toString;
-        Ember.typeOf = function (item) {
-          var ret;
-          ret = item === null || item === undefined ? String(item) : TYPE_MAP[toString.call(item)] || 'object';
-          if (ret === 'function') {
-            if (Ember.Object && Ember.Object.detect(item))
-              ret = 'class';
-          } else if (ret === 'object') {
-            if (item instanceof Error)
-              ret = 'error';
-            else if (Ember.Object && item instanceof Ember.Object)
-              ret = 'instance';
-            else
-              ret = 'object';
-          }
-          return ret;
-        };
-        Ember.compare = function compare(v, w) {
-          if (v === w) {
-            return 0;
-          }
-          var type1 = Ember.typeOf(v);
-          var type2 = Ember.typeOf(w);
-          var Comparable = Ember.Comparable;
-          if (Comparable) {
-            if (type1 === 'instance' && Comparable.detect(v.constructor)) {
-              return v.constructor.compare(v, w);
-            }
-            if (type2 === 'instance' && Comparable.detect(w.constructor)) {
-              return 1 - w.constructor.compare(w, v);
-            }
-          }
-          var mapping = Ember.ORDER_DEFINITION_MAPPING;
-          if (!mapping) {
-            var order = Ember.ORDER_DEFINITION;
-            mapping = Ember.ORDER_DEFINITION_MAPPING = {};
-            var idx, len;
-            for (idx = 0, len = order.length; idx < len; ++idx) {
-              mapping[order[idx]] = idx;
-            }
-            delete Ember.ORDER_DEFINITION;
-          }
-          var type1Index = mapping[type1];
-          var type2Index = mapping[type2];
-          if (type1Index < type2Index) {
-            return -1;
-          }
-          if (type1Index > type2Index) {
-            return 1;
-          }
-          switch (type1) {
-          case 'boolean':
-          case 'number':
-            if (v < w) {
-              return -1;
-            }
-            if (v > w) {
-              return 1;
-            }
-            return 0;
-          case 'string':
-            var comp = v.localeCompare(w);
-            if (comp < 0) {
-              return -1;
-            }
-            if (comp > 0) {
-              return 1;
-            }
-            return 0;
-          case 'array':
-            var vLen = v.length;
-            var wLen = w.length;
-            var l = Math.min(vLen, wLen);
-            var r = 0;
-            var i = 0;
-            while (r === 0 && i < l) {
-              r = compare(v[i], w[i]);
-              i++;
-            }
-            if (r !== 0) {
-              return r;
-            }
-            if (vLen < wLen) {
-              return -1;
-            }
-            if (vLen > wLen) {
-              return 1;
-            }
-            return 0;
-          case 'instance':
-            if (Ember.Comparable && Ember.Comparable.detect(v)) {
-              return v.compare(v, w);
-            }
-            return 0;
-          case 'date':
-            var vNum = v.getTime();
-            var wNum = w.getTime();
-            if (vNum < wNum) {
-              return -1;
-            }
-            if (vNum > wNum) {
-              return 1;
-            }
-            return 0;
-          default:
-            return 0;
-          }
-        };
-        function _copy(obj, deep, seen, copies) {
-          var ret, loc, key;
-          if ('object' !== typeof obj || obj === null)
-            return obj;
-          if (deep && (loc = indexOf(seen, obj)) >= 0)
-            return copies[loc];
-          Ember.assert('Cannot clone an Ember.Object that does not implement Ember.Copyable', !(obj instanceof Ember.Object) || Ember.Copyable && Ember.Copyable.detect(obj));
-          if (Ember.typeOf(obj) === 'array') {
-            ret = obj.slice();
-            if (deep) {
-              loc = ret.length;
-              while (--loc >= 0)
-                ret[loc] = _copy(ret[loc], deep, seen, copies);
-            }
-          } else if (Ember.Copyable && Ember.Copyable.detect(obj)) {
-            ret = obj.copy(deep, seen, copies);
-          } else {
-            ret = {};
-            for (key in obj) {
-              if (!obj.hasOwnProperty(key))
-                continue;
-              if (key.substring(0, 2) === '__')
-                continue;
-              ret[key] = deep ? _copy(obj[key], deep, seen, copies) : obj[key];
-            }
-          }
-          if (deep) {
-            seen.push(obj);
-            copies.push(ret);
-          }
-          return ret;
-        }
-        Ember.copy = function (obj, deep) {
-          if ('object' !== typeof obj || obj === null)
-            return obj;
-          if (Ember.Copyable && Ember.Copyable.detect(obj))
-            return obj.copy(deep);
-          return _copy(obj, deep, deep ? [] : null, deep ? [] : null);
-        };
-        Ember.inspect = function (obj) {
-          if (typeof obj !== 'object' || obj === null) {
-            return obj + '';
-          }
-          var v, ret = [];
-          for (var key in obj) {
-            if (obj.hasOwnProperty(key)) {
-              v = obj[key];
-              if (v === 'toString') {
-                continue;
-              }
-              if (Ember.typeOf(v) === 'function') {
-                v = 'function() { ... }';
-              }
-              ret.push(key + ': ' + v);
-            }
-          }
-          return '{' + ret.join(', ') + '}';
-        };
-        Ember.isEqual = function (a, b) {
-          if (a && 'function' === typeof a.isEqual)
-            return a.isEqual(b);
-          return a === b;
-        };
-        Ember.ORDER_DEFINITION = Ember.ENV.ORDER_DEFINITION || [
-          'undefined',
-          'null',
-          'boolean',
-          'number',
-          'string',
-          'array',
-          'object',
-          'instance',
-          'function',
-          'class',
-          'date'
-        ];
-        Ember.keys = Object.keys;
-        if (!Ember.keys) {
-          Ember.keys = function (obj) {
-            var ret = [];
-            for (var key in obj) {
-              if (obj.hasOwnProperty(key)) {
-                ret.push(key);
-              }
-            }
-            return ret;
-          };
-        }
-        var errorProps = [
-            'description',
-            'fileName',
-            'lineNumber',
-            'message',
-            'name',
-            'number',
-            'stack'
-          ];
-        Ember.Error = function () {
-          var tmp = Error.prototype.constructor.apply(this, arguments);
-          for (var idx = 0; idx < errorProps.length; idx++) {
-            this[errorProps[idx]] = tmp[errorProps[idx]];
-          }
-        };
-        Ember.Error.prototype = Ember.create(Error.prototype);
-      }());
-      (function () {
-        Ember.RSVP = requireModule('rsvp');
-      }());
-      (function () {
-        var STRING_DASHERIZE_REGEXP = /[ _]/g;
-        var STRING_DASHERIZE_CACHE = {};
-        var STRING_DECAMELIZE_REGEXP = /([a-z])([A-Z])/g;
-        var STRING_CAMELIZE_REGEXP = /(\-|_|\.|\s)+(.)?/g;
-        var STRING_UNDERSCORE_REGEXP_1 = /([a-z\d])([A-Z]+)/g;
-        var STRING_UNDERSCORE_REGEXP_2 = /\-|\s+/g;
-        Ember.STRINGS = {};
-        Ember.String = {
-          fmt: function (str, formats) {
-            var idx = 0;
-            return str.replace(/%@([0-9]+)?/g, function (s, argIndex) {
-              argIndex = argIndex ? parseInt(argIndex, 0) - 1 : idx++;
-              s = formats[argIndex];
-              return (s === null ? '(null)' : s === undefined ? '' : s).toString();
-            });
-          },
-          loc: function (str, formats) {
-            str = Ember.STRINGS[str] || str;
-            return Ember.String.fmt(str, formats);
-          },
-          w: function (str) {
-            return str.split(/\s+/);
-          },
-          decamelize: function (str) {
-            return str.replace(STRING_DECAMELIZE_REGEXP, '$1_$2').toLowerCase();
-          },
-          dasherize: function (str) {
-            var cache = STRING_DASHERIZE_CACHE, hit = cache.hasOwnProperty(str), ret;
-            if (hit) {
-              return cache[str];
-            } else {
-              ret = Ember.String.decamelize(str).replace(STRING_DASHERIZE_REGEXP, '-');
-              cache[str] = ret;
-            }
-            return ret;
-          },
-          camelize: function (str) {
-            return str.replace(STRING_CAMELIZE_REGEXP, function (match, separator, chr) {
-              return chr ? chr.toUpperCase() : '';
-            }).replace(/^([A-Z])/, function (match, separator, chr) {
-              return match.toLowerCase();
-            });
-          },
-          classify: function (str) {
-            var parts = str.split('.'), out = [];
-            for (var i = 0, l = parts.length; i < l; i++) {
-              var camelized = Ember.String.camelize(parts[i]);
-              out.push(camelized.charAt(0).toUpperCase() + camelized.substr(1));
-            }
-            return out.join('.');
-          },
-          underscore: function (str) {
-            return str.replace(STRING_UNDERSCORE_REGEXP_1, '$1_$2').replace(STRING_UNDERSCORE_REGEXP_2, '_').toLowerCase();
-          },
-          capitalize: function (str) {
-            return str.charAt(0).toUpperCase() + str.substr(1);
-          }
-        };
-      }());
-      (function () {
-        var fmt = Ember.String.fmt, w = Ember.String.w, loc = Ember.String.loc, camelize = Ember.String.camelize, decamelize = Ember.String.decamelize, dasherize = Ember.String.dasherize, underscore = Ember.String.underscore, capitalize = Ember.String.capitalize, classify = Ember.String.classify;
-        if (Ember.EXTEND_PROTOTYPES === true || Ember.EXTEND_PROTOTYPES.String) {
-          String.prototype.fmt = function () {
-            return fmt(this, arguments);
-          };
-          String.prototype.w = function () {
-            return w(this);
-          };
-          String.prototype.loc = function () {
-            return loc(this, arguments);
-          };
-          String.prototype.camelize = function () {
-            return camelize(this);
-          };
-          String.prototype.decamelize = function () {
-            return decamelize(this);
-          };
-          String.prototype.dasherize = function () {
-            return dasherize(this);
-          };
-          String.prototype.underscore = function () {
-            return underscore(this);
-          };
-          String.prototype.classify = function () {
-            return classify(this);
-          };
-          String.prototype.capitalize = function () {
-            return capitalize(this);
-          };
-        }
-      }());
-      (function () {
-        var a_slice = Array.prototype.slice;
-        if (Ember.EXTEND_PROTOTYPES === true || Ember.EXTEND_PROTOTYPES.Function) {
-          Function.prototype.property = function () {
-            var ret = Ember.computed(this);
-            return ret.property.apply(ret, arguments);
-          };
-          Function.prototype.observes = function () {
-            this.__ember_observes__ = a_slice.call(arguments);
-            return this;
-          };
-          Function.prototype.observesBefore = function () {
-            this.__ember_observesBefore__ = a_slice.call(arguments);
-            return this;
-          };
-        }
-      }());
-      (function () {
-      }());
-      (function () {
-        var get = Ember.get, set = Ember.set;
-        var a_slice = Array.prototype.slice;
-        var a_indexOf = Ember.EnumerableUtils.indexOf;
-        var contexts = [];
-        function popCtx() {
-          return contexts.length === 0 ? {} : contexts.pop();
-        }
-        function pushCtx(ctx) {
-          contexts.push(ctx);
-          return null;
-        }
-        function iter(key, value) {
-          var valueProvided = arguments.length === 2;
-          function i(item) {
-            var cur = get(item, key);
-            return valueProvided ? value === cur : !!cur;
-          }
-          return i;
-        }
-        Ember.Enumerable = Ember.Mixin.create({
-          isEnumerable: true,
-          nextObject: Ember.required(Function),
-          firstObject: Ember.computed(function () {
-            if (get(this, 'length') === 0)
-              return undefined;
-            var context = popCtx(), ret;
-            ret = this.nextObject(0, null, context);
-            pushCtx(context);
-            return ret;
-          }).property('[]'),
-          lastObject: Ember.computed(function () {
-            var len = get(this, 'length');
-            if (len === 0)
-              return undefined;
-            var context = popCtx(), idx = 0, cur, last = null;
-            do {
-              last = cur;
-              cur = this.nextObject(idx++, last, context);
-            } while (cur !== undefined);
-            pushCtx(context);
-            return last;
-          }).property('[]'),
-          contains: function (obj) {
-            return this.find(function (item) {
-              return item === obj;
-            }) !== undefined;
-          },
-          forEach: function (callback, target) {
-            if (typeof callback !== 'function')
-              throw new TypeError;
-            var len = get(this, 'length'), last = null, context = popCtx();
-            if (target === undefined)
-              target = null;
-            for (var idx = 0; idx < len; idx++) {
-              var next = this.nextObject(idx, last, context);
-              callback.call(target, next, idx, this);
-              last = next;
-            }
-            last = null;
-            context = pushCtx(context);
-            return this;
-          },
-          getEach: function (key) {
-            return this.mapProperty(key);
-          },
-          setEach: function (key, value) {
-            return this.forEach(function (item) {
-              set(item, key, value);
-            });
-          },
-          map: function (callback, target) {
-            var ret = Ember.A([]);
-            this.forEach(function (x, idx, i) {
-              ret[idx] = callback.call(target, x, idx, i);
-            });
-            return ret;
-          },
-          mapProperty: function (key) {
-            return this.map(function (next) {
-              return get(next, key);
-            });
-          },
-          filter: function (callback, target) {
-            var ret = Ember.A([]);
-            this.forEach(function (x, idx, i) {
-              if (callback.call(target, x, idx, i))
-                ret.push(x);
-            });
-            return ret;
-          },
-          reject: function (callback, target) {
-            return this.filter(function () {
-              return !callback.apply(target, arguments);
-            });
-          },
-          filterProperty: function (key, value) {
-            return this.filter(iter.apply(this, arguments));
-          },
-          rejectProperty: function (key, value) {
-            var exactValue = function (item) {
-                return get(item, key) === value;
-              }, hasValue = function (item) {
-                return !!get(item, key);
-              }, use = arguments.length === 2 ? exactValue : hasValue;
-            return this.reject(use);
-          },
-          find: function (callback, target) {
-            var len = get(this, 'length');
-            if (target === undefined)
-              target = null;
-            var last = null, next, found = false, ret;
-            var context = popCtx();
-            for (var idx = 0; idx < len && !found; idx++) {
-              next = this.nextObject(idx, last, context);
-              if (found = callback.call(target, next, idx, this))
-                ret = next;
-              last = next;
-            }
-            next = last = null;
-            context = pushCtx(context);
-            return ret;
-          },
-          findProperty: function (key, value) {
-            return this.find(iter.apply(this, arguments));
-          },
-          every: function (callback, target) {
-            return !this.find(function (x, idx, i) {
-              return !callback.call(target, x, idx, i);
-            });
-          },
-          everyProperty: function (key, value) {
-            return this.every(iter.apply(this, arguments));
-          },
-          some: function (callback, target) {
-            return !!this.find(function (x, idx, i) {
-              return !!callback.call(target, x, idx, i);
-            });
-          },
-          someProperty: function (key, value) {
-            return this.some(iter.apply(this, arguments));
-          },
-          reduce: function (callback, initialValue, reducerProperty) {
-            if (typeof callback !== 'function') {
-              throw new TypeError;
-            }
-            var ret = initialValue;
-            this.forEach(function (item, i) {
-              ret = callback.call(null, ret, item, i, this, reducerProperty);
-            }, this);
-            return ret;
-          },
-          invoke: function (methodName) {
-            var args, ret = Ember.A([]);
-            if (arguments.length > 1)
-              args = a_slice.call(arguments, 1);
-            this.forEach(function (x, idx) {
-              var method = x && x[methodName];
-              if ('function' === typeof method) {
-                ret[idx] = args ? method.apply(x, args) : method.call(x);
-              }
-            }, this);
-            return ret;
-          },
-          toArray: function () {
-            var ret = Ember.A([]);
-            this.forEach(function (o, idx) {
-              ret[idx] = o;
-            });
-            return ret;
-          },
-          compact: function () {
-            return this.filter(function (value) {
-              return value != null;
-            });
-          },
-          without: function (value) {
-            if (!this.contains(value))
-              return this;
-            var ret = Ember.A([]);
-            this.forEach(function (k) {
-              if (k !== value)
-                ret[ret.length] = k;
-            });
-            return ret;
-          },
-          uniq: function () {
-            var ret = Ember.A([]);
-            this.forEach(function (k) {
-              if (a_indexOf(ret, k) < 0)
-                ret.push(k);
-            });
-            return ret;
-          },
-          '[]': Ember.computed(function (key, value) {
-            return this;
-          }),
-          addEnumerableObserver: function (target, opts) {
-            var willChange = opts && opts.willChange || 'enumerableWillChange', didChange = opts && opts.didChange || 'enumerableDidChange';
-            var hasObservers = get(this, 'hasEnumerableObservers');
-            if (!hasObservers)
-              Ember.propertyWillChange(this, 'hasEnumerableObservers');
-            Ember.addListener(this, '@enumerable:before', target, willChange);
-            Ember.addListener(this, '@enumerable:change', target, didChange);
-            if (!hasObservers)
-              Ember.propertyDidChange(this, 'hasEnumerableObservers');
-            return this;
-          },
-          removeEnumerableObserver: function (target, opts) {
-            var willChange = opts && opts.willChange || 'enumerableWillChange', didChange = opts && opts.didChange || 'enumerableDidChange';
-            var hasObservers = get(this, 'hasEnumerableObservers');
-            if (hasObservers)
-              Ember.propertyWillChange(this, 'hasEnumerableObservers');
-            Ember.removeListener(this, '@enumerable:before', target, willChange);
-            Ember.removeListener(this, '@enumerable:change', target, didChange);
-            if (hasObservers)
-              Ember.propertyDidChange(this, 'hasEnumerableObservers');
-            return this;
-          },
-          hasEnumerableObservers: Ember.computed(function () {
-            return Ember.hasListeners(this, '@enumerable:change') || Ember.hasListeners(this, '@enumerable:before');
-          }),
-          enumerableContentWillChange: function (removing, adding) {
-            var removeCnt, addCnt, hasDelta;
-            if ('number' === typeof removing)
-              removeCnt = removing;
-            else if (removing)
-              removeCnt = get(removing, 'length');
-            else
-              removeCnt = removing = -1;
-            if ('number' === typeof adding)
-              addCnt = adding;
-            else if (adding)
-              addCnt = get(adding, 'length');
-            else
-              addCnt = adding = -1;
-            hasDelta = addCnt < 0 || removeCnt < 0 || addCnt - removeCnt !== 0;
-            if (removing === -1)
-              removing = null;
-            if (adding === -1)
-              adding = null;
-            Ember.propertyWillChange(this, '[]');
-            if (hasDelta)
-              Ember.propertyWillChange(this, 'length');
-            Ember.sendEvent(this, '@enumerable:before', [
-              this,
-              removing,
-              adding
-            ]);
-            return this;
-          },
-          enumerableContentDidChange: function (removing, adding) {
-            var removeCnt, addCnt, hasDelta;
-            if ('number' === typeof removing)
-              removeCnt = removing;
-            else if (removing)
-              removeCnt = get(removing, 'length');
-            else
-              removeCnt = removing = -1;
-            if ('number' === typeof adding)
-              addCnt = adding;
-            else if (adding)
-              addCnt = get(adding, 'length');
-            else
-              addCnt = adding = -1;
-            hasDelta = addCnt < 0 || removeCnt < 0 || addCnt - removeCnt !== 0;
-            if (removing === -1)
-              removing = null;
-            if (adding === -1)
-              adding = null;
-            Ember.sendEvent(this, '@enumerable:change', [
-              this,
-              removing,
-              adding
-            ]);
-            if (hasDelta)
-              Ember.propertyDidChange(this, 'length');
-            Ember.propertyDidChange(this, '[]');
-            return this;
-          }
-        });
-      }());
-      (function () {
-        var get = Ember.get, set = Ember.set, map = Ember.EnumerableUtils.map, cacheFor = Ember.cacheFor;
-        function none(obj) {
-          return obj === null || obj === undefined;
-        }
-        Ember.Array = Ember.Mixin.create(Ember.Enumerable, {
-          isSCArray: true,
-          length: Ember.required(),
-          objectAt: function (idx) {
-            if (idx < 0 || idx >= get(this, 'length'))
-              return undefined;
-            return get(this, idx);
-          },
-          objectsAt: function (indexes) {
-            var self = this;
-            return map(indexes, function (idx) {
-              return self.objectAt(idx);
-            });
-          },
-          nextObject: function (idx) {
-            return this.objectAt(idx);
-          },
-          '[]': Ember.computed(function (key, value) {
-            if (value !== undefined)
-              this.replace(0, get(this, 'length'), value);
-            return this;
-          }),
-          firstObject: Ember.computed(function () {
-            return this.objectAt(0);
-          }),
-          lastObject: Ember.computed(function () {
-            return this.objectAt(get(this, 'length') - 1);
-          }),
-          contains: function (obj) {
-            return this.indexOf(obj) >= 0;
-          },
-          slice: function (beginIndex, endIndex) {
-            var ret = Ember.A([]);
-            var length = get(this, 'length');
-            if (none(beginIndex))
-              beginIndex = 0;
-            if (none(endIndex) || endIndex > length)
-              endIndex = length;
-            if (beginIndex < 0)
-              beginIndex = length + beginIndex;
-            if (endIndex < 0)
-              endIndex = length + endIndex;
-            while (beginIndex < endIndex) {
-              ret[ret.length] = this.objectAt(beginIndex++);
-            }
-            return ret;
-          },
-          indexOf: function (object, startAt) {
-            var idx, len = get(this, 'length');
-            if (startAt === undefined)
-              startAt = 0;
-            if (startAt < 0)
-              startAt += len;
-            for (idx = startAt; idx < len; idx++) {
-              if (this.objectAt(idx, true) === object)
-                return idx;
-            }
-            return -1;
-          },
-          lastIndexOf: function (object, startAt) {
-            var idx, len = get(this, 'length');
-            if (startAt === undefined || startAt >= len)
-              startAt = len - 1;
-            if (startAt < 0)
-              startAt += len;
-            for (idx = startAt; idx >= 0; idx--) {
-              if (this.objectAt(idx) === object)
-                return idx;
-            }
-            return -1;
-          },
-          addArrayObserver: function (target, opts) {
-            var willChange = opts && opts.willChange || 'arrayWillChange', didChange = opts && opts.didChange || 'arrayDidChange';
-            var hasObservers = get(this, 'hasArrayObservers');
-            if (!hasObservers)
-              Ember.propertyWillChange(this, 'hasArrayObservers');
-            Ember.addListener(this, '@array:before', target, willChange);
-            Ember.addListener(this, '@array:change', target, didChange);
-            if (!hasObservers)
-              Ember.propertyDidChange(this, 'hasArrayObservers');
-            return this;
-          },
-          removeArrayObserver: function (target, opts) {
-            var willChange = opts && opts.willChange || 'arrayWillChange', didChange = opts && opts.didChange || 'arrayDidChange';
-            var hasObservers = get(this, 'hasArrayObservers');
-            if (hasObservers)
-              Ember.propertyWillChange(this, 'hasArrayObservers');
-            Ember.removeListener(this, '@array:before', target, willChange);
-            Ember.removeListener(this, '@array:change', target, didChange);
-            if (hasObservers)
-              Ember.propertyDidChange(this, 'hasArrayObservers');
-            return this;
-          },
-          hasArrayObservers: Ember.computed(function () {
-            return Ember.hasListeners(this, '@array:change') || Ember.hasListeners(this, '@array:before');
-          }),
-          arrayContentWillChange: function (startIdx, removeAmt, addAmt) {
-            if (startIdx === undefined) {
-              startIdx = 0;
-              removeAmt = addAmt = -1;
-            } else {
-              if (removeAmt === undefined)
-                removeAmt = -1;
-              if (addAmt === undefined)
-                addAmt = -1;
-            }
-            if (Ember.isWatching(this, '@each')) {
-              get(this, '@each');
-            }
-            Ember.sendEvent(this, '@array:before', [
-              this,
-              startIdx,
-              removeAmt,
-              addAmt
-            ]);
-            var removing, lim;
-            if (startIdx >= 0 && removeAmt >= 0 && get(this, 'hasEnumerableObservers')) {
-              removing = [];
-              lim = startIdx + removeAmt;
-              for (var idx = startIdx; idx < lim; idx++)
-                removing.push(this.objectAt(idx));
-            } else {
-              removing = removeAmt;
-            }
-            this.enumerableContentWillChange(removing, addAmt);
-            return this;
-          },
-          arrayContentDidChange: function (startIdx, removeAmt, addAmt) {
-            if (startIdx === undefined) {
-              startIdx = 0;
-              removeAmt = addAmt = -1;
-            } else {
-              if (removeAmt === undefined)
-                removeAmt = -1;
-              if (addAmt === undefined)
-                addAmt = -1;
-            }
-            var adding, lim;
-            if (startIdx >= 0 && addAmt >= 0 && get(this, 'hasEnumerableObservers')) {
-              adding = [];
-              lim = startIdx + addAmt;
-              for (var idx = startIdx; idx < lim; idx++)
-                adding.push(this.objectAt(idx));
-            } else {
-              adding = addAmt;
-            }
-            this.enumerableContentDidChange(removeAmt, adding);
-            Ember.sendEvent(this, '@array:change', [
-              this,
-              startIdx,
-              removeAmt,
-              addAmt
-            ]);
-            var length = get(this, 'length'), cachedFirst = cacheFor(this, 'firstObject'), cachedLast = cacheFor(this, 'lastObject');
-            if (this.objectAt(0) !== cachedFirst) {
-              Ember.propertyWillChange(this, 'firstObject');
-              Ember.propertyDidChange(this, 'firstObject');
-            }
-            if (this.objectAt(length - 1) !== cachedLast) {
-              Ember.propertyWillChange(this, 'lastObject');
-              Ember.propertyDidChange(this, 'lastObject');
-            }
-            return this;
-          },
-          '@each': Ember.computed(function () {
-            if (!this.__each)
-              this.__each = new Ember.EachProxy(this);
-            return this.__each;
-          })
-        });
-      }());
-      (function () {
-        Ember.Comparable = Ember.Mixin.create({
-          isComparable: true,
-          compare: Ember.required(Function)
-        });
-      }());
-      (function () {
-        var get = Ember.get, set = Ember.set;
-        Ember.Copyable = Ember.Mixin.create({
-          copy: Ember.required(Function),
-          frozenCopy: function () {
-            if (Ember.Freezable && Ember.Freezable.detect(this)) {
-              return get(this, 'isFrozen') ? this : this.copy().freeze();
-            } else {
-              throw new Error(Ember.String.fmt('%@ does not support freezing', [this]));
-            }
-          }
-        });
-      }());
-      (function () {
-        var get = Ember.get, set = Ember.set;
-        Ember.Freezable = Ember.Mixin.create({
-          isFrozen: false,
-          freeze: function () {
-            if (get(this, 'isFrozen'))
-              return this;
-            set(this, 'isFrozen', true);
-            return this;
-          }
-        });
-        Ember.FROZEN_ERROR = 'Frozen object cannot be modified.';
-      }());
-      (function () {
-        var forEach = Ember.EnumerableUtils.forEach;
-        Ember.MutableEnumerable = Ember.Mixin.create(Ember.Enumerable, {
-          addObject: Ember.required(Function),
-          addObjects: function (objects) {
-            Ember.beginPropertyChanges(this);
-            forEach(objects, function (obj) {
-              this.addObject(obj);
-            }, this);
-            Ember.endPropertyChanges(this);
-            return this;
-          },
-          removeObject: Ember.required(Function),
-          removeObjects: function (objects) {
-            Ember.beginPropertyChanges(this);
-            forEach(objects, function (obj) {
-              this.removeObject(obj);
-            }, this);
-            Ember.endPropertyChanges(this);
-            return this;
-          }
-        });
-      }());
-      (function () {
-        var OUT_OF_RANGE_EXCEPTION = 'Index out of range';
-        var EMPTY = [];
-        var get = Ember.get, set = Ember.set;
-        Ember.MutableArray = Ember.Mixin.create(Ember.Array, Ember.MutableEnumerable, {
-          replace: Ember.required(),
-          clear: function () {
-            var len = get(this, 'length');
-            if (len === 0)
-              return this;
-            this.replace(0, len, EMPTY);
-            return this;
-          },
-          insertAt: function (idx, object) {
-            if (idx > get(this, 'length'))
-              throw new Error(OUT_OF_RANGE_EXCEPTION);
-            this.replace(idx, 0, [object]);
-            return this;
-          },
-          removeAt: function (start, len) {
-            if ('number' === typeof start) {
-              if (start < 0 || start >= get(this, 'length')) {
-                throw new Error(OUT_OF_RANGE_EXCEPTION);
-              }
-              if (len === undefined)
-                len = 1;
-              this.replace(start, len, EMPTY);
-            }
-            return this;
-          },
-          pushObject: function (obj) {
-            this.insertAt(get(this, 'length'), obj);
-            return obj;
-          },
-          pushObjects: function (objects) {
-            this.replace(get(this, 'length'), 0, objects);
-            return this;
-          },
-          popObject: function () {
-            var len = get(this, 'length');
-            if (len === 0)
-              return null;
-            var ret = this.objectAt(len - 1);
-            this.removeAt(len - 1, 1);
-            return ret;
-          },
-          shiftObject: function () {
-            if (get(this, 'length') === 0)
-              return null;
-            var ret = this.objectAt(0);
-            this.removeAt(0);
-            return ret;
-          },
-          unshiftObject: function (obj) {
-            this.insertAt(0, obj);
-            return obj;
-          },
-          unshiftObjects: function (objects) {
-            this.replace(0, 0, objects);
-            return this;
-          },
-          reverseObjects: function () {
-            var len = get(this, 'length');
-            if (len === 0)
-              return this;
-            var objects = this.toArray().reverse();
-            this.replace(0, len, objects);
-            return this;
-          },
-          setObjects: function (objects) {
-            if (objects.length === 0)
-              return this.clear();
-            var len = get(this, 'length');
-            this.replace(0, len, objects);
-            return this;
-          },
-          removeObject: function (obj) {
-            var loc = get(this, 'length') || 0;
-            while (--loc >= 0) {
-              var curObject = this.objectAt(loc);
-              if (curObject === obj)
-                this.removeAt(loc);
-            }
-            return this;
-          },
-          addObject: function (obj) {
-            if (!this.contains(obj))
-              this.pushObject(obj);
-            return this;
-          }
-        });
-      }());
-      (function () {
-        var get = Ember.get, set = Ember.set;
-        Ember.Observable = Ember.Mixin.create({
-          get: function (keyName) {
-            return get(this, keyName);
-          },
-          getProperties: function () {
-            var ret = {};
-            var propertyNames = arguments;
-            if (arguments.length === 1 && Ember.typeOf(arguments[0]) === 'array') {
-              propertyNames = arguments[0];
-            }
-            for (var i = 0; i < propertyNames.length; i++) {
-              ret[propertyNames[i]] = get(this, propertyNames[i]);
-            }
-            return ret;
-          },
-          set: function (keyName, value) {
-            set(this, keyName, value);
-            return this;
-          },
-          setProperties: function (hash) {
-            return Ember.setProperties(this, hash);
-          },
-          beginPropertyChanges: function () {
-            Ember.beginPropertyChanges();
-            return this;
-          },
-          endPropertyChanges: function () {
-            Ember.endPropertyChanges();
-            return this;
-          },
-          propertyWillChange: function (keyName) {
-            Ember.propertyWillChange(this, keyName);
-            return this;
-          },
-          propertyDidChange: function (keyName) {
-            Ember.propertyDidChange(this, keyName);
-            return this;
-          },
-          notifyPropertyChange: function (keyName) {
-            this.propertyWillChange(keyName);
-            this.propertyDidChange(keyName);
-            return this;
-          },
-          addBeforeObserver: function (key, target, method) {
-            Ember.addBeforeObserver(this, key, target, method);
-          },
-          addObserver: function (key, target, method) {
-            Ember.addObserver(this, key, target, method);
-          },
-          removeObserver: function (key, target, method) {
-            Ember.removeObserver(this, key, target, method);
-          },
-          hasObserverFor: function (key) {
-            return Ember.hasListeners(this, key + ':change');
-          },
-          getPath: function (path) {
-            Ember.deprecate('getPath is deprecated since get now supports paths');
-            return this.get(path);
-          },
-          setPath: function (path, value) {
-            Ember.deprecate('setPath is deprecated since set now supports paths');
-            return this.set(path, value);
-          },
-          getWithDefault: function (keyName, defaultValue) {
-            return Ember.getWithDefault(this, keyName, defaultValue);
-          },
-          incrementProperty: function (keyName, increment) {
-            if (!increment) {
-              increment = 1;
-            }
-            set(this, keyName, (get(this, keyName) || 0) + increment);
-            return get(this, keyName);
-          },
-          decrementProperty: function (keyName, increment) {
-            if (!increment) {
-              increment = 1;
-            }
-            set(this, keyName, (get(this, keyName) || 0) - increment);
-            return get(this, keyName);
-          },
-          toggleProperty: function (keyName) {
-            set(this, keyName, !get(this, keyName));
-            return get(this, keyName);
-          },
-          cacheFor: function (keyName) {
-            return Ember.cacheFor(this, keyName);
-          },
-          observersForKey: function (keyName) {
-            return Ember.observersFor(this, keyName);
-          }
-        });
-      }());
-      (function () {
-        var get = Ember.get, set = Ember.set;
-        Ember.TargetActionSupport = Ember.Mixin.create({
-          target: null,
-          action: null,
-          targetObject: Ember.computed(function () {
-            var target = get(this, 'target');
-            if (Ember.typeOf(target) === 'string') {
-              var value = get(this, target);
-              if (value === undefined) {
-                value = get(Ember.lookup, target);
-              }
-              return value;
-            } else {
-              return target;
-            }
-          }).property('target'),
-          triggerAction: function () {
-            var action = get(this, 'action'), target = get(this, 'targetObject');
-            if (target && action) {
-              var ret;
-              if (typeof target.send === 'function') {
-                ret = target.send(action, this);
-              } else {
-                if (typeof action === 'string') {
-                  action = target[action];
-                }
-                ret = action.call(target, this);
-              }
-              if (ret !== false)
-                ret = true;
-              return ret;
-            } else {
-              return false;
-            }
-          }
-        });
-      }());
-      (function () {
-        Ember.Evented = Ember.Mixin.create({
-          on: function (name, target, method) {
-            Ember.addListener(this, name, target, method);
-            return this;
-          },
-          one: function (name, target, method) {
-            if (!method) {
-              method = target;
-              target = null;
-            }
-            Ember.addListener(this, name, target, method, true);
-            return this;
-          },
-          trigger: function (name) {
-            var args = [], i, l;
-            for (i = 1, l = arguments.length; i < l; i++) {
-              args.push(arguments[i]);
-            }
-            Ember.sendEvent(this, name, args);
-          },
-          fire: function (name) {
-            Ember.deprecate('Ember.Evented#fire() has been deprecated in favor of trigger() for compatibility with jQuery. It will be removed in 1.0. Please update your code to call trigger() instead.');
-            this.trigger.apply(this, arguments);
-          },
-          off: function (name, target, method) {
-            Ember.removeListener(this, name, target, method);
-            return this;
-          },
-          has: function (name) {
-            return Ember.hasListeners(this, name);
-          }
-        });
-      }());
-      (function () {
-        var RSVP = requireModule('rsvp');
-        RSVP.async = function (callback, binding) {
-          Ember.run.schedule('actions', binding, callback);
-        };
-        var get = Ember.get;
-        Ember.DeferredMixin = Ember.Mixin.create({
-          then: function (doneCallback, failCallback) {
-            var promise = get(this, 'promise');
-            return promise.then.apply(promise, arguments);
-          },
-          resolve: function (value) {
-            get(this, 'promise').resolve(value);
-          },
-          reject: function (value) {
-            get(this, 'promise').reject(value);
-          },
-          promise: Ember.computed(function () {
-            return new RSVP.Promise;
-          })
-        });
-      }());
-      (function () {
-      }());
-      (function () {
-        Ember.Container = requireModule('container');
-        Ember.Container.set = Ember.set;
-      }());
-      (function () {
-        var set = Ember.set, get = Ember.get, o_create = Ember.create, o_defineProperty = Ember.platform.defineProperty, GUID_KEY = Ember.GUID_KEY, guidFor = Ember.guidFor, generateGuid = Ember.generateGuid, meta = Ember.meta, rewatch = Ember.rewatch, finishChains = Ember.finishChains, destroy = Ember.destroy, schedule = Ember.run.schedule, Mixin = Ember.Mixin, applyMixin = Mixin._apply, finishPartial = Mixin.finishPartial, reopen = Mixin.prototype.reopen, MANDATORY_SETTER = Ember.ENV.MANDATORY_SETTER, indexOf = Ember.EnumerableUtils.indexOf;
-        var undefinedDescriptor = {
-            configurable: true,
-            writable: true,
-            enumerable: false,
-            value: undefined
-          };
-        function makeCtor() {
-          var wasApplied = false, initMixins, initProperties;
-          var Class = function () {
-            if (!wasApplied) {
-              Class.proto();
-            }
-            o_defineProperty(this, GUID_KEY, undefinedDescriptor);
-            o_defineProperty(this, '_super', undefinedDescriptor);
-            var m = meta(this);
-            m.proto = this;
-            if (initMixins) {
-              var mixins = initMixins;
-              initMixins = null;
-              this.reopen.apply(this, mixins);
-            }
-            if (initProperties) {
-              var props = initProperties;
-              initProperties = null;
-              var concatenatedProperties = this.concatenatedProperties;
-              for (var i = 0, l = props.length; i < l; i++) {
-                var properties = props[i];
-                for (var keyName in properties) {
-                  if (!properties.hasOwnProperty(keyName)) {
-                    continue;
-                  }
-                  var value = properties[keyName], IS_BINDING = Ember.IS_BINDING;
-                  if (IS_BINDING.test(keyName)) {
-                    var bindings = m.bindings;
-                    if (!bindings) {
-                      bindings = m.bindings = {};
-                    } else if (!m.hasOwnProperty('bindings')) {
-                      bindings = m.bindings = o_create(m.bindings);
-                    }
-                    bindings[keyName] = value;
-                  }
-                  var desc = m.descs[keyName];
-                  Ember.assert('Ember.Object.create no longer supports defining computed properties.', !(value instanceof Ember.ComputedProperty));
-                  Ember.assert('Ember.Object.create no longer supports defining methods that call _super.', !(typeof value === 'function' && value.toString().indexOf('._super') !== -1));
-                  if (concatenatedProperties && indexOf(concatenatedProperties, keyName) >= 0) {
-                    var baseValue = this[keyName];
-                    if (baseValue) {
-                      if ('function' === typeof baseValue.concat) {
-                        value = baseValue.concat(value);
-                      } else {
-                        value = Ember.makeArray(baseValue).concat(value);
-                      }
-                    } else {
-                      value = Ember.makeArray(value);
-                    }
-                  }
-                  if (desc) {
-                    desc.set(this, keyName, value);
-                  } else {
-                    if (typeof this.setUnknownProperty === 'function' && !(keyName in this)) {
-                      this.setUnknownProperty(keyName, value);
-                    } else if (MANDATORY_SETTER) {
-                      Ember.defineProperty(this, keyName, null, value);
-                    } else {
-                      this[keyName] = value;
-                    }
-                  }
-                }
-              }
-            }
-            finishPartial(this, m);
-            delete m.proto;
-            finishChains(this);
-            this.init.apply(this, arguments);
-          };
-          Class.toString = Mixin.prototype.toString;
-          Class.willReopen = function () {
-            if (wasApplied) {
-              Class.PrototypeMixin = Mixin.create(Class.PrototypeMixin);
-            }
-            wasApplied = false;
-          };
-          Class._initMixins = function (args) {
-            initMixins = args;
-          };
-          Class._initProperties = function (args) {
-            initProperties = args;
-          };
-          Class.proto = function () {
-            var superclass = Class.superclass;
-            if (superclass) {
-              superclass.proto();
-            }
-            if (!wasApplied) {
-              wasApplied = true;
-              Class.PrototypeMixin.applyPartial(Class.prototype);
-              rewatch(Class.prototype);
-            }
-            return this.prototype;
-          };
-          return Class;
-        }
-        var CoreObject = makeCtor();
-        CoreObject.toString = function () {
-          return 'Ember.CoreObject';
-        };
-        CoreObject.PrototypeMixin = Mixin.create({
-          reopen: function () {
-            applyMixin(this, arguments, true);
-            return this;
-          },
-          isInstance: true,
-          init: function () {
-          },
-          concatenatedProperties: null,
-          isDestroyed: false,
-          isDestroying: false,
-          destroy: function () {
-            if (this._didCallDestroy) {
-              return;
-            }
-            this.isDestroying = true;
-            this._didCallDestroy = true;
-            schedule('destroy', this, this._scheduledDestroy);
-            return this;
-          },
-          willDestroy: Ember.K,
-          _scheduledDestroy: function () {
-            if (this.willDestroy) {
-              this.willDestroy();
-            }
-            destroy(this);
-            this.isDestroyed = true;
-            if (this.didDestroy) {
-              this.didDestroy();
-            }
-          },
-          bind: function (to, from) {
-            if (!(from instanceof Ember.Binding)) {
-              from = Ember.Binding.from(from);
-            }
-            from.to(to).connect(this);
-            return from;
-          },
-          toString: function toString() {
-            var hasToStringExtension = typeof this.toStringExtension === 'function', extension = hasToStringExtension ? ':' + this.toStringExtension() : '';
-            var ret = '<' + this.constructor.toString() + ':' + guidFor(this) + extension + '>';
-            this.toString = makeToString(ret);
-            return ret;
-          }
-        });
-        CoreObject.PrototypeMixin.ownerConstructor = CoreObject;
-        function makeToString(ret) {
-          return function () {
-            return ret;
-          };
-        }
-        if (Ember.config.overridePrototypeMixin) {
-          Ember.config.overridePrototypeMixin(CoreObject.PrototypeMixin);
-        }
-        CoreObject.__super__ = null;
-        var ClassMixin = Mixin.create({
-            ClassMixin: Ember.required(),
-            PrototypeMixin: Ember.required(),
-            isClass: true,
-            isMethod: false,
-            extend: function () {
-              var Class = makeCtor(), proto;
-              Class.ClassMixin = Mixin.create(this.ClassMixin);
-              Class.PrototypeMixin = Mixin.create(this.PrototypeMixin);
-              Class.ClassMixin.ownerConstructor = Class;
-              Class.PrototypeMixin.ownerConstructor = Class;
-              reopen.apply(Class.PrototypeMixin, arguments);
-              Class.superclass = this;
-              Class.__super__ = this.prototype;
-              proto = Class.prototype = o_create(this.prototype);
-              proto.constructor = Class;
-              generateGuid(proto, 'ember');
-              meta(proto).proto = proto;
-              Class.ClassMixin.apply(Class);
-              return Class;
-            },
-            createWithMixins: function () {
-              var C = this;
-              if (arguments.length > 0) {
-                this._initMixins(arguments);
-              }
-              return new C;
-            },
-            create: function () {
-              var C = this;
-              if (arguments.length > 0) {
-                this._initProperties(arguments);
-              }
-              return new C;
-            },
-            reopen: function () {
-              this.willReopen();
-              reopen.apply(this.PrototypeMixin, arguments);
-              return this;
-            },
-            reopenClass: function () {
-              reopen.apply(this.ClassMixin, arguments);
-              applyMixin(this, arguments, false);
-              return this;
-            },
-            detect: function (obj) {
-              if ('function' !== typeof obj) {
-                return false;
-              }
-              while (obj) {
-                if (obj === this) {
-                  return true;
-                }
-                obj = obj.superclass;
-              }
-              return false;
-            },
-            detectInstance: function (obj) {
-              return obj instanceof this;
-            },
-            metaForProperty: function (key) {
-              var desc = meta(this.proto(), false).descs[key];
-              Ember.assert("metaForProperty() could not find a computed property with key '" + key + "'.", !!desc && desc instanceof Ember.ComputedProperty);
-              return desc._meta || {};
-            },
-            eachComputedProperty: function (callback, binding) {
-              var proto = this.proto(), descs = meta(proto).descs, empty = {}, property;
-              for (var name in descs) {
-                property = descs[name];
-                if (property instanceof Ember.ComputedProperty) {
-                  callback.call(binding || this, name, property._meta || empty);
-                }
-              }
-            }
-          });
-        ClassMixin.ownerConstructor = CoreObject;
-        if (Ember.config.overrideClassMixin) {
-          Ember.config.overrideClassMixin(ClassMixin);
-        }
-        CoreObject.ClassMixin = ClassMixin;
-        ClassMixin.apply(CoreObject);
-        Ember.CoreObject = CoreObject;
-      }());
-      (function () {
-        Ember.Object = Ember.CoreObject.extend(Ember.Observable);
-        Ember.Object.toString = function () {
-          return 'Ember.Object';
-        };
-      }());
-      (function () {
-        var get = Ember.get, indexOf = Ember.ArrayPolyfills.indexOf;
-        var Namespace = Ember.Namespace = Ember.Object.extend({
-            isNamespace: true,
-            init: function () {
-              Ember.Namespace.NAMESPACES.push(this);
-              Ember.Namespace.PROCESSED = false;
-            },
-            toString: function () {
-              var name = get(this, 'name');
-              if (name) {
-                return name;
-              }
-              findNamespaces();
-              return this[Ember.GUID_KEY + '_name'];
-            },
-            nameClasses: function () {
-              processNamespace([this.toString()], this, {});
-            },
-            destroy: function () {
-              var namespaces = Ember.Namespace.NAMESPACES;
-              Ember.lookup[this.toString()] = undefined;
-              namespaces.splice(indexOf.call(namespaces, this), 1);
-              this._super();
-            }
-          });
-        Namespace.reopenClass({
-          NAMESPACES: [Ember],
-          NAMESPACES_BY_ID: {},
-          PROCESSED: false,
-          processAll: processAllNamespaces,
-          byName: function (name) {
-            if (!Ember.BOOTED) {
-              processAllNamespaces();
-            }
-            return NAMESPACES_BY_ID[name];
-          }
-        });
-        var NAMESPACES_BY_ID = Namespace.NAMESPACES_BY_ID;
-        var hasOwnProp = {}.hasOwnProperty, guidFor = Ember.guidFor;
-        function processNamespace(paths, root, seen) {
-          var idx = paths.length;
-          NAMESPACES_BY_ID[paths.join('.')] = root;
-          for (var key in root) {
-            if (!hasOwnProp.call(root, key)) {
-              continue;
-            }
-            var obj = root[key];
-            paths[idx] = key;
-            if (obj && obj.toString === classToString) {
-              obj.toString = makeToString(paths.join('.'));
-              obj[NAME_KEY] = paths.join('.');
-            } else if (obj && obj.isNamespace) {
-              if (seen[guidFor(obj)]) {
-                continue;
-              }
-              seen[guidFor(obj)] = true;
-              processNamespace(paths, obj, seen);
-            }
-          }
-          paths.length = idx;
-        }
-        function findNamespaces() {
-          var Namespace = Ember.Namespace, lookup = Ember.lookup, obj, isNamespace;
-          if (Namespace.PROCESSED) {
-            return;
-          }
-          for (var prop in lookup) {
-            if (prop === 'parent' || prop === 'top' || prop === 'frameElement') {
-              continue;
-            }
-            if (prop === 'globalStorage' && lookup.StorageList && lookup.globalStorage instanceof lookup.StorageList) {
-              continue;
-            }
-            if (lookup.hasOwnProperty && !lookup.hasOwnProperty(prop)) {
-              continue;
-            }
-            try {
-              obj = Ember.lookup[prop];
-              isNamespace = obj && obj.isNamespace;
-            } catch (e) {
-              continue;
-            }
-            if (isNamespace) {
-              Ember.deprecate('Namespaces should not begin with lowercase.', /^[A-Z]/.test(prop));
-              obj[NAME_KEY] = prop;
-            }
-          }
-        }
-        var NAME_KEY = Ember.NAME_KEY = Ember.GUID_KEY + '_name';
-        function superClassString(mixin) {
-          var superclass = mixin.superclass;
-          if (superclass) {
-            if (superclass[NAME_KEY]) {
-              return superclass[NAME_KEY];
-            } else {
-              return superClassString(superclass);
-            }
-          } else {
-            return;
-          }
-        }
-        function classToString() {
-          if (!Ember.BOOTED && !this[NAME_KEY]) {
-            processAllNamespaces();
-          }
-          var ret;
-          if (this[NAME_KEY]) {
-            ret = this[NAME_KEY];
-          } else {
-            var str = superClassString(this);
-            if (str) {
-              ret = '(subclass of ' + str + ')';
-            } else {
-              ret = '(unknown mixin)';
-            }
-            this.toString = makeToString(ret);
-          }
-          return ret;
-        }
-        function processAllNamespaces() {
-          var unprocessedNamespaces = !Namespace.PROCESSED, unprocessedMixins = Ember.anyUnprocessedMixins;
-          if (unprocessedNamespaces) {
-            findNamespaces();
-            Namespace.PROCESSED = true;
-          }
-          if (unprocessedNamespaces || unprocessedMixins) {
-            var namespaces = Namespace.NAMESPACES, namespace;
-            for (var i = 0, l = namespaces.length; i < l; i++) {
-              namespace = namespaces[i];
-              processNamespace([namespace.toString()], namespace, {});
-            }
-            Ember.anyUnprocessedMixins = false;
-          }
-        }
-        function makeToString(ret) {
-          return function () {
-            return ret;
-          };
-        }
-        Ember.Mixin.prototype.toString = classToString;
-      }());
-      (function () {
-        Ember.Application = Ember.Namespace.extend();
-      }());
-      (function () {
-        var OUT_OF_RANGE_EXCEPTION = 'Index out of range';
-        var EMPTY = [];
-        var get = Ember.get, set = Ember.set;
-        Ember.ArrayProxy = Ember.Object.extend(Ember.MutableArray, {
-          content: null,
-          arrangedContent: Ember.computed.alias('content'),
-          objectAtContent: function (idx) {
-            return get(this, 'arrangedContent').objectAt(idx);
-          },
-          replaceContent: function (idx, amt, objects) {
-            get(this, 'content').replace(idx, amt, objects);
-          },
-          _contentWillChange: Ember.beforeObserver(function () {
-            this._teardownContent();
-          }, 'content'),
-          _teardownContent: function () {
-            var content = get(this, 'content');
-            if (content) {
-              content.removeArrayObserver(this, {
-                willChange: 'contentArrayWillChange',
-                didChange: 'contentArrayDidChange'
-              });
-            }
-          },
-          contentArrayWillChange: Ember.K,
-          contentArrayDidChange: Ember.K,
-          _contentDidChange: Ember.observer(function () {
-            var content = get(this, 'content');
-            Ember.assert("Can't set ArrayProxy's content to itself", content !== this);
-            this._setupContent();
-          }, 'content'),
-          _setupContent: function () {
-            var content = get(this, 'content');
-            if (content) {
-              content.addArrayObserver(this, {
-                willChange: 'contentArrayWillChange',
-                didChange: 'contentArrayDidChange'
-              });
-            }
-          },
-          _arrangedContentWillChange: Ember.beforeObserver(function () {
-            var arrangedContent = get(this, 'arrangedContent'), len = arrangedContent ? get(arrangedContent, 'length') : 0;
-            this.arrangedContentArrayWillChange(this, 0, len, undefined);
-            this.arrangedContentWillChange(this);
-            this._teardownArrangedContent(arrangedContent);
-          }, 'arrangedContent'),
-          _arrangedContentDidChange: Ember.observer(function () {
-            var arrangedContent = get(this, 'arrangedContent'), len = arrangedContent ? get(arrangedContent, 'length') : 0;
-            Ember.assert("Can't set ArrayProxy's content to itself", arrangedContent !== this);
-            this._setupArrangedContent();
-            this.arrangedContentDidChange(this);
-            this.arrangedContentArrayDidChange(this, 0, undefined, len);
-          }, 'arrangedContent'),
-          _setupArrangedContent: function () {
-            var arrangedContent = get(this, 'arrangedContent');
-            if (arrangedContent) {
-              arrangedContent.addArrayObserver(this, {
-                willChange: 'arrangedContentArrayWillChange',
-                didChange: 'arrangedContentArrayDidChange'
-              });
-            }
-          },
-          _teardownArrangedContent: function () {
-            var arrangedContent = get(this, 'arrangedContent');
-            if (arrangedContent) {
-              arrangedContent.removeArrayObserver(this, {
-                willChange: 'arrangedContentArrayWillChange',
-                didChange: 'arrangedContentArrayDidChange'
-              });
-            }
-          },
-          arrangedContentWillChange: Ember.K,
-          arrangedContentDidChange: Ember.K,
-          objectAt: function (idx) {
-            return get(this, 'content') && this.objectAtContent(idx);
-          },
-          length: Ember.computed(function () {
-            var arrangedContent = get(this, 'arrangedContent');
-            return arrangedContent ? get(arrangedContent, 'length') : 0;
-          }),
-          _replace: function (idx, amt, objects) {
-            var content = get(this, 'content');
-            Ember.assert('The content property of ' + this.constructor + ' should be set before modifying it', content);
-            if (content)
-              this.replaceContent(idx, amt, objects);
-            return this;
-          },
-          replace: function () {
-            if (get(this, 'arrangedContent') === get(this, 'content')) {
-              this._replace.apply(this, arguments);
-            } else {
-              throw new Ember.Error('Using replace on an arranged ArrayProxy is not allowed.');
-            }
-          },
-          _insertAt: function (idx, object) {
-            if (idx > get(this, 'content.length'))
-              throw new Error(OUT_OF_RANGE_EXCEPTION);
-            this._replace(idx, 0, [object]);
-            return this;
-          },
-          insertAt: function (idx, object) {
-            if (get(this, 'arrangedContent') === get(this, 'content')) {
-              return this._insertAt(idx, object);
-            } else {
-              throw new Ember.Error('Using insertAt on an arranged ArrayProxy is not allowed.');
-            }
-          },
-          removeAt: function (start, len) {
-            if ('number' === typeof start) {
-              var content = get(this, 'content'), arrangedContent = get(this, 'arrangedContent'), indices = [], i;
-              if (start < 0 || start >= get(this, 'length')) {
-                throw new Error(OUT_OF_RANGE_EXCEPTION);
-              }
-              if (len === undefined)
-                len = 1;
-              for (i = start; i < start + len; i++) {
-                indices.push(content.indexOf(arrangedContent.objectAt(i)));
-              }
-              indices.sort(function (a, b) {
-                return b - a;
-              });
-              Ember.beginPropertyChanges();
-              for (i = 0; i < indices.length; i++) {
-                this._replace(indices[i], 1, EMPTY);
-              }
-              Ember.endPropertyChanges();
-            }
-            return this;
-          },
-          pushObject: function (obj) {
-            this._insertAt(get(this, 'content.length'), obj);
-            return obj;
-          },
-          pushObjects: function (objects) {
-            this._replace(get(this, 'length'), 0, objects);
-            return this;
-          },
-          setObjects: function (objects) {
-            if (objects.length === 0)
-              return this.clear();
-            var len = get(this, 'length');
-            this._replace(0, len, objects);
-            return this;
-          },
-          unshiftObject: function (obj) {
-            this._insertAt(0, obj);
-            return obj;
-          },
-          unshiftObjects: function (objects) {
-            this._replace(0, 0, objects);
-            return this;
-          },
-          slice: function () {
-            var arr = this.toArray();
-            return arr.slice.apply(arr, arguments);
-          },
-          arrangedContentArrayWillChange: function (item, idx, removedCnt, addedCnt) {
-            this.arrayContentWillChange(idx, removedCnt, addedCnt);
-          },
-          arrangedContentArrayDidChange: function (item, idx, removedCnt, addedCnt) {
-            this.arrayContentDidChange(idx, removedCnt, addedCnt);
-          },
-          init: function () {
-            this._super();
-            this._setupContent();
-            this._setupArrangedContent();
-          },
-          willDestroy: function () {
-            this._teardownArrangedContent();
-            this._teardownContent();
-          }
-        });
-      }());
-      (function () {
-        var get = Ember.get, set = Ember.set, fmt = Ember.String.fmt, addBeforeObserver = Ember.addBeforeObserver, addObserver = Ember.addObserver, removeBeforeObserver = Ember.removeBeforeObserver, removeObserver = Ember.removeObserver, propertyWillChange = Ember.propertyWillChange, propertyDidChange = Ember.propertyDidChange;
-        function contentPropertyWillChange(content, contentKey) {
-          var key = contentKey.slice(8);
-          if (key in this) {
-            return;
-          }
-          propertyWillChange(this, key);
-        }
-        function contentPropertyDidChange(content, contentKey) {
-          var key = contentKey.slice(8);
-          if (key in this) {
-            return;
-          }
-          propertyDidChange(this, key);
-        }
-        Ember.ObjectProxy = Ember.Object.extend({
-          content: null,
-          _contentDidChange: Ember.observer(function () {
-            Ember.assert("Can't set ObjectProxy's content to itself", this.get('content') !== this);
-          }, 'content'),
-          isTruthy: Ember.computed.bool('content'),
-          _debugContainerKey: null,
-          willWatchProperty: function (key) {
-            var contentKey = 'content.' + key;
-            addBeforeObserver(this, contentKey, null, contentPropertyWillChange);
-            addObserver(this, contentKey, null, contentPropertyDidChange);
-          },
-          didUnwatchProperty: function (key) {
-            var contentKey = 'content.' + key;
-            removeBeforeObserver(this, contentKey, null, contentPropertyWillChange);
-            removeObserver(this, contentKey, null, contentPropertyDidChange);
-          },
-          unknownProperty: function (key) {
-            var content = get(this, 'content');
-            if (content) {
-              return get(content, key);
-            }
-          },
-          setUnknownProperty: function (key, value) {
-            var content = get(this, 'content');
-            Ember.assert(fmt("Cannot delegate set('%@', %@) to the 'content' property of object proxy %@: its 'content' is undefined.", [
-              key,
-              value,
-              this
-            ]), content);
-            return set(content, key, value);
-          }
-        });
-        Ember.ObjectProxy.reopenClass({
-          create: function () {
-            var mixin, prototype, i, l, properties, keyName;
-            if (arguments.length) {
-              prototype = this.proto();
-              for (i = 0, l = arguments.length; i < l; i++) {
-                properties = arguments[i];
-                for (keyName in properties) {
-                  if (!properties.hasOwnProperty(keyName) || keyName in prototype) {
-                    continue;
-                  }
-                  if (!mixin)
-                    mixin = {};
-                  mixin[keyName] = null;
-                }
-              }
-              if (mixin)
-                this._initMixins([mixin]);
-            }
-            return this._super.apply(this, arguments);
-          }
-        });
-      }());
-      (function () {
-        var set = Ember.set, get = Ember.get, guidFor = Ember.guidFor;
-        var forEach = Ember.EnumerableUtils.forEach;
-        var EachArray = Ember.Object.extend(Ember.Array, {
-            init: function (content, keyName, owner) {
-              this._super();
-              this._keyName = keyName;
-              this._owner = owner;
-              this._content = content;
-            },
-            objectAt: function (idx) {
-              var item = this._content.objectAt(idx);
-              return item && get(item, this._keyName);
-            },
-            length: Ember.computed(function () {
-              var content = this._content;
-              return content ? get(content, 'length') : 0;
-            })
-          });
-        var IS_OBSERVER = /^.+:(before|change)$/;
-        function addObserverForContentKey(content, keyName, proxy, idx, loc) {
-          var objects = proxy._objects, guid;
-          if (!objects)
-            objects = proxy._objects = {};
-          while (--loc >= idx) {
-            var item = content.objectAt(loc);
-            if (item) {
-              Ember.addBeforeObserver(item, keyName, proxy, 'contentKeyWillChange');
-              Ember.addObserver(item, keyName, proxy, 'contentKeyDidChange');
-              guid = guidFor(item);
-              if (!objects[guid])
-                objects[guid] = [];
-              objects[guid].push(loc);
-            }
-          }
-        }
-        function removeObserverForContentKey(content, keyName, proxy, idx, loc) {
-          var objects = proxy._objects;
-          if (!objects)
-            objects = proxy._objects = {};
-          var indicies, guid;
-          while (--loc >= idx) {
-            var item = content.objectAt(loc);
-            if (item) {
-              Ember.removeBeforeObserver(item, keyName, proxy, 'contentKeyWillChange');
-              Ember.removeObserver(item, keyName, proxy, 'contentKeyDidChange');
-              guid = guidFor(item);
-              indicies = objects[guid];
-              indicies[indicies.indexOf(loc)] = null;
-            }
-          }
-        }
-        Ember.EachProxy = Ember.Object.extend({
-          init: function (content) {
-            this._super();
-            this._content = content;
-            content.addArrayObserver(this);
-            forEach(Ember.watchedEvents(this), function (eventName) {
-              this.didAddListener(eventName);
-            }, this);
-          },
-          unknownProperty: function (keyName, value) {
-            var ret;
-            ret = new EachArray(this._content, keyName, this);
-            Ember.defineProperty(this, keyName, null, ret);
-            this.beginObservingContentKey(keyName);
-            return ret;
-          },
-          arrayWillChange: function (content, idx, removedCnt, addedCnt) {
-            var keys = this._keys, key, lim;
-            lim = removedCnt > 0 ? idx + removedCnt : -1;
-            Ember.beginPropertyChanges(this);
-            for (key in keys) {
-              if (!keys.hasOwnProperty(key)) {
-                continue;
-              }
-              if (lim > 0)
-                removeObserverForContentKey(content, key, this, idx, lim);
-              Ember.propertyWillChange(this, key);
-            }
-            Ember.propertyWillChange(this._content, '@each');
-            Ember.endPropertyChanges(this);
-          },
-          arrayDidChange: function (content, idx, removedCnt, addedCnt) {
-            var keys = this._keys, key, lim;
-            lim = addedCnt > 0 ? idx + addedCnt : -1;
-            Ember.beginPropertyChanges(this);
-            for (key in keys) {
-              if (!keys.hasOwnProperty(key)) {
-                continue;
-              }
-              if (lim > 0)
-                addObserverForContentKey(content, key, this, idx, lim);
-              Ember.propertyDidChange(this, key);
-            }
-            Ember.propertyDidChange(this._content, '@each');
-            Ember.endPropertyChanges(this);
-          },
-          didAddListener: function (eventName) {
-            if (IS_OBSERVER.test(eventName)) {
-              this.beginObservingContentKey(eventName.slice(0, -7));
-            }
-          },
-          didRemoveListener: function (eventName) {
-            if (IS_OBSERVER.test(eventName)) {
-              this.stopObservingContentKey(eventName.slice(0, -7));
-            }
-          },
-          beginObservingContentKey: function (keyName) {
-            var keys = this._keys;
-            if (!keys)
-              keys = this._keys = {};
-            if (!keys[keyName]) {
-              keys[keyName] = 1;
-              var content = this._content, len = get(content, 'length');
-              addObserverForContentKey(content, keyName, this, 0, len);
-            } else {
-              keys[keyName]++;
-            }
-          },
-          stopObservingContentKey: function (keyName) {
-            var keys = this._keys;
-            if (keys && keys[keyName] > 0 && --keys[keyName] <= 0) {
-              var content = this._content, len = get(content, 'length');
-              removeObserverForContentKey(content, keyName, this, 0, len);
-            }
-          },
-          contentKeyWillChange: function (obj, keyName) {
-            Ember.propertyWillChange(this, keyName);
-          },
-          contentKeyDidChange: function (obj, keyName) {
-            Ember.propertyDidChange(this, keyName);
-          }
-        });
-      }());
-      (function () {
-        var get = Ember.get, set = Ember.set;
-        var NativeArray = Ember.Mixin.create(Ember.MutableArray, Ember.Observable, Ember.Copyable, {
-            get: function (key) {
-              if (key === 'length')
-                return this.length;
-              else if ('number' === typeof key)
-                return this[key];
-              else
-                return this._super(key);
-            },
-            objectAt: function (idx) {
-              return this[idx];
-            },
-            replace: function (idx, amt, objects) {
-              if (this.isFrozen)
-                throw Ember.FROZEN_ERROR;
-              var len = objects ? get(objects, 'length') : 0;
-              this.arrayContentWillChange(idx, amt, len);
-              if (!objects || objects.length === 0) {
-                this.splice(idx, amt);
-              } else {
-                var args = [
-                    idx,
-                    amt
-                  ].concat(objects);
-                this.splice.apply(this, args);
-              }
-              this.arrayContentDidChange(idx, amt, len);
-              return this;
-            },
-            unknownProperty: function (key, value) {
-              var ret;
-              if (value !== undefined && ret === undefined) {
-                ret = this[key] = value;
-              }
-              return ret;
-            },
-            indexOf: function (object, startAt) {
-              var idx, len = this.length;
-              if (startAt === undefined)
-                startAt = 0;
-              else
-                startAt = startAt < 0 ? Math.ceil(startAt) : Math.floor(startAt);
-              if (startAt < 0)
-                startAt += len;
-              for (idx = startAt; idx < len; idx++) {
-                if (this[idx] === object)
-                  return idx;
-              }
-              return -1;
-            },
-            lastIndexOf: function (object, startAt) {
-              var idx, len = this.length;
-              if (startAt === undefined)
-                startAt = len - 1;
-              else
-                startAt = startAt < 0 ? Math.ceil(startAt) : Math.floor(startAt);
-              if (startAt < 0)
-                startAt += len;
-              for (idx = startAt; idx >= 0; idx--) {
-                if (this[idx] === object)
-                  return idx;
-              }
-              return -1;
-            },
-            copy: function (deep) {
-              if (deep) {
-                return this.map(function (item) {
-                  return Ember.copy(item, true);
-                });
-              }
-              return this.slice();
-            }
-          });
-        var ignore = ['length'];
-        Ember.EnumerableUtils.forEach(NativeArray.keys(), function (methodName) {
-          if (Array.prototype[methodName])
-            ignore.push(methodName);
-        });
-        if (ignore.length > 0) {
-          NativeArray = NativeArray.without.apply(NativeArray, ignore);
-        }
-        Ember.NativeArray = NativeArray;
-        Ember.A = function (arr) {
-          if (arr === undefined) {
-            arr = [];
-          }
-          return Ember.Array.detect(arr) ? arr : Ember.NativeArray.apply(arr);
-        };
-        Ember.NativeArray.activate = function () {
-          NativeArray.apply(Array.prototype);
-          Ember.A = function (arr) {
-            return arr || [];
-          };
-        };
-        if (Ember.EXTEND_PROTOTYPES === true || Ember.EXTEND_PROTOTYPES.Array) {
-          Ember.NativeArray.activate();
-        }
-      }());
-      (function () {
-        var get = Ember.get, set = Ember.set, guidFor = Ember.guidFor, none = Ember.isNone, fmt = Ember.String.fmt;
-        Ember.Set = Ember.CoreObject.extend(Ember.MutableEnumerable, Ember.Copyable, Ember.Freezable, {
-          length: 0,
-          clear: function () {
-            if (this.isFrozen) {
-              throw new Error(Ember.FROZEN_ERROR);
-            }
-            var len = get(this, 'length');
-            if (len === 0) {
-              return this;
-            }
-            var guid;
-            this.enumerableContentWillChange(len, 0);
-            Ember.propertyWillChange(this, 'firstObject');
-            Ember.propertyWillChange(this, 'lastObject');
-            for (var i = 0; i < len; i++) {
-              guid = guidFor(this[i]);
-              delete this[guid];
-              delete this[i];
-            }
-            set(this, 'length', 0);
-            Ember.propertyDidChange(this, 'firstObject');
-            Ember.propertyDidChange(this, 'lastObject');
-            this.enumerableContentDidChange(len, 0);
-            return this;
-          },
-          isEqual: function (obj) {
-            if (!Ember.Enumerable.detect(obj))
-              return false;
-            var loc = get(this, 'length');
-            if (get(obj, 'length') !== loc)
-              return false;
-            while (--loc >= 0) {
-              if (!obj.contains(this[loc]))
-                return false;
-            }
-            return true;
-          },
-          add: Ember.aliasMethod('addObject'),
-          remove: Ember.aliasMethod('removeObject'),
-          pop: function () {
-            if (get(this, 'isFrozen'))
-              throw new Error(Ember.FROZEN_ERROR);
-            var obj = this.length > 0 ? this[this.length - 1] : null;
-            this.remove(obj);
-            return obj;
-          },
-          push: Ember.aliasMethod('addObject'),
-          shift: Ember.aliasMethod('pop'),
-          unshift: Ember.aliasMethod('push'),
-          addEach: Ember.aliasMethod('addObjects'),
-          removeEach: Ember.aliasMethod('removeObjects'),
-          init: function (items) {
-            this._super();
-            if (items)
-              this.addObjects(items);
-          },
-          nextObject: function (idx) {
-            return this[idx];
-          },
-          firstObject: Ember.computed(function () {
-            return this.length > 0 ? this[0] : undefined;
-          }),
-          lastObject: Ember.computed(function () {
-            return this.length > 0 ? this[this.length - 1] : undefined;
-          }),
-          addObject: function (obj) {
-            if (get(this, 'isFrozen'))
-              throw new Error(Ember.FROZEN_ERROR);
-            if (none(obj))
-              return this;
-            var guid = guidFor(obj), idx = this[guid], len = get(this, 'length'), added;
-            if (idx >= 0 && idx < len && this[idx] === obj)
-              return this;
-            added = [obj];
-            this.enumerableContentWillChange(null, added);
-            Ember.propertyWillChange(this, 'lastObject');
-            len = get(this, 'length');
-            this[guid] = len;
-            this[len] = obj;
-            set(this, 'length', len + 1);
-            Ember.propertyDidChange(this, 'lastObject');
-            this.enumerableContentDidChange(null, added);
-            return this;
-          },
-          removeObject: function (obj) {
-            if (get(this, 'isFrozen'))
-              throw new Error(Ember.FROZEN_ERROR);
-            if (none(obj))
-              return this;
-            var guid = guidFor(obj), idx = this[guid], len = get(this, 'length'), isFirst = idx === 0, isLast = idx === len - 1, last, removed;
-            if (idx >= 0 && idx < len && this[idx] === obj) {
-              removed = [obj];
-              this.enumerableContentWillChange(removed, null);
-              if (isFirst) {
-                Ember.propertyWillChange(this, 'firstObject');
-              }
-              if (isLast) {
-                Ember.propertyWillChange(this, 'lastObject');
-              }
-              if (idx < len - 1) {
-                last = this[len - 1];
-                this[idx] = last;
-                this[guidFor(last)] = idx;
-              }
-              delete this[guid];
-              delete this[len - 1];
-              set(this, 'length', len - 1);
-              if (isFirst) {
-                Ember.propertyDidChange(this, 'firstObject');
-              }
-              if (isLast) {
-                Ember.propertyDidChange(this, 'lastObject');
-              }
-              this.enumerableContentDidChange(removed, null);
-            }
-            return this;
-          },
-          contains: function (obj) {
-            return this[guidFor(obj)] >= 0;
-          },
-          copy: function () {
-            var C = this.constructor, ret = new C, loc = get(this, 'length');
-            set(ret, 'length', loc);
-            while (--loc >= 0) {
-              ret[loc] = this[loc];
-              ret[guidFor(this[loc])] = loc;
-            }
-            return ret;
-          },
-          toString: function () {
-            var len = this.length, idx, array = [];
-            for (idx = 0; idx < len; idx++) {
-              array[idx] = this[idx];
-            }
-            return fmt('Ember.Set<%@>', [array.join(',')]);
-          }
-        });
-      }());
-      (function () {
-        var DeferredMixin = Ember.DeferredMixin, get = Ember.get;
-        var Deferred = Ember.Object.extend(DeferredMixin);
-        Deferred.reopenClass({
-          promise: function (callback, binding) {
-            var deferred = Deferred.create();
-            callback.call(binding, deferred);
-            return get(deferred, 'promise');
-          }
-        });
-        Ember.Deferred = Deferred;
-      }());
-      (function () {
-        var loadHooks = Ember.ENV.EMBER_LOAD_HOOKS || {};
-        var loaded = {};
-        Ember.onLoad = function (name, callback) {
-          var object;
-          loadHooks[name] = loadHooks[name] || Ember.A();
-          loadHooks[name].pushObject(callback);
-          if (object = loaded[name]) {
-            callback(object);
-          }
-        };
-        Ember.runLoadHooks = function (name, object) {
-          var hooks;
-          loaded[name] = object;
-          if (hooks = loadHooks[name]) {
-            loadHooks[name].forEach(function (callback) {
-              callback(object);
-            });
-          }
-        };
-      }());
-      (function () {
-      }());
-      (function () {
-        var get = Ember.get;
-        Ember.ControllerMixin = Ember.Mixin.create({
-          isController: true,
-          target: null,
-          container: null,
-          store: null,
-          model: Ember.computed.alias('content'),
-          send: function (actionName) {
-            var args = [].slice.call(arguments, 1), target;
-            if (this[actionName]) {
-              Ember.assert('The controller ' + this + ' does not have the action ' + actionName, typeof this[actionName] === 'function');
-              this[actionName].apply(this, args);
-            } else if (target = get(this, 'target')) {
-              Ember.assert('The target for controller ' + this + ' (' + target + ') did not define a `send` method', typeof target.send === 'function');
-              target.send.apply(target, arguments);
-            }
-          }
-        });
-        Ember.Controller = Ember.Object.extend(Ember.ControllerMixin);
-      }());
-      (function () {
-        var get = Ember.get, set = Ember.set, forEach = Ember.EnumerableUtils.forEach;
-        Ember.SortableMixin = Ember.Mixin.create(Ember.MutableEnumerable, {
-          sortProperties: null,
-          sortAscending: true,
-          orderBy: function (item1, item2) {
-            var result = 0, sortProperties = get(this, 'sortProperties'), sortAscending = get(this, 'sortAscending');
-            Ember.assert('you need to define `sortProperties`', !!sortProperties);
-            forEach(sortProperties, function (propertyName) {
-              if (result === 0) {
-                result = Ember.compare(get(item1, propertyName), get(item2, propertyName));
-                if (result !== 0 && !sortAscending) {
-                  result = -1 * result;
-                }
-              }
-            });
-            return result;
-          },
-          destroy: function () {
-            var content = get(this, 'content'), sortProperties = get(this, 'sortProperties');
-            if (content && sortProperties) {
-              forEach(content, function (item) {
-                forEach(sortProperties, function (sortProperty) {
-                  Ember.removeObserver(item, sortProperty, this, 'contentItemSortPropertyDidChange');
-                }, this);
-              }, this);
-            }
-            return this._super();
-          },
-          isSorted: Ember.computed.bool('sortProperties'),
-          arrangedContent: Ember.computed('content', 'sortProperties.@each', function (key, value) {
-            var content = get(this, 'content'), isSorted = get(this, 'isSorted'), sortProperties = get(this, 'sortProperties'), self = this;
-            if (content && isSorted) {
-              content = content.slice();
-              content.sort(function (item1, item2) {
-                return self.orderBy(item1, item2);
-              });
-              forEach(content, function (item) {
-                forEach(sortProperties, function (sortProperty) {
-                  Ember.addObserver(item, sortProperty, this, 'contentItemSortPropertyDidChange');
-                }, this);
-              }, this);
-              return Ember.A(content);
-            }
-            return content;
-          }),
-          _contentWillChange: Ember.beforeObserver(function () {
-            var content = get(this, 'content'), sortProperties = get(this, 'sortProperties');
-            if (content && sortProperties) {
-              forEach(content, function (item) {
-                forEach(sortProperties, function (sortProperty) {
-                  Ember.removeObserver(item, sortProperty, this, 'contentItemSortPropertyDidChange');
-                }, this);
-              }, this);
-            }
-            this._super();
-          }, 'content'),
-          sortAscendingWillChange: Ember.beforeObserver(function () {
-            this._lastSortAscending = get(this, 'sortAscending');
-          }, 'sortAscending'),
-          sortAscendingDidChange: Ember.observer(function () {
-            if (get(this, 'sortAscending') !== this._lastSortAscending) {
-              var arrangedContent = get(this, 'arrangedContent');
-              arrangedContent.reverseObjects();
-            }
-          }, 'sortAscending'),
-          contentArrayWillChange: function (array, idx, removedCount, addedCount) {
-            var isSorted = get(this, 'isSorted');
-            if (isSorted) {
-              var arrangedContent = get(this, 'arrangedContent');
-              var removedObjects = array.slice(idx, idx + removedCount);
-              var sortProperties = get(this, 'sortProperties');
-              forEach(removedObjects, function (item) {
-                arrangedContent.removeObject(item);
-                forEach(sortProperties, function (sortProperty) {
-                  Ember.removeObserver(item, sortProperty, this, 'contentItemSortPropertyDidChange');
-                }, this);
-              }, this);
-            }
-            return this._super(array, idx, removedCount, addedCount);
-          },
-          contentArrayDidChange: function (array, idx, removedCount, addedCount) {
-            var isSorted = get(this, 'isSorted'), sortProperties = get(this, 'sortProperties');
-            if (isSorted) {
-              var addedObjects = array.slice(idx, idx + addedCount);
-              forEach(addedObjects, function (item) {
-                this.insertItemSorted(item);
-                forEach(sortProperties, function (sortProperty) {
-                  Ember.addObserver(item, sortProperty, this, 'contentItemSortPropertyDidChange');
-                }, this);
-              }, this);
-            }
-            return this._super(array, idx, removedCount, addedCount);
-          },
-          insertItemSorted: function (item) {
-            var arrangedContent = get(this, 'arrangedContent');
-            var length = get(arrangedContent, 'length');
-            var idx = this._binarySearch(item, 0, length);
-            arrangedContent.insertAt(idx, item);
-          },
-          contentItemSortPropertyDidChange: function (item) {
-            var arrangedContent = get(this, 'arrangedContent'), oldIndex = arrangedContent.indexOf(item), leftItem = arrangedContent.objectAt(oldIndex - 1), rightItem = arrangedContent.objectAt(oldIndex + 1), leftResult = leftItem && this.orderBy(item, leftItem), rightResult = rightItem && this.orderBy(item, rightItem);
-            if (leftResult < 0 || rightResult > 0) {
-              arrangedContent.removeObject(item);
-              this.insertItemSorted(item);
-            }
-          },
-          _binarySearch: function (item, low, high) {
-            var mid, midItem, res, arrangedContent;
-            if (low === high) {
-              return low;
-            }
-            arrangedContent = get(this, 'arrangedContent');
-            mid = low + Math.floor((high - low) / 2);
-            midItem = arrangedContent.objectAt(mid);
-            res = this.orderBy(midItem, item);
-            if (res < 0) {
-              return this._binarySearch(item, mid + 1, high);
-            } else if (res > 0) {
-              return this._binarySearch(item, low, mid);
-            }
-            return mid;
-          }
-        });
-      }());
-      (function () {
-        var get = Ember.get, set = Ember.set, forEach = Ember.EnumerableUtils.forEach, replace = Ember.EnumerableUtils.replace;
-        Ember.ArrayController = Ember.ArrayProxy.extend(Ember.ControllerMixin, Ember.SortableMixin, {
-          itemController: null,
-          lookupItemController: function (object) {
-            return get(this, 'itemController');
-          },
-          objectAtContent: function (idx) {
-            var length = get(this, 'length'), arrangedContent = get(this, 'arrangedContent'), object = arrangedContent && arrangedContent.objectAt(idx);
-            if (idx >= 0 && idx < length) {
-              var controllerClass = this.lookupItemController(object);
-              if (controllerClass) {
-                return this.controllerAt(idx, object, controllerClass);
-              }
-            }
-            return object;
-          },
-          arrangedContentDidChange: function () {
-            this._super();
-            this._resetSubControllers();
-          },
-          arrayContentDidChange: function (idx, removedCnt, addedCnt) {
-            var subControllers = get(this, '_subControllers'), subControllersToRemove = subControllers.slice(idx, idx + removedCnt);
-            forEach(subControllersToRemove, function (subController) {
-              if (subController) {
-                subController.destroy();
-              }
-            });
-            replace(subControllers, idx, removedCnt, new Array(addedCnt));
-            this._super(idx, removedCnt, addedCnt);
-          },
-          init: function () {
-            this._super();
-            if (!this.get('content')) {
-              Ember.defineProperty(this, 'content', undefined, Ember.A());
-            }
-            this.set('_subControllers', Ember.A());
-          },
-          controllerAt: function (idx, object, controllerClass) {
-            var container = get(this, 'container'), subControllers = get(this, '_subControllers'), subController = subControllers[idx];
-            if (!subController) {
-              subController = container.lookup('controller:' + controllerClass, { singleton: false });
-              subControllers[idx] = subController;
-            }
-            if (!subController) {
-              throw new Error('Could not resolve itemController: "' + controllerClass + '"');
-            }
-            subController.set('target', this);
-            subController.set('content', object);
-            return subController;
-          },
-          _subControllers: null,
-          _resetSubControllers: function () {
-            var subControllers = get(this, '_subControllers');
-            forEach(subControllers, function (subController) {
-              if (subController) {
-                subController.destroy();
-              }
-            });
-            this.set('_subControllers', Ember.A());
-          }
-        });
-      }());
-      (function () {
-        Ember.ObjectController = Ember.ObjectProxy.extend(Ember.ControllerMixin);
-      }());
-      (function () {
-      }());
-      (function () {
-      }());
-    }());
   });
   require.define('/lib/functional-helpers.js', function (module, exports, __dirname, __filename) {
     var concat, foldl, map, nub, span;
@@ -45174,7 +37044,7 @@
               this.observe(tok);
             break;
           case '///':
-            this.scan(/(?:[^[/#\\]+|\/\/?(?!\/)|\\.)+/);
+            this.scan(/(?:[^[\/#\\]+|\/\/?(?!\/)|\\.)+/);
             if (tok = this.scan(/#{|\/\/\/|\\/)) {
               this.observe(tok);
             } else if (this.ss.scan(/#/)) {
@@ -45189,12 +37059,12 @@
               this.observe(tok);
             break;
           case 'heregexp-#':
-            this.ss.scan(/(?:[^\n/]+|\/\/?(?!\/))+/);
+            this.ss.scan(/(?:[^\n\/]+|\/\/?(?!\/))+/);
             if (tok = this.scan(/\n|\/\/\//))
               this.observe(tok);
             break;
           case '/':
-            this.scan(/[^[/\\]+/);
+            this.scan(/[^[\/\\]+/);
             if (tok = this.scan(/[\/\\]/)) {
               this.observe(tok);
             } else if (tok = this.scan(/\[/)) {
