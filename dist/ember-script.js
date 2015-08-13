@@ -6991,9 +6991,9 @@
             if (observes = _.find(this.annotations, function (a) {
                 return a['instanceof'](CS.Observes);
               })) {
-              args = [expression].concat(observes.parameters.map(function (p) {
+              args = observes.parameters.map(function (p) {
                 return new JS.Literal(p);
-              }));
+              }).concat(expression);
               expression = new JS.CallExpression(memberAccess(new JS.Identifier('Ember'), 'observer'), args);
             }
             keyName = this.key.data;
@@ -13516,7 +13516,7 @@
         });
         if (_.contains(enumerableMethods, this['function'].memberName))
           res = res.map(function (c) {
-            c.push('@each');
+            c.push('[]');
             return c;
           });
       }

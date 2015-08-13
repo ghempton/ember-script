@@ -620,7 +620,7 @@ class exports.Compiler
         expression = new JS.CallExpression memberAccess(expression, 'volatile'), []
       if observes = _.find @annotations, (a) -> a.instanceof CS.Observes
         # TODO: throw error if also computed property
-        args = [expression].concat(observes.parameters.map (p) -> new JS.Literal(p))
+        args = observes.parameters.map((p) -> new JS.Literal(p)).concat(expression)
         expression = new JS.CallExpression memberAccess(new JS.Identifier('Ember'), 'observer'), args
 
       keyName = @key.data
