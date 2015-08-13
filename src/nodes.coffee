@@ -375,7 +375,7 @@ MemberAccessOp::dependentKeys = (scope={}) ->
     c
 SoakedMemberAccessOp::dependentKeys = MemberAccessOp::dependentKeys
 
-# Compile a list of methods which are used to infer an @each dependency
+# Compile a list of methods which are used to infer an [] dependency
 enumerableMethods = ["nextObject", "firstObject", "lastObject", "contains", "forEach", "getEach", "setEach", "map", "mapProperty", "filter", "reject", "filterProperty", "rejectProperty", "find", "findProperty", "every", "everyProperty", "some", "someProperty", "reduce", "invoke", "toArray", "compact", "without", "uniq"]
 
 FunctionApplications::dependentKeys = (scope={}) ->
@@ -385,10 +385,10 @@ FunctionApplications::dependentKeys = (scope={}) ->
     res = res.map (c) ->
       c.pop()
       c
-    # Add @each dependency if enumerable method
+    # Add [] dependency if enumerable method
     if _.contains enumerableMethods, @function.memberName
       res = res.map (c) ->
-        c.push('@each')
+        c.push('[]')
         c
 
   for argument in @arguments
